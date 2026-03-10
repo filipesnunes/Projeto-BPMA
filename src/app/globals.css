@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #eef3f8;
+  --app-surface: #ffffff;
+  --app-surface-soft: #f7f9fc;
+  --app-border: #d8e0ea;
+  --app-text: #0f172a;
+  --app-muted: #516377;
+}
+
+html.dark {
+  --app-bg: #171c23;
+  --app-surface: #1f2731;
+  --app-surface-soft: #2a3441;
+  --app-border: #3a4759;
+  --app-text: #e5edf6;
+  --app-muted: #b7c3d3;
+}
+
+body {
+  margin: 0;
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200;
+  }
+
+  .btn-secondary {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700;
+  }
+
+  .btn-action {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200;
+  }
+
+  .btn-danger {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .btn-group {
+    @apply flex flex-wrap items-center gap-2;
+  }
+}

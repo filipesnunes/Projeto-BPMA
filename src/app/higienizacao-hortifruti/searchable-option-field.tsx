@@ -1,0 +1,114 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+import { normalizeOption } from "./options";
+
+type SearchableOptionFieldProps = {
+  name: string;
+  options: string[];
+  defaultValue?: string;
+  placeholder: string;
+  disabled?: boolean;
+};
+
+export function SearchableOptionField({
+  name,
+  options,
+  defaultValue = "",
+  placeholder,
+  disabled = false
+}: SearchableOptionFieldProps) {
+  const [inputValue, setInputValue] = useState(defaultValue);
+  const [selectedValue, setSelectedValue] = useState(defaultValue);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = normalizeOption(inputValue);
+
+    if (!normalizedQuery) {
+      return options.slice(0, 8);
+    }
+
+    return options
+      .filter((option) => normalizeOption(option).startsWith(normalizedQuery))
+      .slice(0, 8);
+  }, [inputValue, options]);
+
+  const hasExactMatch = useMemo(() => {
+    return options.some(
+      (option) => normalizeOption(option) === normalizeOption(inputValue)
+    );
+  }, [inputValue, options]);
+
+  const showValidationHint = inputValue.length > 0 && !hasExactMatch;
+
+  return (
+    <div className="relative mt-1">
+      <input
+        type="hidden"
+        name={name}
+        value={selectedValue}
+        readOnly
+      />
+      <input
+        type="text"
+        value={inputValue}
+        disabled={disabled}
+        autoComplete="off"
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => {
+          window.setTimeout(() => {
+            setIsOpen(false);
+          }, 120);
+        }}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setInputValue(nextValue);
+
+          const matchingOption =
+            options.find(
+              (option) => normalizeOption(option) === normalizeOption(nextValue)
+            ) ?? "";
+
+          setSelectedValue(matchingOption);
+        }}
+      />
+
+      {isOpen && filteredOptions.length > 0 ? (
+        <ul className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          {filteredOptions.map((option) => (
+            <li key={option}>
+              <button
+                type="button"
+                className="block w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                }}
+                onClick={() => {
+                  setInputValue(option);
+                  setSelectedValue(option);
+                  setIsOpen(false);
+                }}
+              >
+                {option}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <span
+        className={`mt-1 block text-xs ${
+          showValidationHint ? "text-red-600" : "text-slate-500"
+        }`}
+      >
+        {showValidationHint
+          ? "Selecione uma opção existente da lista."
+          : "Digite para buscar e selecione uma opção existente."}
+      </span>
+    </div>
+  );
+}

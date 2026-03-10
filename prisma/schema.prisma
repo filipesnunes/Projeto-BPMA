@@ -1,0 +1,471 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model RegistroInicial {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum StatusFechamentoHortifruti {
+  ABERTO
+  ASSINADO
+}
+
+enum TipoOpcaoHigienizacao {
+  HORTIFRUTI
+  PRODUTO_UTILIZADO
+}
+
+enum TurnoTemperaturaEquipamento {
+  MANHA
+  TARDE
+}
+
+enum StatusTemperaturaEquipamento {
+  CONFORME
+  ALERTA
+  CRITICO
+}
+
+enum StatusFechamentoTemperaturaEquipamento {
+  ABERTO
+  ASSINADO
+}
+
+enum TipoOpcaoTemperaturaEquipamento {
+  EQUIPAMENTO
+  ACAO_CORRETIVA
+}
+
+enum CategoriaEquipamentoTemperatura {
+  REFRIGERACAO
+  CONGELAMENTO
+  QUENTE
+}
+
+enum StatusQualidadeOleo {
+  ADEQUADO
+  ATENCAO
+  ULTIMA_UTILIZACAO
+  DESCARTAR
+}
+
+enum StatusFechamentoQualidadeOleo {
+  ABERTO
+  ASSINADO
+}
+
+enum ConformidadeRecebimento {
+  CONFORME
+  NAO_CONFORME
+}
+
+enum StatusRecebimento {
+  PENDENTE
+  CONFORME
+  NAO_CONFORME
+}
+
+enum StatusFechamentoRastreabilidadeRecebimento {
+  ABERTO
+  ASSINADO
+}
+
+enum StatusNotaRecebimento {
+  PENDENTE
+  FINALIZADA
+}
+
+enum TurnoPlanoLimpeza {
+  MANHA
+  TARDE
+  NOITE
+}
+
+enum StatusPlanoLimpeza {
+  PENDENTE
+  AGUARDANDO_SUPERVISOR
+  CONCLUIDO
+}
+
+enum TipoPlanoLimpeza {
+  DIARIO
+  SEMANAL
+}
+
+enum StatusFechamentoPlanoLimpeza {
+  ABERTO
+  ASSINADO
+}
+
+model HigienizacaoHortifruti {
+  id               Int      @id @default(autoincrement())
+  data             DateTime @db.Date
+  hortifruti       String
+  produtoUtilizado String
+  inicioProcesso   String
+  terminoProcesso  String
+  duracaoMinutos   Int
+  responsavel      String
+  observacoes      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([data])
+  @@index([hortifruti])
+  @@index([responsavel])
+  @@map("higienizacao_hortifruti")
+}
+
+model HigienizacaoHortifrutiFechamento {
+  id                 Int                          @id @default(autoincrement())
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoHortifruti   @default(ABERTO)
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+
+  @@unique([mes, ano])
+  @@map("higienizacao_hortifruti_fechamento")
+}
+
+model HigienizacaoHortifrutiOpcao {
+  id        Int                   @id @default(autoincrement())
+  tipo      TipoOpcaoHigienizacao
+  nome      String
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  @@unique([tipo, nome])
+  @@index([tipo])
+  @@map("higienizacao_hortifruti_opcao")
+}
+
+model ControleTemperaturaEquipamento {
+  id                  Int                             @id @default(autoincrement())
+  data                DateTime                        @db.Date
+  equipamento         String
+  categoriaEquipamento CategoriaEquipamentoTemperatura
+  turno               TurnoTemperaturaEquipamento
+  temperaturaAferida  Float
+  status              StatusTemperaturaEquipamento
+  acaoCorretiva       String?
+  responsavel         String
+  observacoes         String?
+  createdAt           DateTime                        @default(now())
+  updatedAt           DateTime                        @updatedAt
+
+  @@index([data])
+  @@index([equipamento])
+  @@index([status])
+  @@index([responsavel])
+  @@map("controle_temperatura_equipamentos")
+}
+
+model ControleTemperaturaEquipamentoFechamento {
+  id                 Int                                  @id @default(autoincrement())
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoTemperaturaEquipamento @default(ABERTO)
+  createdAt          DateTime                             @default(now())
+  updatedAt          DateTime                             @updatedAt
+
+  @@unique([mes, ano])
+  @@map("controle_temperatura_equipamentos_fechamento")
+}
+
+model ControleTemperaturaEquipamentoOpcao {
+  id                  Int                              @id @default(autoincrement())
+  tipo                TipoOpcaoTemperaturaEquipamento
+  nome                String
+  categoriaEquipamento CategoriaEquipamentoTemperatura?
+  ativo               Boolean                          @default(true)
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+
+  @@unique([tipo, nome])
+  @@index([tipo, ativo])
+  @@map("controle_temperatura_equipamentos_opcao")
+}
+
+model ControleTemperaturaCategoriaParametro {
+  id                         Int                             @id @default(autoincrement())
+  categoria                  CategoriaEquipamentoTemperatura @unique
+  nome                       String
+  temperaturaIdealMin        Float?
+  temperaturaIdealMax        Float?
+  temperaturaAlertaMin       Float?
+  temperaturaAlertaMax       Float?
+  temperaturaCriticaMin      Float?
+  temperaturaCriticaMax      Float?
+  acaoIdeal                  String                          @default("")
+  acaoAlerta                 String                          @default("")
+  acaoCritica                String                          @default("")
+  orientacaoCorretivaPadrao  String
+  isActive                   Boolean                         @default(true)
+  createdAt                  DateTime                        @default(now())
+  updatedAt                  DateTime                        @updatedAt
+  regras                     ControleTemperaturaCategoriaRegra[]
+
+  @@index([isActive])
+  @@map("controle_temperatura_categoria_parametro")
+}
+
+model ControleTemperaturaCategoriaRegra {
+  id            Int                                   @id @default(autoincrement())
+  categoriaId   Int
+  categoria     ControleTemperaturaCategoriaParametro @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  temperaturaMin Float?
+  temperaturaMax Float?
+  status        StatusTemperaturaEquipamento
+  acaoCorretiva String
+  ordem         Int
+  isActive      Boolean                               @default(true)
+  createdAt     DateTime                              @default(now())
+  updatedAt     DateTime                              @updatedAt
+
+  @@unique([categoriaId, ordem])
+  @@index([categoriaId, isActive, ordem])
+  @@map("controle_temperatura_categoria_regra")
+}
+
+model ControleQualidadeOleoRegistro {
+  id                Int                @id @default(autoincrement())
+  data              DateTime           @db.Date
+  fitaOleo          String
+  temperatura       Float
+  status            StatusQualidadeOleo
+  orientacao        String
+  responsavel       String
+  observacao        String?
+  temperaturaCritica Boolean           @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([data])
+  @@index([fitaOleo])
+  @@index([status])
+  @@index([responsavel])
+  @@map("controle_qualidade_oleo_registro")
+}
+
+model ControleQualidadeOleoFechamento {
+  id                 Int                             @id @default(autoincrement())
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoQualidadeOleo  @default(ABERTO)
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
+
+  @@unique([mes, ano])
+  @@map("controle_qualidade_oleo_fechamento")
+}
+
+model ControleQualidadeOleoOpcaoFita {
+  id             Int                @id @default(autoincrement())
+  rotulo         String
+  descricao      String
+  statusAssociado StatusQualidadeOleo
+  ordem          Int                @default(1)
+  ativo          Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([rotulo])
+  @@index([ativo, ordem])
+  @@map("controle_qualidade_oleo_opcao_fita")
+}
+
+model RastreabilidadeRecebimentoCategoria {
+  id               Int                             @id @default(autoincrement())
+  nome             String
+  temperaturaMaxima Float
+  ativo            Boolean                         @default(true)
+  createdAt        DateTime                        @default(now())
+  updatedAt        DateTime                        @updatedAt
+  registros        RastreabilidadeRecebimentoRegistro[]
+
+  @@unique([nome])
+  @@index([ativo, nome])
+  @@map("rastreabilidade_recebimento_categoria")
+}
+
+model RastreabilidadeRecebimentoNota {
+  id               Int                             @id @default(autoincrement())
+  data             DateTime                        @db.Date
+  fornecedor       String
+  notaFiscal       String
+  chaveNfe         String?                         @unique
+  cnpjFornecedor   String?
+  serieNota        String?
+  identificadorFiscal String?                      @unique
+  statusNota       StatusNotaRecebimento           @default(PENDENTE)
+  responsavelGeral String?
+  origemXml        Boolean                         @default(false)
+  createdAt        DateTime                        @default(now())
+  updatedAt        DateTime                        @updatedAt
+  itens            RastreabilidadeRecebimentoRegistro[]
+
+  @@index([data])
+  @@index([fornecedor])
+  @@index([notaFiscal])
+  @@index([cnpjFornecedor])
+  @@index([serieNota])
+  @@index([notaFiscal, cnpjFornecedor, serieNota])
+  @@index([statusNota])
+  @@map("rastreabilidade_recebimento_nota")
+}
+
+model RastreabilidadeRecebimentoRegistro {
+  id                    Int                        @id @default(autoincrement())
+  notaId                Int?
+  nota                  RastreabilidadeRecebimentoNota? @relation(fields: [notaId], references: [id], onDelete: Cascade)
+  data                  DateTime                   @db.Date
+  produto               String
+  fornecedor            String
+  notaFiscal            String
+  lote                  String?
+  dataFabricacao        DateTime?                  @db.Date
+  dataValidade          DateTime?                  @db.Date
+  sif                   String?
+  temperatura           Float?
+  temperaturaStatus     ConformidadeRecebimento?
+  transporteEntregador  ConformidadeRecebimento?
+  aspectoSensorial      ConformidadeRecebimento?
+  embalagem             ConformidadeRecebimento?
+  acaoCorretiva         String?
+  responsavelRecebimento String?
+  observacoes           String?
+  statusGeral           StatusRecebimento          @default(PENDENTE)
+  origemXml             Boolean                    @default(false)
+  categoriaId           Int?
+  categoria             RastreabilidadeRecebimentoCategoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  @@index([data])
+  @@index([produto])
+  @@index([fornecedor])
+  @@index([notaFiscal])
+  @@index([statusGeral])
+  @@index([responsavelRecebimento])
+  @@index([categoriaId])
+  @@index([notaId])
+  @@map("rastreabilidade_recebimento_registro")
+}
+
+model RastreabilidadeRecebimentoFechamento {
+  id                 Int                                           @id @default(autoincrement())
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoRastreabilidadeRecebimento    @default(ABERTO)
+  createdAt          DateTime                                      @default(now())
+  updatedAt          DateTime                                      @updatedAt
+
+  @@unique([mes, ano])
+  @@map("rastreabilidade_recebimento_fechamento")
+}
+
+model PlanoLimpezaDiarioRegistro {
+  id                     Int              @id @default(autoincrement())
+  data                   DateTime         @db.Date
+  turno                  TurnoPlanoLimpeza
+  area                   String
+  assinaturaResponsavel  String           @default("")
+  assinaturaSupervisor   String           @default("")
+  observacao             String?
+  status                 StatusPlanoLimpeza @default(PENDENTE)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([data])
+  @@index([turno])
+  @@index([area])
+  @@index([status])
+  @@index([assinaturaResponsavel])
+  @@map("plano_limpeza_diario_registro")
+}
+
+model PlanoLimpezaDiarioArea {
+  id         Int      @id @default(autoincrement())
+  nome       String   @unique
+  turnoManha Boolean  @default(true)
+  turnoTarde Boolean  @default(true)
+  turnoNoite Boolean  @default(true)
+  ativo      Boolean  @default(true)
+  ordem      Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([ativo, ordem, nome])
+  @@map("plano_limpeza_diario_area")
+}
+
+model PlanoLimpezaSemanalItem {
+  id                   Int                          @id @default(autoincrement())
+  area                 String
+  oQueLimpar           String
+  qualProduto          String
+  quando               String
+  quem                 String
+  ativo                Boolean                      @default(true)
+  ordem                Int                          @default(1)
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+  execucoes            PlanoLimpezaSemanalExecucao[]
+
+  @@index([area])
+  @@index([ativo, area, ordem])
+  @@map("plano_limpeza_semanal_item")
+}
+
+model PlanoLimpezaSemanalExecucao {
+  id                   Int                 @id @default(autoincrement())
+  dataExecucao         DateTime            @db.Date
+  area                 String
+  itemId               Int
+  item                 PlanoLimpezaSemanalItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  assinaturaResponsavel String
+  assinaturaSupervisor String
+  status               StatusPlanoLimpeza  @default(PENDENTE)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@index([dataExecucao])
+  @@index([area])
+  @@index([status])
+  @@index([itemId])
+  @@index([assinaturaResponsavel])
+  @@map("plano_limpeza_semanal_execucao")
+}
+
+model PlanoLimpezaFechamento {
+  id                 Int                           @id @default(autoincrement())
+  tipo               TipoPlanoLimpeza
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoPlanoLimpeza  @default(ABERTO)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@unique([tipo, mes, ano])
+  @@index([tipo, status])
+  @@map("plano_limpeza_fechamento")
+}

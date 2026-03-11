@@ -7,7 +7,6 @@ import {
   toggleDailyAreaConfigStatusAction,
   updateDailyAreaConfigAction
 } from "../../actions";
-import { ensureDailyAreaConfigurations } from "../../service";
 import { ThemeToggleButton } from "../../theme-toggle-button";
 import { parsePositiveInt } from "../../utils";
 
@@ -19,6 +18,8 @@ const INPUT_CLASS =
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
+
+export const dynamic = "force-dynamic";
 
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -65,8 +66,6 @@ export default async function PlanoLimpezaDiarioOpcoesPage({ searchParams }: Pag
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const editAreaId = parsePositiveInt(firstParam(params.editAreaId));
-
-  await ensureDailyAreaConfigurations();
 
   const areas = await prisma.planoLimpezaDiarioArea.findMany({
     orderBy: [{ ordem: "asc" }, { nome: "asc" }]

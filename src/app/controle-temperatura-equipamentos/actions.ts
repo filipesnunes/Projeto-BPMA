@@ -12,7 +12,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 import {
-  ensureInitialCatalogOptions,
   findCatalogOptionByName,
   getCategoryParameterByCategory,
   hasCatalogOptionWithSameName,
@@ -103,8 +102,6 @@ function canReopenMonthForCurrentUser(): boolean {
 }
 
 async function getRegistroPayload(formData: FormData) {
-  await ensureInitialCatalogOptions();
-
   const equipamentoInput = getInputValue(formData, "equipamento");
   const temperaturaAferidaInput = getInputValue(formData, "temperaturaAferida");
   const responsavel = getInputValue(formData, "responsavel");
@@ -482,8 +479,6 @@ export async function createCatalogOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialCatalogOptions();
-
     const tipo = parseOptionType(getInputValue(formData, "tipo"));
     const nome = sanitizeCatalogName(getInputValue(formData, "nome"));
 
@@ -633,8 +628,6 @@ export async function updateCategoryParameterAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialCatalogOptions();
-
     const parameterId = parsePositiveInt(getInputValue(formData, "parameterId"));
     if (!parameterId) {
       throw new Error("Parâmetro de categoria inválido para edição.");
@@ -724,8 +717,6 @@ export async function createCategoryRuleAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialCatalogOptions();
-
     const categoriaId = parsePositiveInt(getInputValue(formData, "categoriaId"));
     if (!categoriaId) {
       throw new Error("Categoria inválida para criar regra.");
@@ -788,8 +779,6 @@ export async function updateCategoryRuleAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialCatalogOptions();
-
     const regraId = parsePositiveInt(getInputValue(formData, "regraId"));
     if (!regraId) {
       throw new Error("Regra inválida para edição.");

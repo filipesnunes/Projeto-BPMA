@@ -13,7 +13,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 import {
-  ensureInitialReceivingCategories,
   hasCategoryWithSameName,
   sanitizeCategoryName
 } from "./catalog";
@@ -328,7 +327,6 @@ function validateAndBuildItemPayload(
 }
 
 async function getActiveCategories(): Promise<CategoryItem[]> {
-  await ensureInitialReceivingCategories();
   const categories = await prisma.rastreabilidadeRecebimentoCategoria.findMany({
     where: { ativo: true },
     orderBy: [{ nome: "asc" }]
@@ -906,8 +904,6 @@ export async function createCategoryAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialReceivingCategories();
-
     const nome = sanitizeCategoryName(getInputValue(formData, "nome"));
     const temperaturaMaxima = parseTemperatureInput(getInputValue(formData, "temperaturaMaxima"));
 

@@ -16,7 +16,6 @@ import {
   updateCatalogOptionAction,
   updateCategoryRuleAction
 } from "../actions";
-import { ensureInitialCatalogOptions } from "../catalog";
 import { ThemeToggleButton } from "../theme-toggle-button";
 import {
   formatTemperatureRange,
@@ -34,6 +33,8 @@ const INPUT_CLASS =
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -48,8 +49,6 @@ function categoryLabel(
 export default async function ControleTemperaturaOpcoesPage({
   searchParams
 }: PageProps) {
-  await ensureInitialCatalogOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -110,6 +109,12 @@ export default async function ControleTemperaturaOpcoesPage({
           }`}
         >
           {feedback}
+        </section>
+      ) : null}
+
+      {categorias.length === 0 ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          Nenhuma categoria de temperatura foi cadastrada ainda. Execute o seed do Prisma para carregar os parâmetros iniciais ou ajuste a base antes de usar este módulo.
         </section>
       ) : null}
 

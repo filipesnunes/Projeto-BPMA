@@ -7,7 +7,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 import {
-  ensureInitialCatalogOptions,
   findCatalogOptionByName,
   hasCatalogOptionWithSameName,
   parseOptionType,
@@ -78,8 +77,6 @@ function canReopenMonthForCurrentUser(): boolean {
 }
 
 async function getRegistroPayload(formData: FormData) {
-  await ensureInitialCatalogOptions();
-
   const hortifrutiInput = getInputValue(formData, "hortifruti");
   const produtoInput = getInputValue(formData, "produtoUtilizado");
   const inicioProcesso = getInputValue(formData, "inicioProcesso");
@@ -336,8 +333,6 @@ export async function createCatalogOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialCatalogOptions();
-
     const tipo = parseOptionType(getInputValue(formData, "tipo"));
     const nome = sanitizeCatalogName(getInputValue(formData, "nome"));
 

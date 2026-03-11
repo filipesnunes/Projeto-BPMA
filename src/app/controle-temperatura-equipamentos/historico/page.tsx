@@ -6,7 +6,6 @@ import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 
-import { ensureInitialCatalogOptions } from "../catalog";
 import { TemperatureStatusBadge } from "../temperature-status-badge";
 import { ThemeToggleButton } from "../theme-toggle-button";
 import {
@@ -43,6 +42,8 @@ const MONTH_OPTIONS = [
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -66,8 +67,6 @@ function parseStatusFilter(value: string): StatusTemperaturaEquipamento | null {
 export default async function ControleTemperaturaHistoricoPage({
   searchParams
 }: PageProps) {
-  await ensureInitialCatalogOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";

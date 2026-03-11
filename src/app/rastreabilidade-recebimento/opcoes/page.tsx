@@ -7,7 +7,6 @@ import {
   toggleCategoryStatusAction,
   updateCategoryAction
 } from "../actions";
-import { ensureInitialReceivingCategories } from "../catalog";
 import { ThemeToggleButton } from "../theme-toggle-button";
 import { parsePositiveInt } from "../utils";
 
@@ -20,6 +19,8 @@ const INPUT_CLASS =
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -27,8 +28,6 @@ function firstParam(value: string | string[] | undefined): string {
 export default async function RastreabilidadeRecebimentoOpcoesPage({
   searchParams
 }: PageProps) {
-  await ensureInitialReceivingCategories();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";

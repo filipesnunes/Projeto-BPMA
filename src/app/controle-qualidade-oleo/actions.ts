@@ -9,7 +9,6 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
 import {
-  ensureInitialOilOptions,
   findOilOptionByLabel,
   hasOilOptionWithSameLabel,
   parseOilStatus,
@@ -92,8 +91,6 @@ function canReopenMonthForCurrentUser(): boolean {
 }
 
 async function getRegistroPayload(formData: FormData) {
-  await ensureInitialOilOptions();
-
   const fitaInput = getInputValue(formData, "fitaOleo");
   const temperaturaInput = getInputValue(formData, "temperatura");
   // Mantido manual nesta fase; futuramente deve vir do usuário autenticado.
@@ -328,8 +325,6 @@ export async function createFitaOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureInitialOilOptions();
-
     const rotulo = sanitizeLabel(getInputValue(formData, "rotulo"));
     const descricao = sanitizeDescription(getInputValue(formData, "descricao"));
     const statusAssociado = parseOilStatus(getInputValue(formData, "statusAssociado"));

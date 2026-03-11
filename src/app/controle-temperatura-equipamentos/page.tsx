@@ -17,7 +17,6 @@ import {
   updateRegistroAction
 } from "./actions";
 import { AutomaticCorrectiveActionFields } from "./automatic-corrective-action-fields";
-import { ensureInitialCatalogOptions } from "./catalog";
 import { ReopenMonthModal } from "./reopen-month-modal";
 import { TemperatureStatusBadge } from "./temperature-status-badge";
 import { ThemeToggleButton } from "./theme-toggle-button";
@@ -62,6 +61,8 @@ const MONTH_OPTIONS = [
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -90,8 +91,6 @@ function parseStatusFilter(value: string): StatusTemperaturaEquipamento | null {
 export default async function ControleTemperaturaEquipamentosPage({
   searchParams
 }: PageProps) {
-  await ensureInitialCatalogOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -188,6 +187,8 @@ export default async function ControleTemperaturaEquipamentosPage({
     ordem: regra.ordem,
     isActive: regra.isActive
   }));
+  const configuracaoDisponivel =
+    equipamentoOptionsAtivas.length > 0 && regrasCategoriaForm.length > 0;
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
@@ -327,6 +328,15 @@ export default async function ControleTemperaturaEquipamentosPage({
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Clique em <strong>Novo Registro</strong> ou <strong>Editar</strong> para abrir o formulário.
           </p>
+        ) : !configuracaoDisponivel ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+            O módulo ainda não possui equipamentos ou regras de temperatura suficientes para cadastro.
+            Use
+            {" "}
+            <strong>Gerenciar Opções</strong>
+            {" "}
+            para concluir a configuração inicial.
+          </p>
         ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
             Este registro pertence a um mês fechado e não pode ser alterado.
@@ -412,9 +422,11 @@ export default async function ControleTemperaturaEquipamentosPage({
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             Registros do Dia
           </h2>
-          <Link href={hrefNovoRegistro} className="btn-primary">
-            Novo Registro
-          </Link>
+          {configuracaoDisponivel ? (
+            <Link href={hrefNovoRegistro} className="btn-primary">
+              Novo Registro
+            </Link>
+          ) : null}
         </div>
 
         <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-6 dark:bg-slate-800">

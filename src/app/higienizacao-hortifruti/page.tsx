@@ -14,7 +14,6 @@ import {
   reopenMonthAction,
   updateRegistroAction
 } from "./actions";
-import { ensureInitialCatalogOptions } from "./catalog";
 import { ReopenMonthModal } from "./reopen-month-modal";
 import { SearchableOptionField } from "./searchable-option-field";
 import { ThemeToggleButton } from "./theme-toggle-button";
@@ -54,6 +53,8 @@ const MONTH_OPTIONS = [
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -66,8 +67,6 @@ function buildPathWithParams(params: URLSearchParams): string {
 export default async function HigienizacaoHortifrutiPage({
   searchParams
 }: PageProps) {
-  await ensureInitialCatalogOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -115,6 +114,8 @@ export default async function HigienizacaoHortifrutiPage({
   const produtoUtilizadoOptions = options
     .filter((option) => option.tipo === TipoOpcaoHigienizacao.PRODUTO_UTILIZADO)
     .map((option) => option.nome);
+  const catalogoDisponivel =
+    hortifrutiOptions.length > 0 && produtoUtilizadoOptions.length > 0;
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
@@ -243,6 +244,14 @@ export default async function HigienizacaoHortifrutiPage({
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Clique em <strong>Novo Registro</strong> ou <strong>Editar</strong> para abrir o formulário.
           </p>
+        ) : !catalogoDisponivel ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+            Nenhuma opção de hortifruti ou produto foi cadastrada ainda. Use
+            {" "}
+            <strong>Gerenciar Opções</strong>
+            {" "}
+            para iniciar o módulo.
+          </p>
         ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
             Este registro pertence a um mês fechado e não pode ser alterado.
@@ -295,7 +304,9 @@ export default async function HigienizacaoHortifrutiPage({
       <section className={CARD_CLASS}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Registros</h2>
-          <Link href={hrefNovoRegistro} className="btn-primary">Novo Registro</Link>
+          {catalogoDisponivel ? (
+            <Link href={hrefNovoRegistro} className="btn-primary">Novo Registro</Link>
+          ) : null}
         </div>
         <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-5 dark:bg-slate-800">
           <input type="hidden" name="fechamentoMes" value={String(fechamentoMes)} />

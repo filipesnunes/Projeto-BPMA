@@ -7,7 +7,6 @@ import {
   createCatalogOptionAction,
   deleteCatalogOptionAction
 } from "../actions";
-import { ensureInitialCatalogOptions } from "../catalog";
 import { ThemeToggleButton } from "../theme-toggle-button";
 
 const PAGE_PATH = "/higienizacao-hortifruti/opcoes";
@@ -19,6 +18,8 @@ const INPUT_CLASS =
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -26,8 +27,6 @@ function firstParam(value: string | string[] | undefined): string {
 export default async function HigienizacaoHortifrutiOpcoesPage({
   searchParams
 }: PageProps) {
-  await ensureInitialCatalogOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -97,24 +96,30 @@ export default async function HigienizacaoHortifrutiOpcoesPage({
               </button>
             </form>
             <ul className="mt-3 space-y-2">
-              {hortifrutiOptions.map((option) => (
-                <li
-                  key={option.id}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
-                >
-                  <span>{option.nome}</span>
-                  <form action={deleteCatalogOptionAction}>
-                    <input type="hidden" name="optionId" value={option.id} />
-                    <input type="hidden" name="returnTo" value={PAGE_PATH} />
-                    <button
-                      type="submit"
-                      className="btn-danger"
-                    >
-                      Excluir
-                    </button>
-                  </form>
+              {hortifrutiOptions.length === 0 ? (
+                <li className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Nenhum item de hortifruti cadastrado.
                 </li>
-              ))}
+              ) : (
+                hortifrutiOptions.map((option) => (
+                  <li
+                    key={option.id}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                  >
+                    <span>{option.nome}</span>
+                    <form action={deleteCatalogOptionAction}>
+                      <input type="hidden" name="optionId" value={option.id} />
+                      <input type="hidden" name="returnTo" value={PAGE_PATH} />
+                      <button
+                        type="submit"
+                        className="btn-danger"
+                      >
+                        Excluir
+                      </button>
+                    </form>
+                  </li>
+                ))
+              )}
             </ul>
           </div>
 
@@ -141,24 +146,30 @@ export default async function HigienizacaoHortifrutiOpcoesPage({
               </button>
             </form>
             <ul className="mt-3 space-y-2">
-              {produtoOptions.map((option) => (
-                <li
-                  key={option.id}
-                  className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
-                >
-                  <span>{option.nome}</span>
-                  <form action={deleteCatalogOptionAction}>
-                    <input type="hidden" name="optionId" value={option.id} />
-                    <input type="hidden" name="returnTo" value={PAGE_PATH} />
-                    <button
-                      type="submit"
-                      className="btn-danger"
-                    >
-                      Excluir
-                    </button>
-                  </form>
+              {produtoOptions.length === 0 ? (
+                <li className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                  Nenhum produto utilizado cadastrado.
                 </li>
-              ))}
+              ) : (
+                produtoOptions.map((option) => (
+                  <li
+                    key={option.id}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
+                  >
+                    <span>{option.nome}</span>
+                    <form action={deleteCatalogOptionAction}>
+                      <input type="hidden" name="optionId" value={option.id} />
+                      <input type="hidden" name="returnTo" value={PAGE_PATH} />
+                      <button
+                        type="submit"
+                        className="btn-danger"
+                      >
+                        Excluir
+                      </button>
+                    </form>
+                  </li>
+                ))
+              )}
             </ul>
           </div>
         </div>

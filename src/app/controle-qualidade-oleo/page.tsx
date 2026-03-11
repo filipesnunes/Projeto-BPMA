@@ -14,7 +14,6 @@ import {
   reopenMonthAction,
   updateRegistroAction
 } from "./actions";
-import { ensureInitialOilOptions } from "./catalog";
 import { OilRegisterFields } from "./oil-register-fields";
 import { OilStatusBadge } from "./oil-status-badge";
 import { OIL_OPERATION_GUIDELINES } from "./options";
@@ -59,6 +58,8 @@ const MONTH_OPTIONS = [
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -89,8 +90,6 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
 }
 
 export default async function ControleQualidadeOleoPage({ searchParams }: PageProps) {
-  await ensureInitialOilOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -155,6 +154,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   ]);
 
   const fitaOptionsAtivas = fitaOptions.filter((option) => option.ativo);
+  const configuracaoDisponivel = fitaOptionsAtivas.length > 0;
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
@@ -319,6 +319,14 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Clique em <strong>Novo Registro</strong> ou <strong>Editar</strong> para abrir o formulário.
           </p>
+        ) : !configuracaoDisponivel ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+            Nenhuma opção de fita do óleo está cadastrada. Use
+            {" "}
+            <strong>Gerenciar Opções</strong>
+            {" "}
+            para iniciar o módulo.
+          </p>
         ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
             Este registro pertence a um mês fechado e não pode ser alterado.
@@ -388,9 +396,11 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
       <section className={CARD_CLASS}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Registros do Dia</h2>
-          <Link href={hrefNovoRegistro} className="btn-primary">
-            Novo Registro
-          </Link>
+          {configuracaoDisponivel ? (
+            <Link href={hrefNovoRegistro} className="btn-primary">
+              Novo Registro
+            </Link>
+          ) : null}
         </div>
 
         <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-6 dark:bg-slate-800">

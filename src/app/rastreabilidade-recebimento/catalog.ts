@@ -1,21 +1,9 @@
 import { prisma } from "@/lib/prisma";
 
 import {
-  INITIAL_RECEBIMENTO_CATEGORIAS,
   normalizeCatalogName,
   normalizeOption
 } from "./options";
-
-export async function ensureInitialReceivingCategories() {
-  await prisma.rastreabilidadeRecebimentoCategoria.createMany({
-    data: INITIAL_RECEBIMENTO_CATEGORIAS.map((categoria) => ({
-      nome: categoria.nome,
-      temperaturaMaxima: categoria.temperaturaMaxima,
-      ativo: true
-    })),
-    skipDuplicates: true
-  });
-}
 
 export async function getReceivingCategories(activeOnly = false) {
   return prisma.rastreabilidadeRecebimentoCategoria.findMany({

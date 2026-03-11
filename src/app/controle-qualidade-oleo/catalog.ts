@@ -3,7 +3,6 @@ import { StatusQualidadeOleo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 import {
-  INITIAL_OIL_STRIP_OPTIONS,
   normalizeCatalogName,
   normalizeOption
 } from "./options";
@@ -26,19 +25,6 @@ export function parseOilStatus(value: string): StatusQualidadeOleo | null {
   }
 
   return null;
-}
-
-export async function ensureInitialOilOptions() {
-  await prisma.controleQualidadeOleoOpcaoFita.createMany({
-    data: INITIAL_OIL_STRIP_OPTIONS.map((option) => ({
-      rotulo: option.rotulo,
-      descricao: option.descricao,
-      statusAssociado: option.statusAssociado,
-      ordem: option.ordem,
-      ativo: true
-    })),
-    skipDuplicates: true
-  });
 }
 
 export async function getOilStripOptions(activeOnly = false) {

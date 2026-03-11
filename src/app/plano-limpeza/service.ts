@@ -7,7 +7,6 @@ import {
 
 import { prisma } from "@/lib/prisma";
 
-import { DAILY_AREAS } from "./constants";
 import { getMonthYear } from "./utils";
 
 function dailyKey(area: string, turno: TurnoPlanoLimpeza): string {
@@ -34,24 +33,6 @@ function getTurnosFromConfig(config: {
   return turnos;
 }
 
-export async function ensureDailyAreaConfigurations(): Promise<void> {
-  const total = await prisma.planoLimpezaDiarioArea.count();
-  if (total > 0) {
-    return;
-  }
-
-  await prisma.planoLimpezaDiarioArea.createMany({
-    data: DAILY_AREAS.map((nome, index) => ({
-      nome,
-      turnoManha: true,
-      turnoTarde: true,
-      turnoNoite: true,
-      ativo: true,
-      ordem: index + 1
-    }))
-  });
-}
-
 export async function isDailyMonthSigned(date: Date): Promise<boolean> {
   const { mes, ano } = getMonthYear(date);
   const fechamento = await prisma.planoLimpezaFechamento.findUnique({
@@ -61,11 +42,9 @@ export async function isDailyMonthSigned(date: Date): Promise<boolean> {
   return fechamento?.status === StatusFechamentoPlanoLimpeza.ASSINADO;
 }
 
-export async function ensureDailyChecklistForDate(date: Date): Promise<void> {
-  await ensureDailyAreaConfigurations();
-
+export async function ensureDailyChecklistForDate(date: Date): Promise<number> {
   if (await isDailyMonthSigned(date)) {
-    return;
+    return 0;
   }
 
   const areaConfigs = await prisma.planoLimpezaDiarioArea.findMany({
@@ -74,7 +53,7 @@ export async function ensureDailyChecklistForDate(date: Date): Promise<void> {
   });
 
   if (areaConfigs.length === 0) {
-    return;
+    return 0;
   }
 
   const existing = await prisma.planoLimpezaDiarioRegistro.findMany({
@@ -110,6 +89,8 @@ export async function ensureDailyChecklistForDate(date: Date): Promise<void> {
       data: dataToCreate
     });
   }
+
+  return dataToCreate.length;
 }
 
 export function getDailySignStage(record: {

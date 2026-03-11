@@ -8,7 +8,6 @@ import {
   toggleFitaOptionStatusAction,
   updateFitaOptionAction
 } from "../actions";
-import { ensureInitialOilOptions } from "../catalog";
 import { ThemeToggleButton } from "../theme-toggle-button";
 import { getStatusLabel, parsePositiveInt } from "../utils";
 
@@ -21,13 +20,13 @@ const INPUT_CLASS =
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
 export default async function ControleQualidadeOleoOpcoesPage({ searchParams }: PageProps) {
-  await ensureInitialOilOptions();
-
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";

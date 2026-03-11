@@ -26,6 +26,8 @@ const INPUT_CLASS =
 type Params = { data: string };
 type PageProps = { params: Promise<Params>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }

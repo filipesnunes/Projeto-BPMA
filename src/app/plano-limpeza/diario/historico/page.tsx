@@ -6,7 +6,6 @@ import { prisma } from "@/lib/prisma";
 import { DAILY_STATUS_OPTIONS, MONTH_OPTIONS, TURNO_OPTIONS } from "../../constants";
 import {
   consolidateDailyRecordsByDay,
-  ensureDailyAreaConfigurations,
   getDailyConsolidatedStatusClass
 } from "../../service";
 import { ThemeToggleButton } from "../../theme-toggle-button";
@@ -30,6 +29,8 @@ const INPUT_CLASS =
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
 
+export const dynamic = "force-dynamic";
+
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
@@ -43,8 +44,6 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
   const filtroTurno = parseTurno(firstParam(params.filtroTurno).trim());
   const filtroStatus = parseDailyStatus(firstParam(params.filtroStatus).trim());
   const filtroResponsavel = firstParam(params.filtroResponsavel).trim();
-
-  await ensureDailyAreaConfigurations();
 
   const where: Prisma.PlanoLimpezaDiarioRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);

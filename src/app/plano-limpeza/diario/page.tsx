@@ -8,8 +8,6 @@ import { DAILY_STATUS_OPTIONS, MONTH_OPTIONS, TURNO_OPTIONS } from "../constants
 import { ReopenMonthModal } from "../reopen-month-modal";
 import {
   consolidateDailyRecordsByDay,
-  ensureDailyAreaConfigurations,
-  ensureDailyChecklistForDate,
   getDailyConsolidatedStatusClass,
   getDailySignStage
 } from "../service";
@@ -31,6 +29,7 @@ import {
   parseTurno,
   periodKey
 } from "../utils";
+import { DailyChecklistSync } from "./daily-checklist-sync";
 import { DailySignChecklistModal } from "./sign-checklist-modal";
 
 const PAGE_PATH = "/plano-limpeza/diario";
@@ -41,6 +40,8 @@ const INPUT_CLASS =
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type PageProps = { searchParams: Promise<SearchParams> };
+
+export const dynamic = "force-dynamic";
 
 function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
@@ -58,9 +59,6 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
 
   const now = getCurrentSystemDateTime();
   const todayDbDate = getTodaySystemDate();
-
-  await ensureDailyAreaConfigurations();
-  await ensureDailyChecklistForDate(todayDbDate);
 
   const todayInput = formatDateInput(todayDbDate);
   const filtroDataRaw = firstParam(params.filtroData).trim();
@@ -87,13 +85,9 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
   const filtroTurno = parseTurno(filtroTurnoRaw);
   const filtroStatus = parseDailyStatus(filtroStatusRaw);
 
-  const dataSelecionadaParaGeracao = parseDateInput(filtroData);
-  if (dataSelecionadaParaGeracao) {
-    await ensureDailyChecklistForDate(dataSelecionadaParaGeracao);
-  }
-
   const where: Prisma.PlanoLimpezaDiarioRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
+  const syncDate = dataFiltro ? formatDateInput(dataFiltro) : null;
   if (dataFiltro) {
     where.data = dataFiltro;
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
@@ -223,6 +217,8 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
 
   return (
     <div className="space-y-6 dark:text-slate-100">
+      <DailyChecklistSync date={syncDate} enabled={areaConfigs.length > 0} />
+
       <section className={CARD_CLASS}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -263,6 +259,16 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
       {registroParaAssinatura && assinaturaBloqueadaPorFechamento ? (
         <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
           Este checklist pertence a um mês fechado e não pode receber assinatura.
+        </section>
+      ) : null}
+
+      {areaConfigs.length === 0 ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+          Nenhuma área do plano diário foi configurada ainda. Use
+          {" "}
+          <strong>Gerenciar Plano Diário</strong>
+          {" "}
+          para cadastrar áreas e turnos antes de operar o checklist.
         </section>
       ) : null}
 

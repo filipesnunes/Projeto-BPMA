@@ -34,10 +34,16 @@ export function DailyChecklistSync({
           return null;
         }
 
-        return response.json() as Promise<{ createdCount?: number }>;
+        return response.json() as Promise<{
+          createdCount?: number;
+          removedCount?: number;
+        }>;
       })
       .then((result) => {
-        if (result?.createdCount && result.createdCount > 0) {
+        if (
+          (result?.createdCount && result.createdCount > 0) ||
+          (result?.removedCount && result.removedCount > 0)
+        ) {
           router.refresh();
         }
       })

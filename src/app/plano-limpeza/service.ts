@@ -42,55 +42,80 @@ export async function isDailyMonthSigned(date: Date): Promise<boolean> {
   return fechamento?.status === StatusFechamentoPlanoLimpeza.ASSINADO;
 }
 
-export async function ensureDailyChecklistForDate(date: Date): Promise<number> {
+export async function ensureDailyChecklistForDate(date: Date): Promise<{
+  createdCount: number;
+  removedCount: number;
+}> {
   if (await isDailyMonthSigned(date)) {
-    return 0;
+    return { createdCount: 0, removedCount: 0 };
   }
 
-  const areaConfigs = await prisma.planoLimpezaDiarioArea.findMany({
-    where: { ativo: true },
-    orderBy: [{ ordem: "asc" }, { nome: "asc" }]
-  });
+  return prisma.$transaction(async (tx) => {
+    const areaConfigs = await tx.planoLimpezaDiarioArea.findMany({
+      where: { ativo: true },
+      orderBy: [{ ordem: "asc" }, { nome: "asc" }]
+    });
 
-  if (areaConfigs.length === 0) {
-    return 0;
-  }
+    const existing = await tx.planoLimpezaDiarioRegistro.findMany({
+      where: { data: date },
+      select: { id: true, area: true, turno: true, status: true }
+    });
 
-  const existing = await prisma.planoLimpezaDiarioRegistro.findMany({
-    where: { data: date },
-    select: { area: true, turno: true }
-  });
+    const validCombinationSet = new Set<string>();
+    for (const areaConfig of areaConfigs) {
+      const turnos = getTurnosFromConfig(areaConfig);
 
-  const existingSet = new Set(existing.map((item) => dailyKey(item.area, item.turno)));
-  const dataToCreate = [];
-
-  for (const areaConfig of areaConfigs) {
-    const turnos = getTurnosFromConfig(areaConfig);
-
-    for (const turno of turnos) {
-      const key = dailyKey(areaConfig.nome, turno);
-      if (existingSet.has(key)) {
-        continue;
+      for (const turno of turnos) {
+        validCombinationSet.add(dailyKey(areaConfig.nome, turno));
       }
+    }
 
-      dataToCreate.push({
-        data: date,
-        turno,
-        area: areaConfig.nome,
-        assinaturaResponsavel: "",
-        assinaturaSupervisor: "",
-        status: StatusPlanoLimpeza.PENDENTE
+    const pendingInvalidRecordIds = existing
+      .filter(
+        (item) =>
+          item.status === StatusPlanoLimpeza.PENDENTE &&
+          !validCombinationSet.has(dailyKey(item.area, item.turno))
+      )
+      .map((item) => item.id);
+
+    if (pendingInvalidRecordIds.length > 0) {
+      await tx.planoLimpezaDiarioRegistro.deleteMany({
+        where: { id: { in: pendingInvalidRecordIds } }
       });
     }
-  }
 
-  if (dataToCreate.length > 0) {
-    await prisma.planoLimpezaDiarioRegistro.createMany({
-      data: dataToCreate
-    });
-  }
+    const preservedCombinationSet = new Set(
+      existing
+        .filter((item) => !pendingInvalidRecordIds.includes(item.id))
+        .map((item) => dailyKey(item.area, item.turno))
+    );
 
-  return dataToCreate.length;
+    const dataToCreate = Array.from(validCombinationSet)
+      .filter((key) => !preservedCombinationSet.has(key))
+      .map((key) => {
+        const [area, turno] = key.split("|") as [string, TurnoPlanoLimpeza];
+
+        return {
+          data: date,
+          turno,
+          area,
+          assinaturaResponsavel: "",
+          assinaturaSupervisor: "",
+          status: StatusPlanoLimpeza.PENDENTE
+        };
+      });
+
+    if (dataToCreate.length > 0) {
+      await tx.planoLimpezaDiarioRegistro.createMany({
+        data: dataToCreate
+      });
+    }
+
+    return {
+      createdCount: dataToCreate.length,
+      removedCount: pendingInvalidRecordIds.length
+    };
+  });
 }
 
 export function getDailySignStage(record: {

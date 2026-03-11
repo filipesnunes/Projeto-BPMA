@@ -17,9 +17,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const createdCount = await ensureDailyChecklistForDate(date);
+    const result = await ensureDailyChecklistForDate(date);
 
-    return NextResponse.json({ createdCount });
+    return NextResponse.json(result);
   } catch {
     return NextResponse.json(
       { error: "Não foi possível sincronizar o checklist diário." },

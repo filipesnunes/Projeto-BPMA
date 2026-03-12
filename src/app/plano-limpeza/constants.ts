@@ -26,6 +26,16 @@ export const WEEKLY_AREAS = [
   "Almoxarifado de Bebidas"
 ] as const;
 
+export const WEEKLY_DAY_OPTIONS = [
+  { value: "SEGUNDA", label: "Segunda-feira" },
+  { value: "TERCA", label: "Terça-feira" },
+  { value: "QUARTA", label: "Quarta-feira" },
+  { value: "QUINTA", label: "Quinta-feira" },
+  { value: "SEXTA", label: "Sexta-feira" },
+  { value: "SABADO", label: "Sábado" },
+  { value: "DOMINGO", label: "Domingo" }
+] as const;
+
 export const MONTH_OPTIONS = [
   { value: 1, label: "Janeiro" },
   { value: 2, label: "Fevereiro" },
@@ -58,5 +68,9 @@ export const DAILY_STATUS_OPTIONS: Array<{ value: StatusPlanoLimpeza; label: str
 
 export const WEEKLY_STATUS_OPTIONS: Array<{ value: StatusPlanoLimpeza; label: string }> = [
   { value: StatusPlanoLimpeza.PENDENTE, label: "Pendente" },
+  {
+    value: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
+    label: "Aguardando Supervisor"
+  },
   { value: StatusPlanoLimpeza.CONCLUIDO, label: "Concluído" }
 ];

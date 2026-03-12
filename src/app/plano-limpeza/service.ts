@@ -1,4 +1,5 @@
 import {
+  Prisma,
   StatusFechamentoPlanoLimpeza,
   StatusPlanoLimpeza,
   TipoPlanoLimpeza,
@@ -7,10 +8,32 @@ import {
 
 import { prisma } from "@/lib/prisma";
 
-import { getMonthYear } from "./utils";
+import {
+  formatDateInput,
+  getMonthYear,
+  getWeeklyDayValueFromDate,
+  getWeeklyDayValuesFromInput,
+  periodKey
+} from "./utils";
 
 function dailyKey(area: string, turno: TurnoPlanoLimpeza): string {
   return `${area}|${turno}`;
+}
+
+function weeklyKey(itemId: number, date: Date): string {
+  return `${itemId}|${formatDateInput(date)}`;
+}
+
+function enumerateDateRange(start: Date, end: Date): Date[] {
+  const dates: Date[] = [];
+  const cursor = new Date(start);
+
+  while (cursor.getTime() <= end.getTime()) {
+    dates.push(new Date(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return dates;
 }
 
 function getTurnosFromConfig(config: {
@@ -118,7 +141,224 @@ export async function ensureDailyChecklistForDate(date: Date): Promise<{
   });
 }
 
+export async function ensureWeeklyChecklistForDateRange(params: {
+  start: Date;
+  end: Date;
+}): Promise<{ createdCount: number; removedCount: number }> {
+  if (params.start.getTime() > params.end.getTime()) {
+    return { createdCount: 0, removedCount: 0 };
+  }
+
+  const dates = enumerateDateRange(params.start, params.end);
+  if (dates.length === 0) {
+    return { createdCount: 0, removedCount: 0 };
+  }
+
+  const periods = new Map<string, { mes: number; ano: number }>();
+  for (const date of dates) {
+    const period = getMonthYear(date);
+    periods.set(periodKey(period.mes, period.ano), period);
+  }
+
+  const closedPeriods = periods.size
+    ? await prisma.planoLimpezaFechamento.findMany({
+        where: {
+          tipo: TipoPlanoLimpeza.SEMANAL,
+          status: StatusFechamentoPlanoLimpeza.ASSINADO,
+          OR: Array.from(periods.values()).map((period) => ({
+            mes: period.mes,
+            ano: period.ano
+          }))
+        }
+      })
+    : [];
+  const closedPeriodSet = new Set(
+    closedPeriods.map((item) => periodKey(item.mes, item.ano))
+  );
+  const openDates = dates.filter((date) => {
+    const period = getMonthYear(date);
+    return !closedPeriodSet.has(periodKey(period.mes, period.ano));
+  });
+  if (openDates.length === 0) {
+    return { createdCount: 0, removedCount: 0 };
+  }
+
+  const openDateSet = new Set(openDates.map((date) => formatDateInput(date)));
+
+  return prisma.$transaction(async (tx) => {
+    const activeItems = await tx.planoLimpezaSemanalItem.findMany({
+      where: { ativo: true },
+      orderBy: [{ area: "asc" }, { ordem: "asc" }, { oQueLimpar: "asc" }]
+    });
+
+    const itemWeekDays = new Map<number, Set<string>>();
+    const itemAreaMap = new Map<number, string>();
+    for (const item of activeItems) {
+      itemWeekDays.set(item.id, new Set(getWeeklyDayValuesFromInput(item.quando)));
+      itemAreaMap.set(item.id, item.area);
+    }
+
+    const existing = await tx.planoLimpezaSemanalExecucao.findMany({
+      where: {
+        dataExecucao: {
+          gte: params.start,
+          lte: params.end
+        }
+      },
+      select: {
+        id: true,
+        itemId: true,
+        dataExecucao: true,
+        area: true,
+        status: true,
+        assinaturaResponsavel: true,
+        assinaturaSupervisor: true
+      }
+    });
+
+    const validCombinationSet = new Set<string>();
+    for (const date of openDates) {
+      const weekDay = getWeeklyDayValueFromDate(date);
+      for (const item of activeItems) {
+        const activeDays = itemWeekDays.get(item.id);
+        if (!activeDays?.has(weekDay)) {
+          continue;
+        }
+
+        validCombinationSet.add(weeklyKey(item.id, date));
+      }
+    }
+
+    const pendingInvalidRecordIds = existing
+      .filter((record) => {
+        const dateKey = formatDateInput(record.dataExecucao);
+        if (!openDateSet.has(dateKey)) {
+          return false;
+        }
+
+        const hasResponsavel = record.assinaturaResponsavel.trim().length > 0;
+        const hasSupervisor = record.assinaturaSupervisor.trim().length > 0;
+
+        return (
+          record.status === StatusPlanoLimpeza.PENDENTE &&
+          !hasResponsavel &&
+          !hasSupervisor &&
+          !validCombinationSet.has(weeklyKey(record.itemId, record.dataExecucao))
+        );
+      })
+      .map((record) => record.id);
+
+    if (pendingInvalidRecordIds.length > 0) {
+      await tx.planoLimpezaSemanalExecucao.deleteMany({
+        where: { id: { in: pendingInvalidRecordIds } }
+      });
+    }
+
+    const pendingAreaMismatchRecords = existing.filter((record) => {
+      if (pendingInvalidRecordIds.includes(record.id)) {
+        return false;
+      }
+
+      const expectedArea = itemAreaMap.get(record.itemId);
+      if (!expectedArea || expectedArea === record.area) {
+        return false;
+      }
+
+      const hasResponsavel = record.assinaturaResponsavel.trim().length > 0;
+      const hasSupervisor = record.assinaturaSupervisor.trim().length > 0;
+
+      return (
+        record.status === StatusPlanoLimpeza.PENDENTE &&
+        !hasResponsavel &&
+        !hasSupervisor
+      );
+    });
+
+    for (const record of pendingAreaMismatchRecords) {
+      const expectedArea = itemAreaMap.get(record.itemId);
+      if (!expectedArea) {
+        continue;
+      }
+
+      await tx.planoLimpezaSemanalExecucao.update({
+        where: { id: record.id },
+        data: { area: expectedArea }
+      });
+    }
+
+    const preservedCombinationSet = new Set(
+      existing
+        .filter((record) => !pendingInvalidRecordIds.includes(record.id))
+        .map((record) => weeklyKey(record.itemId, record.dataExecucao))
+    );
+
+    const dataToCreate: Prisma.PlanoLimpezaSemanalExecucaoCreateManyInput[] = [];
+    for (const date of openDates) {
+      const weekDay = getWeeklyDayValueFromDate(date);
+      for (const item of activeItems) {
+        const activeDays = itemWeekDays.get(item.id);
+        if (!activeDays?.has(weekDay)) {
+          continue;
+        }
+
+        const key = weeklyKey(item.id, date);
+        if (preservedCombinationSet.has(key)) {
+          continue;
+        }
+
+        preservedCombinationSet.add(key);
+        dataToCreate.push({
+          dataExecucao: date,
+          area: item.area,
+          itemId: item.id,
+          assinaturaResponsavel: "",
+          assinaturaSupervisor: "",
+          status: StatusPlanoLimpeza.PENDENTE
+        });
+      }
+    }
+
+    if (dataToCreate.length > 0) {
+      await tx.planoLimpezaSemanalExecucao.createMany({
+        data: dataToCreate
+      });
+    }
+
+    return {
+      createdCount: dataToCreate.length,
+      removedCount: pendingInvalidRecordIds.length
+    };
+  });
+}
+
 export function getDailySignStage(record: {
+  status: StatusPlanoLimpeza;
+  assinaturaResponsavel: string;
+  assinaturaSupervisor: string;
+}): "responsavel" | "supervisor" | null {
+  const hasResponsavel = record.assinaturaResponsavel.trim().length > 0;
+  const hasSupervisor = record.assinaturaSupervisor.trim().length > 0;
+
+  if (
+    record.status === StatusPlanoLimpeza.PENDENTE &&
+    !hasResponsavel &&
+    !hasSupervisor
+  ) {
+    return "responsavel";
+  }
+
+  if (
+    record.status === StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR &&
+    hasResponsavel &&
+    !hasSupervisor
+  ) {
+    return "supervisor";
+  }
+
+  return null;
+}
+
+export function getWeeklySignStage(record: {
   status: StatusPlanoLimpeza;
   assinaturaResponsavel: string;
   assinaturaSupervisor: string;

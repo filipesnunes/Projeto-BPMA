@@ -43,7 +43,7 @@ export default function PlanoLimpezaPage() {
             Plano de Limpeza Semanal
           </h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            Configuração de itens por área e execução semanal com assinaturas.
+            Checklist semanal automático por área com assinatura por etapas.
           </p>
         </Link>
       </section>

@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  Prisma,
   StatusFechamentoPlanoLimpeza,
   StatusPlanoLimpeza,
   TipoPlanoLimpeza
@@ -14,16 +15,17 @@ import { WEEKLY_AREAS } from "./constants";
 import {
   buildDailyTurnoFlags,
   ensureDailyTurnoSelection,
-  getDailySignStage
+  ensureWeeklyChecklistForDateRange,
+  getDailySignStage,
+  getWeeklySignStage
 } from "./service";
 import {
   getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
-  getTodaySystemDate,
   parseDateInput,
-  parsePositiveInt,
-  parseWeeklyStatus
+  parseWeeklyDay,
+  parsePositiveInt
 } from "./utils";
 
 const MODULE_PATH = "/plano-limpeza";
@@ -409,70 +411,13 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
   }
 }
 
-export async function createWeeklyExecutionAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, SEMANAL_PATH);
-
-  try {
-    const area = ensureAreaIsValid(getInputValue(formData, "area"), WEEKLY_AREAS, "Área");
-    const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
-    const assinaturaResponsavel = getInputValue(formData, "assinaturaResponsavel");
-    const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
-    const status = parseWeeklyStatus(getInputValue(formData, "status"));
-
-    if (!itemId) {
-      throw new Error("Selecione um item válido.");
-    }
-    ensureNonEmpty(assinaturaResponsavel, "Assinatura do Responsável");
-    ensureNonEmpty(assinaturaSupervisor, "Assinatura do Supervisor");
-    if (!status) {
-      throw new Error("Selecione um status válido.");
-    }
-
-    const item = await prisma.planoLimpezaSemanalItem.findUnique({
-      where: { id: itemId }
-    });
-
-    if (!item || !item.ativo) {
-      throw new Error("Item semanal não encontrado ou inativo.");
-    }
-
-    if (item.area !== area) {
-      throw new Error("O item selecionado não pertence à área informada.");
-    }
-
-    const dataExecucao = getTodaySystemDate();
-    const { mes, ano } = getMonthYear(dataExecucao);
-    if (await isMonthSigned(TipoPlanoLimpeza.SEMANAL, mes, ano)) {
-      throw new Error(
-        `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado para o Plano Semanal.`
-      );
-    }
-
-    await prisma.planoLimpezaSemanalExecucao.create({
-      data: {
-        dataExecucao,
-        area,
-        itemId,
-        assinaturaResponsavel,
-        assinaturaSupervisor,
-        status: status as StatusPlanoLimpeza
-      }
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Execução Semanal Registrada com Sucesso.");
-  } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
-}
-
-export async function updateWeeklyExecutionAction(formData: FormData) {
+export async function updateWeeklyRecordAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_PATH);
 
   try {
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
-      throw new Error("Execução semanal inválida para edição.");
+      throw new Error("Registro semanal inválido para assinatura.");
     }
 
     const existing = await prisma.planoLimpezaSemanalExecucao.findUnique({
@@ -480,88 +425,105 @@ export async function updateWeeklyExecutionAction(formData: FormData) {
     });
 
     if (!existing) {
-      throw new Error("Execução semanal não encontrada.");
+      throw new Error("Registro semanal não encontrado.");
     }
 
     const period = getMonthYear(existing.dataExecucao);
     if (await isMonthSigned(TipoPlanoLimpeza.SEMANAL, period.mes, period.ano)) {
-      throw new Error("Esta execução pertence a um período fechado e não pode ser alterada.");
+      throw new Error("Este registro pertence a um período fechado e não pode ser alterado.");
     }
 
-    const area = ensureAreaIsValid(getInputValue(formData, "area"), WEEKLY_AREAS, "Área");
-    const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
+    const etapa = getInputValue(formData, "etapa");
     const assinaturaResponsavel = getInputValue(formData, "assinaturaResponsavel");
     const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
-    const status = parseWeeklyStatus(getInputValue(formData, "status"));
 
-    if (!itemId) {
-      throw new Error("Selecione um item válido.");
-    }
-    ensureNonEmpty(assinaturaResponsavel, "Assinatura do Responsável");
-    ensureNonEmpty(assinaturaSupervisor, "Assinatura do Supervisor");
-    if (!status) {
-      throw new Error("Selecione um status válido.");
+    const etapaPermitida = getWeeklySignStage(existing);
+    if (!etapaPermitida) {
+      throw new Error("Este checklist não está disponível para nova assinatura.");
     }
 
-    const item = await prisma.planoLimpezaSemanalItem.findUnique({
-      where: { id: itemId }
-    });
-
-    if (!item) {
-      throw new Error("Item semanal não encontrado.");
-    }
-    if (item.area !== area) {
-      throw new Error("O item selecionado não pertence à área informada.");
+    if (etapa !== etapaPermitida) {
+      throw new Error("A etapa de assinatura informada é inválida para este checklist.");
     }
 
-    await prisma.planoLimpezaSemanalExecucao.update({
-      where: { id },
-      data: {
-        area,
-        itemId,
-        assinaturaResponsavel,
-        assinaturaSupervisor,
-        status: status as StatusPlanoLimpeza
+    if (etapaPermitida === "responsavel") {
+      if (!assinaturaResponsavel) {
+        throw new Error("Informe a assinatura do responsável pela limpeza.");
       }
-    });
+
+      if (assinaturaSupervisor) {
+        throw new Error(
+          "A assinatura do supervisor deve ser realizada em etapa posterior."
+        );
+      }
+
+      await prisma.planoLimpezaSemanalExecucao.update({
+        where: { id },
+        data: {
+          assinaturaResponsavel,
+          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
+        }
+      });
+    } else {
+      if (!existing.assinaturaResponsavel) {
+        throw new Error("A assinatura do responsável é obrigatória antes da assinatura do supervisor.");
+      }
+
+      if (!assinaturaSupervisor) {
+        throw new Error("Informe a assinatura do supervisor.");
+      }
+
+      if (assinaturaResponsavel) {
+        throw new Error(
+          "A assinatura do supervisor deve ser feita sem alterar a assinatura do responsável."
+        );
+      }
+
+      await prisma.planoLimpezaSemanalExecucao.update({
+        where: { id },
+        data: {
+          assinaturaSupervisor,
+          status: StatusPlanoLimpeza.CONCLUIDO
+        }
+      });
+    }
 
     revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Execução Semanal Atualizada com Sucesso.");
+    redirectWithFeedback(returnTo, "success", "Checklist Semanal Assinado com Sucesso.");
   } catch (error) {
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
 
-export async function deleteWeeklyExecutionAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, SEMANAL_PATH);
+async function normalizeWeeklyOrderForArea(
+  tx: Prisma.TransactionClient,
+  area: string
+) {
+  const items = await tx.planoLimpezaSemanalItem.findMany({
+    where: { area },
+    orderBy: [{ ordem: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, ordem: true }
+  });
 
-  try {
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Execução semanal inválida para exclusão.");
+  for (const [index, item] of items.entries()) {
+    const expectedOrder = index + 1;
+    if (item.ordem === expectedOrder) {
+      continue;
     }
 
-    const existing = await prisma.planoLimpezaSemanalExecucao.findUnique({
-      where: { id }
+    await tx.planoLimpezaSemanalItem.update({
+      where: { id: item.id },
+      data: { ordem: expectedOrder }
     });
+  }
+}
 
-    if (!existing) {
-      throw new Error("Execução semanal não encontrada.");
-    }
-
-    const period = getMonthYear(existing.dataExecucao);
-    if (await isMonthSigned(TipoPlanoLimpeza.SEMANAL, period.mes, period.ano)) {
-      throw new Error("Esta execução pertence a um período fechado e não pode ser excluída.");
-    }
-
-    await prisma.planoLimpezaSemanalExecucao.delete({
-      where: { id }
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Execução Semanal Excluída com Sucesso.");
-  } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+async function normalizeWeeklyOrderForAreas(
+  tx: Prisma.TransactionClient,
+  areas: string[]
+) {
+  for (const area of new Set(areas)) {
+    await normalizeWeeklyOrderForArea(tx, area);
   }
 }
 
@@ -571,26 +533,32 @@ export async function createWeeklyConfigItemAction(formData: FormData) {
   try {
     const area = ensureAreaIsValid(getInputValue(formData, "area"), WEEKLY_AREAS, "Área");
     const oQueLimpar = getInputValue(formData, "oQueLimpar");
-    const qualProduto = getInputValue(formData, "qualProduto");
-    const quando = getInputValue(formData, "quando");
     const quem = getInputValue(formData, "quem");
     const ordem = parsePositiveInt(getInputValue(formData, "ordem")) ?? 1;
+    const ativo = getInputValue(formData, "ativo") !== "false";
+    const qualProduto = getInputValue(formData, "qualProduto") || "-";
+    const quandoSelecionado = parseWeeklyDay(getInputValue(formData, "quando"));
 
     ensureNonEmpty(oQueLimpar, "O que limpar");
-    ensureNonEmpty(qualProduto, "Qual produto");
-    ensureNonEmpty(quando, "Quando");
     ensureNonEmpty(quem, "Quem");
+    if (!quandoSelecionado) {
+      throw new Error("Selecione um dia da semana válido.");
+    }
 
-    await prisma.planoLimpezaSemanalItem.create({
-      data: {
-        area,
-        oQueLimpar,
-        qualProduto,
-        quando,
-        quem,
-        ordem,
-        ativo: true
-      }
+    await prisma.$transaction(async (tx) => {
+      await tx.planoLimpezaSemanalItem.create({
+        data: {
+          area,
+          oQueLimpar,
+          qualProduto,
+          quando: quandoSelecionado,
+          quem,
+          ordem,
+          ativo
+        }
+      });
+
+      await normalizeWeeklyOrderForArea(tx, area);
     });
 
     revalidateModulePaths();
@@ -619,28 +587,33 @@ export async function updateWeeklyConfigItemAction(formData: FormData) {
 
     const area = ensureAreaIsValid(getInputValue(formData, "area"), WEEKLY_AREAS, "Área");
     const oQueLimpar = getInputValue(formData, "oQueLimpar");
-    const qualProduto = getInputValue(formData, "qualProduto");
-    const quando = getInputValue(formData, "quando");
     const quem = getInputValue(formData, "quem");
-    const ordem = parsePositiveInt(getInputValue(formData, "ordem")) ?? 1;
+    const ordem = parsePositiveInt(getInputValue(formData, "ordem")) ?? existing.ordem;
     const ativo = getInputValue(formData, "ativo") === "true";
+    const qualProduto = getInputValue(formData, "qualProduto") || existing.qualProduto || "-";
+    const quandoSelecionado = parseWeeklyDay(getInputValue(formData, "quando"));
 
     ensureNonEmpty(oQueLimpar, "O que limpar");
-    ensureNonEmpty(qualProduto, "Qual produto");
-    ensureNonEmpty(quando, "Quando");
     ensureNonEmpty(quem, "Quem");
+    if (!quandoSelecionado) {
+      throw new Error("Selecione um dia da semana válido.");
+    }
 
-    await prisma.planoLimpezaSemanalItem.update({
-      where: { id: itemId },
-      data: {
-        area,
-        oQueLimpar,
-        qualProduto,
-        quando,
-        quem,
-        ordem,
-        ativo
-      }
+    await prisma.$transaction(async (tx) => {
+      await tx.planoLimpezaSemanalItem.update({
+        where: { id: itemId },
+        data: {
+          area,
+          oQueLimpar,
+          qualProduto,
+          quando: quandoSelecionado,
+          quem,
+          ordem,
+          ativo
+        }
+      });
+
+      await normalizeWeeklyOrderForAreas(tx, [existing.area, area]);
     });
 
     revalidateModulePaths();
@@ -679,6 +652,73 @@ export async function toggleWeeklyConfigItemStatusAction(formData: FormData) {
       returnTo,
       "success",
       ativo ? "Item Ativado com Sucesso." : "Item Inativado com Sucesso."
+    );
+  } catch (error) {
+    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+  }
+}
+
+export async function moveWeeklyConfigItemAction(formData: FormData) {
+  const returnTo = getReturnToPath(formData, SEMANAL_OPCOES_PATH);
+
+  try {
+    const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
+    if (!itemId) {
+      throw new Error("Item semanal inválido para reordenação.");
+    }
+
+    const direction = getInputValue(formData, "direction");
+    if (direction !== "up" && direction !== "down") {
+      throw new Error("Direção de reordenação inválida.");
+    }
+
+    const moved = await prisma.$transaction(async (tx) => {
+      const current = await tx.planoLimpezaSemanalItem.findUnique({
+        where: { id: itemId },
+        select: { id: true, area: true }
+      });
+
+      if (!current) {
+        throw new Error("Item semanal não encontrado.");
+      }
+
+      const items = await tx.planoLimpezaSemanalItem.findMany({
+        where: { area: current.area },
+        orderBy: [{ ordem: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: { id: true }
+      });
+
+      const index = items.findIndex((item) => item.id === itemId);
+      if (index < 0) {
+        throw new Error("Item semanal não encontrado para reordenação.");
+      }
+
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= items.length) {
+        return false;
+      }
+
+      const reordered = [...items];
+      const [currentItem] = reordered.splice(index, 1);
+      reordered.splice(targetIndex, 0, currentItem);
+
+      for (const [orderIndex, item] of reordered.entries()) {
+        await tx.planoLimpezaSemanalItem.update({
+          where: { id: item.id },
+          data: { ordem: orderIndex + 1 }
+        });
+      }
+
+      return true;
+    });
+
+    revalidateModulePaths();
+    redirectWithFeedback(
+      returnTo,
+      "success",
+      moved
+        ? "Ordem do Item Atualizada com Sucesso."
+        : "O Item Já Está no Limite da Reordenação."
     );
   } catch (error) {
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
@@ -816,10 +856,13 @@ export async function closeWeeklyMonthAction(formData: FormData) {
     formData,
     tipo: TipoPlanoLimpeza.SEMANAL,
     returnPath: SEMANAL_PATH,
-    countRecords: async ({ start, end }) =>
-      prisma.planoLimpezaSemanalExecucao.count({
+    countRecords: async ({ start, end }) => {
+      await ensureWeeklyChecklistForDateRange({ start, end });
+
+      return prisma.planoLimpezaSemanalExecucao.count({
         where: { dataExecucao: { gte: start, lte: end } }
-      }),
+      });
+    },
     successLabel: "Plano Semanal"
   });
 }

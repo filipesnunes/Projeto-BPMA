@@ -57,6 +57,19 @@ function createLocalDateOnly(year: number, month: number, day: number): Date {
   return new Date(year, month, day, 0, 0, 0, 0);
 }
 
+function getWeekRangeFromLocalDate(localDate: Date): { startLocal: Date; endLocal: Date } {
+  const dayOfWeek = localDate.getDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const startLocal = new Date(localDate);
+  startLocal.setDate(localDate.getDate() + diffToMonday);
+
+  const endLocal = new Date(startLocal);
+  endLocal.setDate(startLocal.getDate() + 6);
+
+  return { startLocal, endLocal };
+}
+
 function toDatabaseDateOnly(date: Date): Date {
   const localDateOnly = createLocalDateOnly(
     date.getFullYear(),
@@ -172,20 +185,34 @@ export function getCurrentWeekDateRange(referenceDate: Date = new Date()): {
     referenceDate.getMonth(),
     referenceDate.getDate()
   );
-
-  const dayOfWeek = localDate.getDay();
-  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-
-  const startLocal = new Date(localDate);
-  startLocal.setDate(localDate.getDate() + diffToMonday);
-
-  const endLocal = new Date(startLocal);
-  endLocal.setDate(startLocal.getDate() + 6);
+  const { startLocal, endLocal } = getWeekRangeFromLocalDate(localDate);
 
   return {
     start: toDatabaseDateOnly(startLocal),
     end: toDatabaseDateOnly(endLocal)
   };
+}
+
+export function getWeekDateRangeForDate(date: Date): {
+  start: Date;
+  end: Date;
+} {
+  const localDate = fromDatabaseDateOnly(date);
+  const normalizedLocalDate = createLocalDateOnly(
+    localDate.getFullYear(),
+    localDate.getMonth(),
+    localDate.getDate()
+  );
+  const { startLocal, endLocal } = getWeekRangeFromLocalDate(normalizedLocalDate);
+
+  return {
+    start: toDatabaseDateOnly(startLocal),
+    end: toDatabaseDateOnly(endLocal)
+  };
+}
+
+export function getWeekStartDateForDate(date: Date): Date {
+  return getWeekDateRangeForDate(date).start;
 }
 
 export function getYearDateRange(ano: number): { start: Date; end: Date } {

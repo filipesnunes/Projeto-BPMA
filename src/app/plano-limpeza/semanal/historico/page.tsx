@@ -1,16 +1,17 @@
-import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import Link from "next/link";
 
 import { prisma } from "@/lib/prisma";
 
 import { MONTH_OPTIONS, WEEKLY_AREAS, WEEKLY_STATUS_OPTIONS } from "../../constants";
+import { consolidateWeeklyExecutionsByAreaWeek } from "../../service";
 import { StatusBadge } from "../../status-badge";
 import { ThemeToggleButton } from "../../theme-toggle-button";
 import {
   formatDateDisplay,
   formatDateInput,
+  getWeekDateRangeForDate,
   getMonthDateRange,
-  getWeeklyDayLabel,
   getYearDateRange,
   parseDateInput,
   parsePositiveInt,
@@ -33,6 +34,10 @@ function firstParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function includesIgnoreCase(text: string, search: string): boolean {
+  return text.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"));
+}
+
 export default async function PlanoLimpezaSemanalHistoricoPage({
   searchParams
 }: PageProps) {
@@ -48,7 +53,8 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
   const where: Prisma.PlanoLimpezaSemanalExecucaoWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
   if (dataFiltro) {
-    where.dataExecucao = dataFiltro;
+    const weekRange = getWeekDateRangeForDate(dataFiltro);
+    where.dataExecucao = { gte: weekRange.start, lte: weekRange.end };
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
     const range = getMonthDateRange(filtroMes, filtroAno);
     where.dataExecucao = { gte: range.start, lte: range.end };
@@ -57,73 +63,85 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
     where.dataExecucao = { gte: range.start, lte: range.end };
   }
 
-  if (filtroArea) {
-    where.area = filtroArea;
-  }
-  if (filtroStatus) {
-    where.status = filtroStatus as StatusPlanoLimpeza;
-  }
-  if (filtroResponsavel) {
-    where.assinaturaResponsavel = { contains: filtroResponsavel, mode: "insensitive" };
-  }
-  if (filtroItem) {
-    where.item = {
-      oQueLimpar: { contains: filtroItem, mode: "insensitive" }
-    };
-  }
-
   let syncRange: { start: Date; end: Date } | null = null;
   if (dataFiltro) {
-    syncRange = { start: dataFiltro, end: dataFiltro };
+    syncRange = getWeekDateRangeForDate(dataFiltro);
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
     syncRange = getMonthDateRange(filtroMes, filtroAno);
   }
   const syncStart = syncRange ? formatDateInput(syncRange.start) : null;
   const syncEnd = syncRange ? formatDateInput(syncRange.end) : null;
 
-  const [execucoes, areasHistoricas, itensAtivos] = await Promise.all([
+  const [rawRecords, allItems, areasHistoricas] = await Promise.all([
     prisma.planoLimpezaSemanalExecucao.findMany({
       where,
-      include: { item: true },
+      select: {
+        id: true,
+        dataExecucao: true,
+        area: true,
+        assinaturaResponsavel: true,
+        assinaturaSupervisor: true,
+        status: true
+      },
       orderBy: [{ dataExecucao: "desc" }, { createdAt: "desc" }]
+    }),
+    prisma.planoLimpezaSemanalItem.findMany({
+      orderBy: [{ area: "asc" }, { ordem: "asc" }, { oQueLimpar: "asc" }]
     }),
     prisma.planoLimpezaSemanalExecucao.findMany({
       select: { area: true },
       distinct: ["area"],
       orderBy: { area: "asc" }
-    }),
-    prisma.planoLimpezaSemanalItem.count({
-      where: { ativo: true }
     })
   ]);
 
-  const areaOptions = Array.from(
-    new Set([...WEEKLY_AREAS, ...areasHistoricas.map((item) => item.area)])
-  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const activeItems = allItems.filter((item) => item.ativo);
+  const itemCountByArea = new Map<string, number>();
+  for (const item of activeItems) {
+    itemCountByArea.set(item.area, (itemCountByArea.get(item.area) ?? 0) + 1);
+  }
 
-  const execucoesOrdenadas = [...execucoes].sort((a, b) => {
-    const dateDiff = b.dataExecucao.getTime() - a.dataExecucao.getTime();
-    if (dateDiff !== 0) {
-      return dateDiff;
+  const summariesAll = consolidateWeeklyExecutionsByAreaWeek(rawRecords);
+  const filteredByItemAreas =
+    filtroItem.trim().length > 0
+      ? new Set(
+          allItems
+            .filter((item) => includesIgnoreCase(item.oQueLimpar, filtroItem))
+            .map((item) => item.area)
+        )
+      : null;
+
+  const summaries = summariesAll.filter((summary) => {
+    if (filtroArea && summary.area !== filtroArea) {
+      return false;
+    }
+    if (filtroStatus && summary.status !== filtroStatus) {
+      return false;
+    }
+    if (filtroResponsavel && !includesIgnoreCase(summary.assinaturaResponsavel, filtroResponsavel)) {
+      return false;
+    }
+    if (filteredByItemAreas && !filteredByItemAreas.has(summary.area)) {
+      return false;
     }
 
-    if (a.area !== b.area) {
-      return a.area.localeCompare(b.area, "pt-BR");
-    }
-
-    if (a.item.ordem !== b.item.ordem) {
-      return a.item.ordem - b.item.ordem;
-    }
-
-    return a.item.oQueLimpar.localeCompare(b.item.oQueLimpar, "pt-BR");
+    return true;
   });
+
+  const areaOptions = Array.from(
+    new Set([
+      ...WEEKLY_AREAS,
+      ...allItems.map((item) => item.area),
+      ...areasHistoricas.map((item) => item.area)
+    ])
+  ).sort((a, b) => a.localeCompare(b, "pt-BR"));
 
   return (
     <div className="space-y-6 dark:text-slate-100">
       <WeeklyChecklistSync
         startDate={syncStart}
         endDate={syncEnd}
-        enabled={itensAtivos > 0 && Boolean(syncStart && syncEnd)}
+        enabled={activeItems.length > 0 && Boolean(syncStart && syncEnd)}
       />
 
       <section className={CARD_CLASS}>
@@ -133,7 +151,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
               Histórico do Plano Semanal
             </h1>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Consulta completa dos checklists automáticos por área e item.
+              Visualização histórica por área, com detalhamento interno dos itens configurados.
             </p>
           </div>
           <div className="btn-group">
@@ -212,74 +230,39 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
 
       <section className={CARD_CLASS}>
         <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Registros ({execucoesOrdenadas.length})
+          Execuções por Área ({summaries.length})
         </h2>
-
-        <div className="space-y-3 md:hidden">
-          {execucoesOrdenadas.length === 0 ? (
-            <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              Nenhum registro encontrado.
-            </div>
-          ) : (
-            execucoesOrdenadas.map((execucao) => (
-              <article key={execucao.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  {formatDateDisplay(execucao.dataExecucao)}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {execucao.area}
-                </p>
-                <p className="text-sm text-slate-700 dark:text-slate-200">{execucao.item.oQueLimpar}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {getWeeklyDayLabel(execucao.item.quando)} • {execucao.item.quem}
-                </p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Responsável: {execucao.assinaturaResponsavel || "-"}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Supervisor: {execucao.assinaturaSupervisor || "-"}
-                </p>
-                <div className="mt-2">
-                  <StatusBadge status={execucao.status} />
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-
-        <div className="hidden overflow-x-auto md:block">
+        <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
               <tr>
-                <th className="px-3 py-2">Data</th>
+                <th className="px-3 py-2">Semana</th>
                 <th className="px-3 py-2">Área</th>
-                <th className="px-3 py-2">O que limpar</th>
-                <th className="px-3 py-2">Quando limpar</th>
-                <th className="px-3 py-2">Quem</th>
+                <th className="px-3 py-2">Itens Configurados</th>
                 <th className="px-3 py-2">Responsável</th>
                 <th className="px-3 py-2">Supervisor</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Status Geral</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {execucoesOrdenadas.length === 0 ? (
+              {summaries.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-3 text-slate-500 dark:text-slate-400">
-                    Nenhum registro encontrado.
+                  <td colSpan={6} className="px-3 py-3 text-slate-500 dark:text-slate-400">
+                    Nenhuma execução encontrada.
                   </td>
                 </tr>
               ) : (
-                execucoesOrdenadas.map((execucao) => (
-                  <tr key={execucao.id}>
-                    <td className="px-3 py-2">{formatDateDisplay(execucao.dataExecucao)}</td>
-                    <td className="px-3 py-2">{execucao.area}</td>
-                    <td className="px-3 py-2">{execucao.item.oQueLimpar}</td>
-                    <td className="px-3 py-2">{getWeeklyDayLabel(execucao.item.quando)}</td>
-                    <td className="px-3 py-2">{execucao.item.quem}</td>
-                    <td className="px-3 py-2">{execucao.assinaturaResponsavel || "-"}</td>
-                    <td className="px-3 py-2">{execucao.assinaturaSupervisor || "-"}</td>
+                summaries.map((summary) => (
+                  <tr key={`${summary.area}-${formatDateInput(summary.weekStart)}`}>
                     <td className="px-3 py-2">
-                      <StatusBadge status={execucao.status} />
+                      {formatDateDisplay(summary.weekStart)} até {formatDateDisplay(summary.weekEnd)}
+                    </td>
+                    <td className="px-3 py-2">{summary.area}</td>
+                    <td className="px-3 py-2">{itemCountByArea.get(summary.area) ?? 0}</td>
+                    <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
+                    <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
+                    <td className="px-3 py-2">
+                      <StatusBadge status={summary.status} />
                     </td>
                   </tr>
                 ))

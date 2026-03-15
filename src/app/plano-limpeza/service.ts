@@ -24,6 +24,10 @@ function weeklyAreaKey(area: string, weekStart: Date): string {
   return `${area}|${formatDateInput(weekStart)}`;
 }
 
+function weeklyItemKey(weekStart: Date, itemId: number): string {
+  return `${formatDateInput(weekStart)}|${itemId}`;
+}
+
 function enumerateDateRange(start: Date, end: Date): Date[] {
   const dates: Date[] = [];
   const cursor = new Date(start);
@@ -216,17 +220,28 @@ export async function ensureWeeklyChecklistForDateRange(params: {
   return prisma.$transaction(async (tx) => {
     const activeItems = await tx.planoLimpezaSemanalItem.findMany({
       where: { ativo: true },
+      select: { id: true, area: true },
       orderBy: [{ area: "asc" }, { ordem: "asc" }, { oQueLimpar: "asc" }]
     });
+    const activeItemById = new Map(activeItems.map((item) => [item.id, item]));
+    const desiredCombinations = new Map<
+      string,
+      {
+        weekStart: Date;
+        itemId: number;
+        area: string;
+      }
+    >();
 
-    const areaRepresentativeItem = new Map<string, number>();
-    for (const item of activeItems) {
-      if (!areaRepresentativeItem.has(item.area)) {
-        areaRepresentativeItem.set(item.area, item.id);
+    for (const weekStart of openWeekStarts) {
+      for (const item of activeItems) {
+        desiredCombinations.set(weeklyItemKey(weekStart, item.id), {
+          weekStart,
+          itemId: item.id,
+          area: item.area
+        });
       }
     }
-    const activeAreas = Array.from(areaRepresentativeItem.keys());
-    const activeAreaSet = new Set(activeAreas);
 
     const existing = await tx.planoLimpezaSemanalExecucao.findMany({
       where: {
@@ -247,7 +262,7 @@ export async function ensureWeeklyChecklistForDateRange(params: {
     });
 
     type WeeklyRecord = (typeof existing)[number] & { weekStart: Date };
-    const groupedByAreaWeek = new Map<string, WeeklyRecord[]>();
+    const groupedByWeekItem = new Map<string, WeeklyRecord[]>();
 
     for (const record of existing) {
       const weekStart = getWeekStartDateForDate(record.dataExecucao);
@@ -256,12 +271,12 @@ export async function ensureWeeklyChecklistForDateRange(params: {
         continue;
       }
 
-      const key = weeklyAreaKey(record.area, weekStart);
-      if (!groupedByAreaWeek.has(key)) {
-        groupedByAreaWeek.set(key, []);
+      const key = weeklyItemKey(weekStart, record.itemId);
+      if (!groupedByWeekItem.has(key)) {
+        groupedByWeekItem.set(key, []);
       }
 
-      groupedByAreaWeek.get(key)!.push({ ...record, weekStart });
+      groupedByWeekItem.get(key)!.push({ ...record, weekStart });
     }
 
     const isPendingWithoutSignatures = (record: WeeklyRecord): boolean =>
@@ -272,9 +287,8 @@ export async function ensureWeeklyChecklistForDateRange(params: {
     let removedCount = 0;
     let createdCount = 0;
 
-    for (const [key, records] of groupedByAreaWeek.entries()) {
-      const area = records[0]?.area;
-      if (!area || activeAreaSet.has(area)) {
+    for (const [key, records] of groupedByWeekItem.entries()) {
+      if (desiredCombinations.has(key)) {
         continue;
       }
 
@@ -289,74 +303,59 @@ export async function ensureWeeklyChecklistForDateRange(params: {
         where: { id: { in: deletableIds } }
       });
       removedCount += deletableIds.length;
-      groupedByAreaWeek.set(
+      groupedByWeekItem.set(
         key,
         records.filter((record) => !deletableIds.includes(record.id))
       );
     }
 
-    for (const weekStart of openWeekStarts) {
-      for (const area of activeAreas) {
-        const representativeItemId = areaRepresentativeItem.get(area);
-        if (!representativeItemId) {
-          continue;
+    for (const desired of desiredCombinations.values()) {
+      const key = weeklyItemKey(desired.weekStart, desired.itemId);
+      const records = [...(groupedByWeekItem.get(key) ?? [])].sort((a, b) => a.id - b.id);
+
+      if (records.length === 0) {
+        await tx.planoLimpezaSemanalExecucao.create({
+          data: {
+            dataExecucao: desired.weekStart,
+            area: desired.area,
+            itemId: desired.itemId,
+            assinaturaResponsavel: "",
+            assinaturaSupervisor: "",
+            status: StatusPlanoLimpeza.PENDENTE
+          }
+        });
+        createdCount += 1;
+        continue;
+      }
+
+      const keeper =
+        records.find((record) => !isPendingWithoutSignatures(record)) ?? records[0];
+      const duplicatesToDelete = records
+        .filter((record) => record.id !== keeper.id && isPendingWithoutSignatures(record))
+        .map((record) => record.id);
+      if (duplicatesToDelete.length > 0) {
+        await tx.planoLimpezaSemanalExecucao.deleteMany({
+          where: { id: { in: duplicatesToDelete } }
+        });
+        removedCount += duplicatesToDelete.length;
+      }
+
+      if (isPendingWithoutSignatures(keeper)) {
+        const updateData: Prisma.PlanoLimpezaSemanalExecucaoUncheckedUpdateInput = {};
+        const expectedItem = activeItemById.get(desired.itemId);
+
+        if (expectedItem && keeper.area !== expectedItem.area) {
+          updateData.area = expectedItem.area;
+        }
+        if (keeper.weekStart.getTime() !== desired.weekStart.getTime()) {
+          updateData.dataExecucao = desired.weekStart;
         }
 
-        const key = weeklyAreaKey(area, weekStart);
-        const records = [...(groupedByAreaWeek.get(key) ?? [])].sort((a, b) => a.id - b.id);
-
-        if (records.length === 0) {
-          await tx.planoLimpezaSemanalExecucao.create({
-            data: {
-              dataExecucao: weekStart,
-              area,
-              itemId: representativeItemId,
-              assinaturaResponsavel: "",
-              assinaturaSupervisor: "",
-              status: StatusPlanoLimpeza.PENDENTE
-            }
+        if (Object.keys(updateData).length > 0) {
+          await tx.planoLimpezaSemanalExecucao.update({
+            where: { id: keeper.id },
+            data: updateData
           });
-          createdCount += 1;
-          continue;
-        }
-
-        const keeper =
-          records.find(
-            (record) =>
-              record.status !== StatusPlanoLimpeza.PENDENTE ||
-              record.assinaturaResponsavel.trim().length > 0 ||
-              record.assinaturaSupervisor.trim().length > 0
-          ) ?? records[0];
-
-        const duplicatesToDelete = records
-          .filter((record) => record.id !== keeper.id && isPendingWithoutSignatures(record))
-          .map((record) => record.id);
-        if (duplicatesToDelete.length > 0) {
-          await tx.planoLimpezaSemanalExecucao.deleteMany({
-            where: { id: { in: duplicatesToDelete } }
-          });
-          removedCount += duplicatesToDelete.length;
-        }
-
-        if (isPendingWithoutSignatures(keeper)) {
-          const updateData: Prisma.PlanoLimpezaSemanalExecucaoUncheckedUpdateInput = {};
-
-          if (keeper.itemId !== representativeItemId) {
-            updateData.itemId = representativeItemId;
-          }
-          if (keeper.area !== area) {
-            updateData.area = area;
-          }
-          if (keeper.weekStart.getTime() !== weekStart.getTime()) {
-            updateData.dataExecucao = weekStart;
-          }
-
-          if (Object.keys(updateData).length > 0) {
-            await tx.planoLimpezaSemanalExecucao.update({
-              where: { id: keeper.id },
-              data: updateData
-            });
-          }
         }
       }
     }
@@ -403,19 +402,11 @@ export function getWeeklySignStage(record: {
   const hasResponsavel = record.assinaturaResponsavel.trim().length > 0;
   const hasSupervisor = record.assinaturaSupervisor.trim().length > 0;
 
-  if (
-    record.status === StatusPlanoLimpeza.PENDENTE &&
-    !hasResponsavel &&
-    !hasSupervisor
-  ) {
+  if (!hasResponsavel && !hasSupervisor) {
     return "responsavel";
   }
 
-  if (
-    record.status === StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR &&
-    hasResponsavel &&
-    !hasSupervisor
-  ) {
+  if (hasResponsavel && !hasSupervisor) {
     return "supervisor";
   }
 
@@ -439,6 +430,7 @@ export type WeeklyExecutionSummary = {
   assinaturaResponsavel: string;
   assinaturaSupervisor: string;
   status: StatusPlanoLimpeza;
+  statusGeral: "Pendente" | "Parcial" | "Aguardando Supervisor" | "Concluído";
   totalRegistrosOriginais: number;
   recordIds: number[];
 };
@@ -447,54 +439,73 @@ function consolidateWeeklyStatus(records: WeeklyExecutionForSummary[]): {
   assinaturaResponsavel: string;
   assinaturaSupervisor: string;
   status: StatusPlanoLimpeza;
+  statusGeral: "Pendente" | "Parcial" | "Aguardando Supervisor" | "Concluído";
 } {
-  const assinaturaResponsavel =
-    records.find((record) => record.assinaturaResponsavel.trim().length > 0)
-      ?.assinaturaResponsavel ?? "";
-  const assinaturaSupervisor =
-    records.find((record) => record.assinaturaSupervisor.trim().length > 0)
-      ?.assinaturaSupervisor ?? "";
-
-  if (assinaturaSupervisor.trim().length > 0) {
-    return {
-      assinaturaResponsavel,
-      assinaturaSupervisor,
-      status: StatusPlanoLimpeza.CONCLUIDO
-    };
-  }
-
-  if (assinaturaResponsavel.trim().length > 0) {
-    return {
-      assinaturaResponsavel,
-      assinaturaSupervisor,
-      status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
-    };
-  }
-
-  if (records.some((record) => record.status === StatusPlanoLimpeza.CONCLUIDO)) {
-    return {
-      assinaturaResponsavel,
-      assinaturaSupervisor,
-      status: StatusPlanoLimpeza.CONCLUIDO
-    };
-  }
-
-  if (
-    records.some(
-      (record) => record.status === StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
+  const responsaveis = Array.from(
+    new Set(
+      records
+        .map((record) => record.assinaturaResponsavel.trim())
+        .filter((value) => value.length > 0)
     )
-  ) {
+  );
+  const supervisores = Array.from(
+    new Set(
+      records
+        .map((record) => record.assinaturaSupervisor.trim())
+        .filter((value) => value.length > 0)
+    )
+  );
+
+  const assinaturaResponsavel =
+    responsaveis.length <= 1 ? (responsaveis[0] ?? "") : "Múltiplos";
+  const assinaturaSupervisor =
+    supervisores.length <= 1 ? (supervisores[0] ?? "") : "Múltiplos";
+
+  const itemStatuses = records.map((record) => {
+    const hasResponsavel = record.assinaturaResponsavel.trim().length > 0;
+    const hasSupervisor = record.assinaturaSupervisor.trim().length > 0;
+
+    if (hasResponsavel && hasSupervisor) {
+      return StatusPlanoLimpeza.CONCLUIDO;
+    }
+    if (hasResponsavel) {
+      return StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR;
+    }
+    return record.status;
+  });
+
+  if (itemStatuses.every((status) => status === StatusPlanoLimpeza.CONCLUIDO)) {
     return {
       assinaturaResponsavel,
       assinaturaSupervisor,
-      status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
+      status: StatusPlanoLimpeza.CONCLUIDO,
+      statusGeral: "Concluído"
+    };
+  }
+
+  if (itemStatuses.every((status) => status === StatusPlanoLimpeza.PENDENTE)) {
+    return {
+      assinaturaResponsavel,
+      assinaturaSupervisor,
+      status: StatusPlanoLimpeza.PENDENTE,
+      statusGeral: "Pendente"
+    };
+  }
+
+  if (itemStatuses.every((status) => status !== StatusPlanoLimpeza.PENDENTE)) {
+    return {
+      assinaturaResponsavel,
+      assinaturaSupervisor,
+      status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
+      statusGeral: "Aguardando Supervisor"
     };
   }
 
   return {
     assinaturaResponsavel,
     assinaturaSupervisor,
-    status: StatusPlanoLimpeza.PENDENTE
+    status: StatusPlanoLimpeza.PENDENTE,
+    statusGeral: "Parcial"
   };
 }
 
@@ -542,6 +553,7 @@ export function consolidateWeeklyExecutionsByAreaWeek(
       assinaturaResponsavel: consolidated.assinaturaResponsavel,
       assinaturaSupervisor: consolidated.assinaturaSupervisor,
       status: consolidated.status,
+      statusGeral: consolidated.statusGeral,
       totalRegistrosOriginais: records.length,
       recordIds: records.map((record) => record.id)
     });

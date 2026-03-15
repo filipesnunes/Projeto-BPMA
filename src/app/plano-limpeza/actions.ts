@@ -24,7 +24,6 @@ import {
   getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
-  getWeekDateRangeForDate,
   parseDateInput,
   parseWeeklyDay,
   parsePositiveInt
@@ -439,62 +438,10 @@ export async function updateWeeklyRecordAction(formData: FormData) {
     const assinaturaResponsavel = getInputValue(formData, "assinaturaResponsavel");
     const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
 
-    const weekRange = getWeekDateRangeForDate(existing.dataExecucao);
-    const recordsFromAreaWeek = await prisma.planoLimpezaSemanalExecucao.findMany({
-      where: {
-        area: existing.area,
-        dataExecucao: {
-          gte: weekRange.start,
-          lte: weekRange.end
-        }
-      },
-      select: {
-        id: true,
-        dataExecucao: true,
-        area: true,
-        assinaturaResponsavel: true,
-        assinaturaSupervisor: true,
-        status: true
-      }
-    });
-    if (recordsFromAreaWeek.length === 0) {
-      throw new Error("Nenhum registro semanal da área foi encontrado para esta semana.");
-    }
-
-    const periodMap = new Map<string, { mes: number; ano: number }>();
-    for (const record of recordsFromAreaWeek) {
-      const period = getMonthYear(record.dataExecucao);
-      periodMap.set(`${period.ano}-${period.mes}`, period);
-    }
-    const signedPeriods = periodMap.size
-      ? await prisma.planoLimpezaFechamento.findMany({
-          where: {
-            tipo: TipoPlanoLimpeza.SEMANAL,
-            status: StatusFechamentoPlanoLimpeza.ASSINADO,
-            OR: Array.from(periodMap.values()).map((period) => ({
-              mes: period.mes,
-              ano: period.ano
-            }))
-          }
-        })
-      : [];
-    if (signedPeriods.length > 0) {
-      throw new Error("Esta execução pertence a um período fechado e não pode ser alterada.");
-    }
-
-    const summary = consolidateWeeklyExecutionsByAreaWeek(recordsFromAreaWeek).find(
-      (item) =>
-        item.area === existing.area &&
-        item.weekStart.getTime() === weekRange.start.getTime()
-    );
-    if (!summary) {
-      throw new Error("Não foi possível consolidar a execução semanal da área.");
-    }
-
     const etapaPermitida = getWeeklySignStage({
-      status: summary.status,
-      assinaturaResponsavel: summary.assinaturaResponsavel,
-      assinaturaSupervisor: summary.assinaturaSupervisor
+      status: existing.status,
+      assinaturaResponsavel: existing.assinaturaResponsavel,
+      assinaturaSupervisor: existing.assinaturaSupervisor
     });
     if (!etapaPermitida) {
       throw new Error("Este checklist não está disponível para nova assinatura.");
@@ -515,15 +462,15 @@ export async function updateWeeklyRecordAction(formData: FormData) {
         );
       }
 
-      await prisma.planoLimpezaSemanalExecucao.updateMany({
-        where: { id: { in: summary.recordIds } },
+      await prisma.planoLimpezaSemanalExecucao.update({
+        where: { id },
         data: {
           assinaturaResponsavel,
           status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
         }
       });
     } else {
-      if (!summary.assinaturaResponsavel) {
+      if (!existing.assinaturaResponsavel.trim()) {
         throw new Error("A assinatura do responsável é obrigatória antes da assinatura do supervisor.");
       }
 
@@ -537,8 +484,8 @@ export async function updateWeeklyRecordAction(formData: FormData) {
         );
       }
 
-      await prisma.planoLimpezaSemanalExecucao.updateMany({
-        where: { id: { in: summary.recordIds } },
+      await prisma.planoLimpezaSemanalExecucao.update({
+        where: { id },
         data: {
           assinaturaSupervisor,
           status: StatusPlanoLimpeza.CONCLUIDO

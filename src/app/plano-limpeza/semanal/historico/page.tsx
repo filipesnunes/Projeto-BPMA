@@ -96,10 +96,6 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
   ]);
 
   const activeItems = allItems.filter((item) => item.ativo);
-  const itemCountByArea = new Map<string, number>();
-  for (const item of activeItems) {
-    itemCountByArea.set(item.area, (itemCountByArea.get(item.area) ?? 0) + 1);
-  }
 
   const summariesAll = consolidateWeeklyExecutionsByAreaWeek(rawRecords);
   const filteredByItemAreas =
@@ -258,11 +254,11 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                       {formatDateDisplay(summary.weekStart)} até {formatDateDisplay(summary.weekEnd)}
                     </td>
                     <td className="px-3 py-2">{summary.area}</td>
-                    <td className="px-3 py-2">{itemCountByArea.get(summary.area) ?? 0}</td>
+                    <td className="px-3 py-2">{summary.totalRegistrosOriginais}</td>
                     <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
                     <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
                     <td className="px-3 py-2">
-                      <StatusBadge status={summary.status} />
+                      <StatusBadge status={summary.statusGeral} />
                     </td>
                   </tr>
                 ))

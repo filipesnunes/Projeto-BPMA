@@ -138,18 +138,6 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
   ]);
 
   const activeItems = allItems.filter((item) => item.ativo);
-  const itemsByArea = new Map<string, typeof activeItems>();
-  for (const item of activeItems) {
-    if (!itemsByArea.has(item.area)) {
-      itemsByArea.set(item.area, []);
-    }
-    itemsByArea.get(item.area)!.push(item);
-  }
-  const itemCountByArea = new Map<string, number>();
-  for (const [area, items] of itemsByArea.entries()) {
-    itemCountByArea.set(area, items.length);
-  }
-
   const summariesAll = consolidateWeeklyExecutionsByAreaWeek(rawExecutions);
   const filteredByItemAreas =
     filtroItem.trim().length > 0
@@ -187,15 +175,35 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
 
   const signId = parsePositiveInt(firstParam(params.signId));
   const executionParaAssinatura = signId
-    ? summariesAll.find((summary) => summary.executionId === signId) ?? null
+    ? summariesAll.find((summary) => summary.recordIds.includes(signId)) ?? null
     : null;
-  const etapaAssinatura = executionParaAssinatura
-    ? getWeeklySignStage({
-        status: executionParaAssinatura.status,
-        assinaturaResponsavel: executionParaAssinatura.assinaturaResponsavel,
-        assinaturaSupervisor: executionParaAssinatura.assinaturaSupervisor
+  const executionItemsParaAssinatura = executionParaAssinatura
+    ? await prisma.planoLimpezaSemanalExecucao.findMany({
+        where: {
+          area: executionParaAssinatura.area,
+          dataExecucao: {
+            gte: executionParaAssinatura.weekStart,
+            lte: executionParaAssinatura.weekEnd
+          }
+        },
+        select: {
+          id: true,
+          status: true,
+          assinaturaResponsavel: true,
+          assinaturaSupervisor: true,
+          item: {
+            select: {
+              id: true,
+              ordem: true,
+              oQueLimpar: true,
+              quando: true,
+              quem: true
+            }
+          }
+        },
+        orderBy: [{ item: { ordem: "asc" } }, { id: "asc" }]
       })
-    : null;
+    : [];
 
   const fechamentoMesRaw = parsePositiveInt(firstParam(params.fechamentoMes));
   const fechamentoAnoRaw = parsePositiveInt(firstParam(params.fechamentoAno));
@@ -430,11 +438,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
             summaries.map((summary) => {
               const period = getMonthYear(summary.weekStart);
               const bloqueado = fechadosSet.has(periodKey(period.mes, period.ano));
-              const etapa = getWeeklySignStage({
-                status: summary.status,
-                assinaturaResponsavel: summary.assinaturaResponsavel,
-                assinaturaSupervisor: summary.assinaturaSupervisor
-              });
+              const podeAssinar = summary.statusGeral !== "Concluído";
               const hrefAssinar = (() => {
                 const q = new URLSearchParams(paramsRetorno);
                 q.set("signId", String(summary.executionId));
@@ -450,7 +454,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                     {summary.area}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {itemCountByArea.get(summary.area) ?? 0} item(ns) configurado(s)
+                    {summary.totalRegistrosOriginais} item(ns) na semana
                   </p>
                   <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                     Responsável: {summary.assinaturaResponsavel || "-"}
@@ -459,12 +463,12 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                     Supervisor: {summary.assinaturaSupervisor || "-"}
                   </p>
                   <div className="mt-2">
-                    <StatusBadge status={summary.status} />
+                    <StatusBadge status={summary.statusGeral} />
                   </div>
                   <div className="mt-3">
                     {bloqueado ? (
                       <span className="text-xs text-slate-500 dark:text-slate-400">Bloqueado</span>
-                    ) : etapa ? (
+                    ) : podeAssinar ? (
                       <Link href={hrefAssinar} className="btn-action">
                         Abrir Área
                       </Link>
@@ -502,11 +506,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                 summaries.map((summary) => {
                   const period = getMonthYear(summary.weekStart);
                   const bloqueado = fechadosSet.has(periodKey(period.mes, period.ano));
-                  const etapa = getWeeklySignStage({
-                    status: summary.status,
-                    assinaturaResponsavel: summary.assinaturaResponsavel,
-                    assinaturaSupervisor: summary.assinaturaSupervisor
-                  });
+                  const podeAssinar = summary.statusGeral !== "Concluído";
                   const hrefAssinar = (() => {
                     const q = new URLSearchParams(paramsRetorno);
                     q.set("signId", String(summary.executionId));
@@ -519,16 +519,16 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                         {formatDateDisplay(summary.weekStart)} até {formatDateDisplay(summary.weekEnd)}
                       </td>
                       <td className="px-3 py-2">{summary.area}</td>
-                      <td className="px-3 py-2">{itemCountByArea.get(summary.area) ?? 0}</td>
+                      <td className="px-3 py-2">{summary.totalRegistrosOriginais}</td>
                       <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
                       <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
                       <td className="px-3 py-2">
-                        <StatusBadge status={summary.status} />
+                        <StatusBadge status={summary.statusGeral} />
                       </td>
                       <td className="px-3 py-2">
                         {bloqueado ? (
                           <span className="text-xs text-slate-500 dark:text-slate-400">Bloqueado</span>
-                        ) : etapa ? (
+                        ) : podeAssinar ? (
                           <Link href={hrefAssinar} className="btn-action">
                             Abrir Área
                           </Link>
@@ -610,9 +610,9 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                         {formatDateDisplay(summary.weekStart)} até {formatDateDisplay(summary.weekEnd)}
                       </td>
                       <td className="px-3 py-2">{summary.area}</td>
-                      <td className="px-3 py-2">{itemCountByArea.get(summary.area) ?? 0}</td>
+                      <td className="px-3 py-2">{summary.totalRegistrosOriginais}</td>
                       <td className="px-3 py-2">
-                        <StatusBadge status={summary.status} />
+                        <StatusBadge status={summary.statusGeral} />
                       </td>
                       <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
                       <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
@@ -668,13 +668,27 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
         </div>
       </section>
 
-      {executionParaAssinatura && etapaAssinatura && !assinaturaBloqueadaPorFechamento ? (
+      {executionParaAssinatura &&
+      executionItemsParaAssinatura.length > 0 &&
+      !assinaturaBloqueadaPorFechamento ? (
         <WeeklySignChecklistModal
           closeHref={returnTo}
           returnTo={returnTo}
           execution={executionParaAssinatura}
-          items={itemsByArea.get(executionParaAssinatura.area) ?? []}
-          etapa={etapaAssinatura}
+          items={executionItemsParaAssinatura.map((executionItem) => ({
+            id: executionItem.id,
+            status: executionItem.status,
+            assinaturaResponsavel: executionItem.assinaturaResponsavel,
+            assinaturaSupervisor: executionItem.assinaturaSupervisor,
+            etapa: getWeeklySignStage(executionItem),
+            item: {
+              id: executionItem.item.id,
+              ordem: executionItem.item.ordem,
+              oQueLimpar: executionItem.item.oQueLimpar,
+              quando: executionItem.item.quando,
+              quem: executionItem.item.quem
+            }
+          }))}
         />
       ) : null}
     </div>

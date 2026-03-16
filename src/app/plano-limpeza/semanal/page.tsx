@@ -456,12 +456,6 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                   <p className="text-xs text-slate-500 dark:text-slate-400">
                     {summary.totalRegistrosOriginais} item(ns) na semana
                   </p>
-                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    Responsável: {summary.assinaturaResponsavel || "-"}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Supervisor: {summary.assinaturaSupervisor || "-"}
-                  </p>
                   <div className="mt-2">
                     <StatusBadge status={summary.statusGeral} />
                   </div>
@@ -489,8 +483,6 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                 <th className="px-3 py-2">Semana</th>
                 <th className="px-3 py-2">Área</th>
                 <th className="px-3 py-2">Itens Configurados</th>
-                <th className="px-3 py-2">Responsável</th>
-                <th className="px-3 py-2">Supervisor</th>
                 <th className="px-3 py-2">Status Geral</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -498,7 +490,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {summaries.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-3 text-slate-500 dark:text-slate-400">
+                  <td colSpan={5} className="px-3 py-3 text-slate-500 dark:text-slate-400">
                     Nenhuma execução de área encontrada.
                   </td>
                 </tr>
@@ -520,8 +512,6 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                       </td>
                       <td className="px-3 py-2">{summary.area}</td>
                       <td className="px-3 py-2">{summary.totalRegistrosOriginais}</td>
-                      <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
-                      <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
                       <td className="px-3 py-2">
                         <StatusBadge status={summary.statusGeral} />
                       </td>

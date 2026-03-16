@@ -9,6 +9,14 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentUserForAction } from "@/lib/auth-session";
+import {
+  createSignatureLog,
+  ensureCanCloseMonth,
+  ensureCanManageOptions,
+  ensureCanReopenMonth,
+  validateSignaturePassword
+} from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -93,12 +101,6 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   });
 
   return fechamento?.status === StatusFechamentoTemperaturaEquipamento.ASSINADO;
-}
-
-function canReopenMonthForCurrentUser(): boolean {
-  // Preparado para autorização futura por perfil (ex.: responsável técnico/nutricionista).
-  // Nesta etapa, sem autenticação, a reabertura está permitida em ambiente de testes.
-  return true;
 }
 
 async function getRegistroPayload(formData: FormData) {
@@ -265,6 +267,8 @@ export async function createRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const data = getTodaySystemDate();
     const payload = await getRegistroPayload(formData);
     const { mes, ano } = getMonthYear(data);
@@ -299,6 +303,8 @@ export async function updateRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro inválido para edição.");
@@ -338,6 +344,8 @@ export async function deleteRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro inválido para exclusão.");
@@ -371,17 +379,19 @@ export async function closeMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanCloseMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
-    const responsavelTecnico = getInputValue(formData, "responsavelTecnico");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
-    if (!responsavelTecnico) {
-      throw new Error("Preencha o responsável técnico ou nutricionista.");
-    }
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     const dataAssinatura = getCurrentSystemDateTime();
 
@@ -419,6 +429,12 @@ export async function closeMonthAction(formData: FormData) {
         status: StatusFechamentoTemperaturaEquipamento.ASSINADO
       }
     });
+    await createSignatureLog({
+      user: actor,
+      tipo: "FECHAMENTO_MENSAL",
+      modulo: "controle-temperatura-equipamentos",
+      referenciaId: `${mes}-${ano}`
+    });
 
     revalidateModulePaths();
     redirectWithFeedback(
@@ -435,15 +451,14 @@ export async function reopenMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanReopenMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
-    }
-
-    if (!canReopenMonthForCurrentUser()) {
-      throw new Error("Você não tem permissão para reabrir este mês.");
     }
 
     const fechamento = await prisma.controleTemperaturaEquipamentoFechamento.findUnique({
@@ -479,6 +494,9 @@ export async function createCatalogOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const tipo = parseOptionType(getInputValue(formData, "tipo"));
     const nome = sanitizeCatalogName(getInputValue(formData, "nome"));
 
@@ -524,6 +542,9 @@ export async function updateCatalogOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const optionId = parsePositiveInt(getInputValue(formData, "optionId"));
     if (!optionId) {
       throw new Error("Opção inválida para edição.");
@@ -593,6 +614,9 @@ export async function toggleCatalogOptionStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const optionId = parsePositiveInt(getInputValue(formData, "optionId"));
     if (!optionId) {
       throw new Error("Opção inválida para atualização.");
@@ -628,6 +652,9 @@ export async function updateCategoryParameterAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const parameterId = parsePositiveInt(getInputValue(formData, "parameterId"));
     if (!parameterId) {
       throw new Error("Parâmetro de categoria inválido para edição.");
@@ -717,6 +744,9 @@ export async function createCategoryRuleAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const categoriaId = parsePositiveInt(getInputValue(formData, "categoriaId"));
     if (!categoriaId) {
       throw new Error("Categoria inválida para criar regra.");
@@ -779,6 +809,9 @@ export async function updateCategoryRuleAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const regraId = parsePositiveInt(getInputValue(formData, "regraId"));
     if (!regraId) {
       throw new Error("Regra inválida para edição.");
@@ -845,6 +878,9 @@ export async function toggleCategoryRuleStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const regraId = parsePositiveInt(getInputValue(formData, "regraId"));
     if (!regraId) {
       throw new Error("Regra inválida para atualização.");
@@ -884,6 +920,9 @@ export async function deleteCategoryRuleAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const regraId = parsePositiveInt(getInputValue(formData, "regraId"));
     if (!regraId) {
       throw new Error("Regra inválida para exclusão.");

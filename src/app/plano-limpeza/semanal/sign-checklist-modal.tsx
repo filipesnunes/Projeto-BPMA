@@ -121,15 +121,15 @@ export function WeeklySignChecklistModal({
                       </td>
                       <td className="px-3 py-2">
                         {executionItem.etapa === "responsavel" ? (
-                          <form action={updateWeeklyRecordAction} className="flex min-w-[220px] gap-2">
+                          <form action={updateWeeklyRecordAction} className="flex min-w-[280px] gap-2">
                             <input type="hidden" name="id" value={String(executionItem.id)} />
                             <input type="hidden" name="returnTo" value={returnTo} />
                             <input type="hidden" name="etapa" value="responsavel" />
                             <input
-                              type="text"
-                              name="assinaturaResponsavel"
+                              type="password"
+                              name="senhaConfirmacao"
                               required
-                              placeholder="Assinar como responsável"
+                              placeholder="Confirme sua senha"
                               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                             />
                             <button type="submit" className="btn-primary whitespace-nowrap">
@@ -137,15 +137,15 @@ export function WeeklySignChecklistModal({
                             </button>
                           </form>
                         ) : executionItem.etapa === "supervisor" ? (
-                          <form action={updateWeeklyRecordAction} className="flex min-w-[220px] gap-2">
+                          <form action={updateWeeklyRecordAction} className="flex min-w-[280px] gap-2">
                             <input type="hidden" name="id" value={String(executionItem.id)} />
                             <input type="hidden" name="returnTo" value={returnTo} />
                             <input type="hidden" name="etapa" value="supervisor" />
                             <input
-                              type="text"
-                              name="assinaturaSupervisor"
+                              type="password"
+                              name="senhaConfirmacao"
                               required
-                              placeholder="Assinar como supervisor"
+                              placeholder="Confirme sua senha"
                               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                             />
                             <button type="submit" className="btn-primary whitespace-nowrap">

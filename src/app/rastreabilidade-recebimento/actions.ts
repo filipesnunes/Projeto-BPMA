@@ -10,6 +10,14 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentUserForAction } from "@/lib/auth-session";
+import {
+  createSignatureLog,
+  ensureCanCloseMonth,
+  ensureCanManageOptions,
+  ensureCanReopenMonth,
+  validateSignaturePassword
+} from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -169,12 +177,6 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   });
 
   return fechamento?.status === StatusFechamentoRastreabilidadeRecebimento.ASSINADO;
-}
-
-function canReopenMonthForCurrentUser(): boolean {
-  // Preparado para autorização futura por perfil (ex.: responsável técnico/nutricionista).
-  // Nesta etapa, sem autenticação, a reabertura está permitida em ambiente de testes.
-  return true;
 }
 
 function normalizeText(value: string): string {
@@ -380,6 +382,8 @@ export async function importXmlAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const file = formData.get("xmlFile");
     if (!(file instanceof File)) {
       throw new Error("Selecione um arquivo XML válido.");
@@ -470,6 +474,8 @@ export async function createManualNoteAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const fornecedor = getInputValue(formData, "fornecedor");
     const notaFiscal = getInputValue(formData, "notaFiscal");
 
@@ -537,6 +543,8 @@ export async function saveNotaItemsAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
     if (!notaId) {
       throw new Error("Nota inválida para atualização.");
@@ -617,6 +625,8 @@ export async function finalizeNotaAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
     if (!notaId) {
       throw new Error("Nota inválida para finalização.");
@@ -700,6 +710,8 @@ export async function deleteItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
     if (!itemId) {
       throw new Error("Item inválido para exclusão.");
@@ -745,6 +757,8 @@ export async function deleteNoteAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
     if (!notaId) {
       throw new Error("Nota inválida para exclusão.");
@@ -786,17 +800,19 @@ export async function closeMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanCloseMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
-    const responsavelTecnico = getInputValue(formData, "responsavelTecnico");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
-    if (!responsavelTecnico) {
-      throw new Error("Preencha o responsável técnico ou nutricionista.");
-    }
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     if (await isMonthSigned(mes, ano)) {
       throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} já está assinado.`);
@@ -844,6 +860,12 @@ export async function closeMonthAction(formData: FormData) {
         status: StatusFechamentoRastreabilidadeRecebimento.ASSINADO
       }
     });
+    await createSignatureLog({
+      user: actor,
+      tipo: "FECHAMENTO_MENSAL",
+      modulo: "rastreabilidade-recebimento",
+      referenciaId: `${mes}-${ano}`
+    });
 
     revalidateModulePaths();
     redirectWithFeedback(
@@ -860,15 +882,14 @@ export async function reopenMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanReopenMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
-    }
-
-    if (!canReopenMonthForCurrentUser()) {
-      throw new Error("Você não tem permissão para reabrir este mês.");
     }
 
     const fechamento = await prisma.rastreabilidadeRecebimentoFechamento.findUnique({
@@ -904,6 +925,9 @@ export async function createCategoryAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const nome = sanitizeCategoryName(getInputValue(formData, "nome"));
     const temperaturaMaxima = parseTemperatureInput(getInputValue(formData, "temperaturaMaxima"));
 
@@ -934,6 +958,9 @@ export async function updateCategoryAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const categoriaId = parsePositiveInt(getInputValue(formData, "categoriaId"));
     if (!categoriaId) {
       throw new Error("Categoria inválida para edição.");
@@ -979,6 +1006,9 @@ export async function toggleCategoryStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const categoriaId = parsePositiveInt(getInputValue(formData, "categoriaId"));
     if (!categoriaId) {
       throw new Error("Categoria inválida para atualização.");

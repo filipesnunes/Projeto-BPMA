@@ -105,6 +105,109 @@ enum StatusFechamentoPlanoLimpeza {
   ASSINADO
 }
 
+enum PerfilUsuario {
+  DEV
+  GESTOR
+  SUPERVISOR
+  RESPONSAVEL_TECNICO
+  FUNCIONARIO
+}
+
+enum StatusUsuario {
+  ATIVO
+  INATIVO
+}
+
+enum StatusSolicitacaoRedefinicaoSenha {
+  PENDENTE
+  ATENDIDA
+  CANCELADA
+}
+
+enum TipoAssinaturaSistema {
+  RESPONSAVEL
+  SUPERVISOR
+  RESPONSAVEL_TECNICO
+  FECHAMENTO_MENSAL
+}
+
+model Usuario {
+  id                  Int                              @id @default(autoincrement())
+  nomeCompleto        String
+  nomeUsuario         String                           @unique
+  senhaHash           String
+  perfil              PerfilUsuario
+  status              StatusUsuario                    @default(ATIVO)
+  dataAdmissao        DateTime?                        @db.Date
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+  ultimaAlteracaoSenha DateTime?
+  obrigarTrocaSenha   Boolean                          @default(false)
+  ultimoAcesso        DateTime?
+  observacoesInternas String?
+  sessoes             UsuarioSessao[]
+  solicitacoesComoAlvo SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoUsuarioAlvo")
+  solicitacoesTratadas SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoTratadaPor")
+  logsAssinatura      LogAssinatura[]
+
+  @@index([perfil, status])
+  @@map("usuario")
+}
+
+model UsuarioSessao {
+  id          Int      @id @default(autoincrement())
+  tokenHash   String   @unique
+  usuarioId   Int
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiraEm    DateTime
+  ultimoAcesso DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([usuarioId])
+  @@index([expiraEm])
+  @@map("usuario_sessao")
+}
+
+model SolicitacaoRedefinicaoSenha {
+  id                   Int                                 @id @default(autoincrement())
+  usuarioId            Int?
+  usuario              Usuario?                            @relation("SolicitacaoUsuarioAlvo", fields: [usuarioId], references: [id], onDelete: SetNull)
+  nomeUsuarioInformado String
+  nomeCompletoInformado String
+  status               StatusSolicitacaoRedefinicaoSenha   @default(PENDENTE)
+  observacaoInterna    String?
+  tratadoPorId         Int?
+  tratadoPor           Usuario?                            @relation("SolicitacaoTratadaPor", fields: [tratadoPorId], references: [id], onDelete: SetNull)
+  tratadoEm            DateTime?
+  createdAt            DateTime                            @default(now())
+  updatedAt            DateTime                            @updatedAt
+
+  @@index([status])
+  @@index([usuarioId])
+  @@map("solicitacao_redefinicao_senha")
+}
+
+model LogAssinatura {
+  id           Int                  @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario              @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  nomeUsuario  String
+  nomeCompleto String
+  perfil       PerfilUsuario
+  tipo         TipoAssinaturaSistema
+  modulo       String
+  referenciaId String?
+  observacao   String?
+  assinadoEm   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+
+  @@index([usuarioId])
+  @@index([tipo, assinadoEm])
+  @@index([modulo, assinadoEm])
+  @@map("log_assinatura")
+}
+
 model HigienizacaoHortifruti {
   id               Int      @id @default(autoincrement())
   data             DateTime @db.Date

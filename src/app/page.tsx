@@ -1,8 +1,17 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { modules } from "@/lib/modules";
+import { getCurrentUser } from "@/lib/auth-session";
+import { getModulesForRole } from "@/lib/modules";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  const modules = getModulesForRole(user.perfil);
+
   return (
     <section className="space-y-6">
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">

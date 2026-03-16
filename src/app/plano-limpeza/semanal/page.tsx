@@ -637,8 +637,8 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
               <input type="hidden" name="ano" value={String(fechamentoAno)} />
               <input type="hidden" name="returnTo" value={returnTo} />
               <label className="text-sm text-slate-700 dark:text-slate-200">
-                Responsável técnico ou supervisor *
-                <input type="text" name="responsavelTecnico" required className={INPUT_CLASS} />
+                Confirme sua Senha *
+                <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
                 <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -646,6 +646,9 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                 </p>
                 <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                   {formatDateTimeDisplay(now)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  O responsável será o usuário logado.
                 </p>
               </div>
               <div className="md:col-span-2">

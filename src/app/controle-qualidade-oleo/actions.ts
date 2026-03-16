@@ -6,6 +6,14 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentUserForAction } from "@/lib/auth-session";
+import {
+  createSignatureLog,
+  ensureCanCloseMonth,
+  ensureCanManageOptions,
+  ensureCanReopenMonth,
+  validateSignaturePassword
+} from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -84,12 +92,6 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return fechamento?.status === StatusFechamentoQualidadeOleo.ASSINADO;
 }
 
-function canReopenMonthForCurrentUser(): boolean {
-  // Preparado para autorização futura por perfil (ex.: responsável técnico/nutricionista).
-  // Nesta etapa, sem autenticação, a reabertura está permitida em ambiente de testes.
-  return true;
-}
-
 async function getRegistroPayload(formData: FormData) {
   const fitaInput = getInputValue(formData, "fitaOleo");
   const temperaturaInput = getInputValue(formData, "temperatura");
@@ -128,6 +130,8 @@ export async function createRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const data = getTodaySystemDate();
     const payload = await getRegistroPayload(formData);
     const { mes, ano } = getMonthYear(data);
@@ -156,6 +160,8 @@ export async function updateRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro inválido para edição.");
@@ -192,6 +198,8 @@ export async function deleteRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    await getCurrentUserForAction();
+
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro inválido para exclusão.");
@@ -223,17 +231,19 @@ export async function closeMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanCloseMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
-    const responsavelTecnico = getInputValue(formData, "responsavelTecnico");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
-    if (!responsavelTecnico) {
-      throw new Error("Preencha o responsável técnico ou nutricionista.");
-    }
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     if (await isMonthSigned(mes, ano)) {
       throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} já está assinado.`);
@@ -268,6 +278,12 @@ export async function closeMonthAction(formData: FormData) {
         status: StatusFechamentoQualidadeOleo.ASSINADO
       }
     });
+    await createSignatureLog({
+      user: actor,
+      tipo: "FECHAMENTO_MENSAL",
+      modulo: "controle-qualidade-oleo",
+      referenciaId: `${mes}-${ano}`
+    });
 
     revalidateModulePaths();
     redirectWithFeedback(
@@ -284,15 +300,14 @@ export async function reopenMonthAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanReopenMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
-    }
-
-    if (!canReopenMonthForCurrentUser()) {
-      throw new Error("Você não tem permissão para reabrir este mês.");
     }
 
     const fechamento = await prisma.controleQualidadeOleoFechamento.findUnique({
@@ -325,6 +340,9 @@ export async function createFitaOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const rotulo = sanitizeLabel(getInputValue(formData, "rotulo"));
     const descricao = sanitizeDescription(getInputValue(formData, "descricao"));
     const statusAssociado = parseOilStatus(getInputValue(formData, "statusAssociado"));
@@ -359,6 +377,9 @@ export async function updateFitaOptionAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const optionId = parsePositiveInt(getInputValue(formData, "optionId"));
     if (!optionId) {
       throw new Error("Opção inválida para edição.");
@@ -415,6 +436,9 @@ export async function toggleFitaOptionStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const optionId = parsePositiveInt(getInputValue(formData, "optionId"));
     if (!optionId) {
       throw new Error("Opção inválida para atualização.");

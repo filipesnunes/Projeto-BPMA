@@ -9,6 +9,16 @@ import {
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { getCurrentUserForAction } from "@/lib/auth-session";
+import {
+  createSignatureLog,
+  ensureCanCloseMonth,
+  ensureCanManageOptions,
+  ensureCanReopenMonth,
+  ensureCanSignResponsible,
+  ensureCanSignSupervisor,
+  validateSignaturePassword
+} from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 import { WEEKLY_AREAS } from "./constants";
@@ -109,16 +119,11 @@ function ensureAreaIsValid(value: string, areas: readonly string[], label: strin
   return value;
 }
 
-function canReopenMonthForCurrentUser(): boolean {
-  // Preparado para autorização futura por perfil.
-  // Nesta etapa, sem autenticação, a reabertura está liberada para testes.
-  return true;
-}
-
 export async function updateDailyRecordAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, DIARIO_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro diário inválido para edição.");
@@ -138,8 +143,7 @@ export async function updateDailyRecordAction(formData: FormData) {
     }
 
     const etapa = getInputValue(formData, "etapa");
-    const assinaturaResponsavel = getInputValue(formData, "assinaturaResponsavel");
-    const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
 
     const etapaPermitida = getDailySignStage(existing);
     if (!etapaPermitida) {
@@ -150,45 +154,42 @@ export async function updateDailyRecordAction(formData: FormData) {
       throw new Error("A etapa de assinatura informada é inválida para este checklist.");
     }
 
-    if (etapaPermitida === "responsavel") {
-      if (!assinaturaResponsavel) {
-        throw new Error("Informe a assinatura do responsável pela limpeza.");
-      }
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-      if (assinaturaSupervisor) {
-        throw new Error(
-          "A assinatura do supervisor deve ser realizada em etapa posterior."
-        );
-      }
+    if (etapaPermitida === "responsavel") {
+      ensureCanSignResponsible(actor.perfil);
 
       await prisma.planoLimpezaDiarioRegistro.update({
         where: { id },
         data: {
-          assinaturaResponsavel,
+          assinaturaResponsavel: actor.nomeCompleto,
           status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
         }
       });
+      await createSignatureLog({
+        user: actor,
+        tipo: "RESPONSAVEL",
+        modulo: "plano-limpeza/diario",
+        referenciaId: String(id)
+      });
     } else {
+      ensureCanSignSupervisor(actor.perfil);
       if (!existing.assinaturaResponsavel) {
         throw new Error("A assinatura do responsável é obrigatória antes da assinatura do supervisor.");
       }
 
-      if (!assinaturaSupervisor) {
-        throw new Error("Informe a assinatura do supervisor.");
-      }
-
-      if (assinaturaResponsavel) {
-        throw new Error(
-          "A assinatura do supervisor deve ser feita sem alterar a assinatura do responsável."
-        );
-      }
-
       await prisma.planoLimpezaDiarioRegistro.update({
         where: { id },
         data: {
-          assinaturaSupervisor,
+          assinaturaSupervisor: actor.nomeCompleto,
           status: StatusPlanoLimpeza.CONCLUIDO
         }
+      });
+      await createSignatureLog({
+        user: actor,
+        tipo: "SUPERVISOR",
+        modulo: "plano-limpeza/diario",
+        referenciaId: String(id)
       });
     }
 
@@ -203,6 +204,9 @@ export async function createDailyAreaConfigAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, DIARIO_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const nome = getInputValue(formData, "nome");
     const ordem = parsePositiveInt(getInputValue(formData, "ordem")) ?? 1;
     const turnos = buildDailyTurnoFlags(formData);
@@ -232,6 +236,9 @@ export async function updateDailyAreaConfigAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, DIARIO_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const areaId = parsePositiveInt(getInputValue(formData, "areaId"));
     if (!areaId) {
       throw new Error("Área do plano diário inválida para edição.");
@@ -276,6 +283,9 @@ export async function toggleDailyAreaConfigStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, DIARIO_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const areaId = parsePositiveInt(getInputValue(formData, "areaId"));
     if (!areaId) {
       throw new Error("Área do plano diário inválida para atualização.");
@@ -311,17 +321,23 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, DIARIO_HISTORY_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanSignSupervisor(actor.perfil);
+
     const dataRaw = getInputValue(formData, "data");
-    const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
     const assinarComoResponsavel = formData.get("assinarComoResponsavel") === "on";
     const observacao = getInputValue(formData, "observacao");
+    if (assinarComoResponsavel) {
+      ensureCanSignResponsible(actor.perfil);
+    }
 
     const data = parseDateInput(dataRaw);
     if (!data) {
       throw new Error("Data inválida para assinatura retroativa.");
     }
 
-    ensureNonEmpty(assinaturaSupervisor, "Assinatura do Supervisor");
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     const period = getMonthYear(data);
     if (await isMonthSigned(TipoPlanoLimpeza.DIARIO, period.mes, period.ano)) {
@@ -375,7 +391,7 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
         await tx.planoLimpezaDiarioRegistro.updateMany({
           where: { id: { in: aguardandoIds } },
           data: {
-            assinaturaSupervisor,
+            assinaturaSupervisor: actor.nomeCompleto,
             status: StatusPlanoLimpeza.CONCLUIDO
           }
         });
@@ -388,8 +404,8 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
           status: StatusPlanoLimpeza;
           observacao?: string;
         } = {
-          assinaturaResponsavel: assinaturaSupervisor,
-          assinaturaSupervisor,
+          assinaturaResponsavel: actor.nomeCompleto,
+          assinaturaSupervisor: actor.nomeCompleto,
           status: StatusPlanoLimpeza.CONCLUIDO
         };
 
@@ -404,6 +420,25 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
       }
     });
 
+    if (aguardandoIds.length > 0) {
+      await createSignatureLog({
+        user: actor,
+        tipo: "SUPERVISOR",
+        modulo: "plano-limpeza/diario",
+        referenciaId: dataRaw
+      });
+    }
+
+    if (assinarComoResponsavel && pendentesSemResponsavelIds.length > 0) {
+      await createSignatureLog({
+        user: actor,
+        tipo: "RESPONSAVEL",
+        modulo: "plano-limpeza/diario",
+        referenciaId: dataRaw,
+        observacao: observacao || null
+      });
+    }
+
     revalidatePath(returnTo.split("?")[0]);
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Assinatura Retroativa do Dia Aplicada com Sucesso.");
@@ -416,6 +451,7 @@ export async function updateWeeklyRecordAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
       throw new Error("Registro semanal inválido para assinatura.");
@@ -435,8 +471,7 @@ export async function updateWeeklyRecordAction(formData: FormData) {
     }
 
     const etapa = getInputValue(formData, "etapa");
-    const assinaturaResponsavel = getInputValue(formData, "assinaturaResponsavel");
-    const assinaturaSupervisor = getInputValue(formData, "assinaturaSupervisor");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
 
     const etapaPermitida = getWeeklySignStage({
       status: existing.status,
@@ -451,45 +486,42 @@ export async function updateWeeklyRecordAction(formData: FormData) {
       throw new Error("A etapa de assinatura informada é inválida para este checklist.");
     }
 
-    if (etapaPermitida === "responsavel") {
-      if (!assinaturaResponsavel) {
-        throw new Error("Informe a assinatura do responsável pela limpeza.");
-      }
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-      if (assinaturaSupervisor) {
-        throw new Error(
-          "A assinatura do supervisor deve ser realizada em etapa posterior."
-        );
-      }
+    if (etapaPermitida === "responsavel") {
+      ensureCanSignResponsible(actor.perfil);
 
       await prisma.planoLimpezaSemanalExecucao.update({
         where: { id },
         data: {
-          assinaturaResponsavel,
+          assinaturaResponsavel: actor.nomeCompleto,
           status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
         }
       });
+      await createSignatureLog({
+        user: actor,
+        tipo: "RESPONSAVEL",
+        modulo: "plano-limpeza/semanal",
+        referenciaId: String(id)
+      });
     } else {
+      ensureCanSignSupervisor(actor.perfil);
       if (!existing.assinaturaResponsavel.trim()) {
         throw new Error("A assinatura do responsável é obrigatória antes da assinatura do supervisor.");
       }
 
-      if (!assinaturaSupervisor) {
-        throw new Error("Informe a assinatura do supervisor.");
-      }
-
-      if (assinaturaResponsavel) {
-        throw new Error(
-          "A assinatura do supervisor deve ser feita sem alterar a assinatura do responsável."
-        );
-      }
-
       await prisma.planoLimpezaSemanalExecucao.update({
         where: { id },
         data: {
-          assinaturaSupervisor,
+          assinaturaSupervisor: actor.nomeCompleto,
           status: StatusPlanoLimpeza.CONCLUIDO
         }
+      });
+      await createSignatureLog({
+        user: actor,
+        tipo: "SUPERVISOR",
+        modulo: "plano-limpeza/semanal",
+        referenciaId: String(id)
       });
     }
 
@@ -536,6 +568,9 @@ export async function createWeeklyConfigItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const area = ensureAreaIsValid(getInputValue(formData, "area"), WEEKLY_AREAS, "Área");
     const oQueLimpar = getInputValue(formData, "oQueLimpar");
     const quem = getInputValue(formData, "quem");
@@ -577,6 +612,9 @@ export async function updateWeeklyConfigItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
     if (!itemId) {
       throw new Error("Item semanal inválido para edição.");
@@ -632,6 +670,9 @@ export async function toggleWeeklyConfigItemStatusAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
     if (!itemId) {
       throw new Error("Item semanal inválido para atualização.");
@@ -667,6 +708,9 @@ export async function moveWeeklyConfigItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, SEMANAL_OPCOES_PATH);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageOptions(actor.perfil);
+
     const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
     if (!itemId) {
       throw new Error("Item semanal inválido para reordenação.");
@@ -740,15 +784,19 @@ async function closeMonthByType(params: {
   const returnTo = getReturnToPath(params.formData, params.returnPath);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanCloseMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(params.formData, "mes"));
     const ano = parsePositiveInt(getInputValue(params.formData, "ano"));
-    const responsavelTecnico = getInputValue(params.formData, "responsavelTecnico");
+    const senhaConfirmacao = getInputValue(params.formData, "senhaConfirmacao");
+    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
-    ensureNonEmpty(responsavelTecnico, "Responsável Técnico ou Supervisor");
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     if (await isMonthSigned(params.tipo, mes, ano)) {
       throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} já está assinado.`);
@@ -777,6 +825,13 @@ async function closeMonthByType(params: {
       }
     });
 
+    await createSignatureLog({
+      user: actor,
+      tipo: "FECHAMENTO_MENSAL",
+      modulo: params.tipo === TipoPlanoLimpeza.DIARIO ? "plano-limpeza/diario" : "plano-limpeza/semanal",
+      referenciaId: `${params.tipo}-${mes}-${ano}`
+    });
+
     revalidateModulePaths();
     redirectWithFeedback(
       returnTo,
@@ -797,15 +852,14 @@ async function reopenMonthByType(params: {
   const returnTo = getReturnToPath(params.formData, params.returnPath);
 
   try {
+    const actor = await getCurrentUserForAction();
+    ensureCanReopenMonth(actor.perfil);
+
     const mes = parsePositiveInt(getInputValue(params.formData, "mes"));
     const ano = parsePositiveInt(getInputValue(params.formData, "ano"));
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
-    }
-
-    if (!canReopenMonthForCurrentUser()) {
-      throw new Error("Você não tem permissão para reabrir este mês.");
     }
 
     const fechamento = await prisma.planoLimpezaFechamento.findUnique({

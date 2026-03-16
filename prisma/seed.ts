@@ -1,11 +1,14 @@
 import {
   CategoriaEquipamentoTemperatura,
+  PerfilUsuario,
   PrismaClient,
+  StatusUsuario,
   StatusQualidadeOleo,
   StatusTemperaturaEquipamento,
   TipoOpcaoHigienizacao,
   TipoOpcaoTemperaturaEquipamento
 } from "@prisma/client";
+import { randomBytes, scryptSync } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -246,6 +249,47 @@ const PLANO_LIMPEZA_DIARIO_AREAS = [
   "Cozinha"
 ];
 
+const USUARIOS_INICIAIS: Array<{
+  nomeCompleto: string;
+  nomeUsuario: string;
+  perfil: PerfilUsuario;
+}> = [
+  {
+    nomeCompleto: "Usuário DEV",
+    nomeUsuario: "dev",
+    perfil: PerfilUsuario.DEV
+  },
+  {
+    nomeCompleto: "Usuário Gestor",
+    nomeUsuario: "gestor",
+    perfil: PerfilUsuario.GESTOR
+  },
+  {
+    nomeCompleto: "Usuário Supervisor",
+    nomeUsuario: "supervisor",
+    perfil: PerfilUsuario.SUPERVISOR
+  },
+  {
+    nomeCompleto: "Usuário Responsável Técnico",
+    nomeUsuario: "tecnico",
+    perfil: PerfilUsuario.RESPONSAVEL_TECNICO
+  },
+  {
+    nomeCompleto: "Usuário Funcionário",
+    nomeUsuario: "funcionario",
+    perfil: PerfilUsuario.FUNCIONARIO
+  }
+];
+
+const SENHA_INICIAL_PADRAO = "Bpma@123";
+
+function hashPasswordForSeed(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+
+  return `scrypt:${salt}:${hash}`;
+}
+
 async function seedHigienizacao() {
   await prisma.higienizacaoHortifrutiOpcao.createMany({
     data: [
@@ -359,12 +403,43 @@ async function seedPlanoLimpeza() {
   });
 }
 
+async function seedUsuarios() {
+  const dataAdmissao = new Date();
+
+  for (const usuario of USUARIOS_INICIAIS) {
+    const existente = await prisma.usuario.findUnique({
+      where: { nomeUsuario: usuario.nomeUsuario },
+      select: { id: true }
+    });
+
+    if (existente) {
+      continue;
+    }
+
+    await prisma.usuario.create({
+      data: {
+        nomeCompleto: usuario.nomeCompleto,
+        nomeUsuario: usuario.nomeUsuario,
+        senhaHash: hashPasswordForSeed(SENHA_INICIAL_PADRAO),
+        perfil: usuario.perfil,
+        status: StatusUsuario.ATIVO,
+        dataAdmissao,
+        obrigarTrocaSenha: true,
+        ultimaAlteracaoSenha: new Date(),
+        observacoesInternas:
+          "Usuário inicial criado por seed. Alterar senha no primeiro acesso."
+      }
+    });
+  }
+}
+
 async function main() {
   await seedHigienizacao();
   await seedControleTemperatura();
   await seedControleOleo();
   await seedRastreabilidade();
   await seedPlanoLimpeza();
+  await seedUsuarios();
 }
 
 main()

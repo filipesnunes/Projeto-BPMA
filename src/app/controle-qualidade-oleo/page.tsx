@@ -660,8 +660,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               <input type="hidden" name="ano" value={String(fechamentoAno)} />
               <input type="hidden" name="returnTo" value={returnTo} />
               <label className="text-sm text-slate-700 dark:text-slate-200">
-                Responsável técnico ou nutricionista *
-                <input type="text" name="responsavelTecnico" required className={INPUT_CLASS} />
+                Confirme sua Senha *
+                <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
                 <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Data da assinatura</p>

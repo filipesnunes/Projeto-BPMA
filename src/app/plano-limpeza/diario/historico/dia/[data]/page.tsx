@@ -181,8 +181,8 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
             <input type="hidden" name="returnTo" value={returnTo} />
 
             <label className="text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
-              Assinatura do Supervisor *
-              <input type="text" name="assinaturaSupervisor" required className={INPUT_CLASS} />
+              Confirme sua Senha *
+              <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
             </label>
 
             <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200 md:col-span-2">

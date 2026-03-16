@@ -3,9 +3,25 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { modules } from "@/lib/modules";
+import type { AppModule } from "@/lib/modules";
 
-export function Sidebar() {
+type SidebarProps = {
+  modules: AppModule[];
+  userName: string;
+  userRoleLabel: string;
+  canManageUsers: boolean;
+  canViewResetRequests: boolean;
+  onLogout: () => Promise<void>;
+};
+
+export function Sidebar({
+  modules,
+  userName,
+  userRoleLabel,
+  canManageUsers,
+  canViewResetRequests,
+  onLogout
+}: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -17,6 +33,10 @@ export function Sidebar() {
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
           Boas práticas em manipulação de alimentos
         </p>
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-800">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">{userName}</p>
+          <p className="text-slate-600 dark:text-slate-300">{userRoleLabel}</p>
+        </div>
       </div>
 
       <nav className="px-3 pb-6">
@@ -39,7 +59,40 @@ export function Sidebar() {
               </li>
             );
           })}
+          {canManageUsers ? (
+            <li>
+              <Link
+                href="/usuarios"
+                className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname.startsWith("/usuarios") && !pathname.startsWith("/usuarios/solicitacoes")
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "text-slate-700 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                }`}
+              >
+                Gestão de Usuários
+              </Link>
+            </li>
+          ) : null}
+          {canViewResetRequests ? (
+            <li>
+              <Link
+                href="/usuarios/solicitacoes"
+                className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname.startsWith("/usuarios/solicitacoes")
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "text-slate-700 hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                }`}
+              >
+                Solicitações de Senha
+              </Link>
+            </li>
+          ) : null}
         </ul>
+        <form action={onLogout} className="mt-4">
+          <button type="submit" className="btn-secondary w-full">
+            Sair
+          </button>
+        </form>
       </nav>
     </aside>
   );

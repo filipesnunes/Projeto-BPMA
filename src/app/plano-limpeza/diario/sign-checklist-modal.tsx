@@ -65,11 +65,19 @@ export function DailySignChecklistModal({
           <input type="hidden" name="returnTo" value={returnTo} />
           <input type="hidden" name="etapa" value={etapa} />
 
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Assinatura
+            </p>
+            <p className="font-medium text-slate-800 dark:text-slate-100">
+              O usuário logado será registrado automaticamente.
+            </p>
+          </div>
+
           {etapa === "responsavel" ? (
-            <label className="text-sm text-slate-700 dark:text-slate-200">
-              Assinatura do Responsável pela Limpeza *
-              <input type="text" name="assinaturaResponsavel" required className={INPUT_CLASS} />
-            </label>
+            <p className="text-sm text-slate-700 dark:text-slate-200">
+              Etapa: Assinatura do Responsável pela Limpeza.
+            </p>
           ) : (
             <>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
@@ -80,12 +88,15 @@ export function DailySignChecklistModal({
                   {record.assinaturaResponsavel}
                 </p>
               </div>
-              <label className="text-sm text-slate-700 dark:text-slate-200">
-                Assinatura do Supervisor *
-                <input type="text" name="assinaturaSupervisor" required className={INPUT_CLASS} />
-              </label>
+              <p className="text-sm text-slate-700 dark:text-slate-200">
+                Etapa: Assinatura do Supervisor.
+              </p>
             </>
           )}
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            Confirme sua senha *
+            <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
+          </label>
 
           <div className="btn-group">
             <Link href={closeHref} className="btn-secondary">

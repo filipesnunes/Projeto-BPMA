@@ -42,3 +42,24 @@ Para ambientes locais de teste rapido sem historico de migration:
 npx prisma db push
 ```
 # Projeto-BPMA 
+
+## Autenticação - DEV Definitivo (Fase 1)
+
+Para criar ou atualizar o usuário DEV administrativo definitivo (sem depender de seed), defina:
+
+```bash
+BPMA_DEV_ADMIN_NOME="Administrador BPMA"
+BPMA_DEV_ADMIN_USUARIO="admin.bpma"
+BPMA_DEV_ADMIN_SENHA="SuaSenhaSegura123"
+```
+
+Depois execute:
+
+```bash
+npm run auth:bootstrap-dev
+```
+
+Observações:
+- o usuário criado/atualizado por esse comando é marcado como DEV definitivo
+- DEV definitivo não pode ser inativado nem removido pela tela de usuários
+- o seed padrão não cria mais usuários de teste automaticamente

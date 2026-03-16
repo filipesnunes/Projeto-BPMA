@@ -1,5 +1,6 @@
 "use server";
 
+import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
@@ -62,6 +63,20 @@ function redirectWithFeedback(path: string, type: "success" | "error", feedback:
   url.searchParams.set("feedback", feedback);
 
   redirect(`${url.pathname}?${url.searchParams.toString()}`);
+}
+
+async function getTargetUserForManagement(userId: number) {
+  return prisma.usuario.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      nomeCompleto: true,
+      nomeUsuario: true,
+      perfil: true,
+      status: true,
+      isDevDefinitivo: true
+    }
+  });
 }
 
 export async function createUserAction(formData: FormData) {
@@ -139,6 +154,23 @@ export async function updateUserAction(formData: FormData) {
       throw new Error("Preencha todos os campos obrigatórios.");
     }
 
+    const target = await getTargetUserForManagement(userId);
+    if (!target) {
+      throw new Error("Usuário não encontrado.");
+    }
+
+    if (target.isDevDefinitivo) {
+      if (nomeUsuario !== target.nomeUsuario) {
+        throw new Error("Não é permitido alterar o nome de usuário do DEV definitivo.");
+      }
+      if (perfil !== "DEV") {
+        throw new Error("O DEV definitivo deve manter o perfil DEV.");
+      }
+      if (status !== "ATIVO") {
+        throw new Error("O DEV definitivo deve permanecer ativo.");
+      }
+    }
+
     const nomeUsuarioEmUso = await prisma.usuario.findFirst({
       where: {
         nomeUsuario,
@@ -182,6 +214,19 @@ export async function toggleUserStatusAction(formData: FormData) {
     const status = parseStatus(getInputValue(formData, "status"));
     if (!Number.isInteger(userId) || userId <= 0 || !status) {
       throw new Error("Dados inválidos para atualização de status.");
+    }
+
+    const target = await getTargetUserForManagement(userId);
+    if (!target) {
+      throw new Error("Usuário não encontrado.");
+    }
+
+    if (target.id === actor.id && status === "INATIVO") {
+      throw new Error("Você não pode inativar o próprio usuário.");
+    }
+
+    if (target.isDevDefinitivo && status === "INATIVO") {
+      throw new Error("O usuário DEV definitivo não pode ser inativado.");
     }
 
     await prisma.usuario.update({
@@ -246,6 +291,49 @@ export async function resetUserPasswordAction(formData: FormData) {
       error instanceof Error && error.message
         ? error.message
         : "Não foi possível redefinir a senha.";
+    redirectWithFeedback(USERS_PATH, "error", message);
+  }
+}
+
+export async function deleteUserAction(formData: FormData) {
+  try {
+    const actor = await getCurrentUserForAction();
+    ensureCanManageUsers(actor.perfil);
+
+    const userId = Number(getInputValue(formData, "userId"));
+    if (!Number.isInteger(userId) || userId <= 0) {
+      throw new Error("Usuário inválido para remoção.");
+    }
+
+    const target = await getTargetUserForManagement(userId);
+    if (!target) {
+      throw new Error("Usuário não encontrado.");
+    }
+
+    if (target.id === actor.id) {
+      throw new Error("Você não pode remover o próprio usuário.");
+    }
+
+    if (target.isDevDefinitivo) {
+      throw new Error("O usuário DEV definitivo não pode ser removido.");
+    }
+
+    await prisma.usuario.delete({
+      where: { id: userId }
+    });
+
+    redirectWithFeedback(USERS_PATH, "success", "Usuário removido com sucesso.");
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      redirectWithFeedback(
+        USERS_PATH,
+        "error",
+        "Não foi possível remover o usuário porque ele possui histórico vinculado. Inative-o."
+      );
+    }
+
+    const message =
+      error instanceof Error && error.message ? error.message : "Não foi possível remover o usuário.";
     redirectWithFeedback(USERS_PATH, "error", message);
   }
 }

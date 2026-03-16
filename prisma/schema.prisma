@@ -137,6 +137,7 @@ model Usuario {
   nomeUsuario         String                           @unique
   senhaHash           String
   perfil              PerfilUsuario
+  isDevDefinitivo     Boolean                          @default(false)
   status              StatusUsuario                    @default(ATIVO)
   dataAdmissao        DateTime?                        @db.Date
   createdAt           DateTime                         @default(now())
@@ -150,7 +151,7 @@ model Usuario {
   solicitacoesTratadas SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoTratadaPor")
   logsAssinatura      LogAssinatura[]
 
-  @@index([perfil, status])
+  @@index([perfil, status, isDevDefinitivo])
   @@map("usuario")
 }
 

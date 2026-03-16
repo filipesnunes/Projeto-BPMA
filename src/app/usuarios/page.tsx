@@ -7,6 +7,7 @@ import { canManageUsers, getRoleLabel, USER_ROLE_VALUES, type UserRole } from "@
 
 import {
   createUserAction,
+  deleteUserAction,
   resetUserPasswordAction,
   toggleUserStatusAction,
   updateUserAction
@@ -152,6 +153,12 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
               Cancelar Edição
             </Link>
           </div>
+          {usuarioEdicao.isDevDefinitivo ? (
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              Este usuário é o DEV definitivo e não pode ter login/perfil/status alterados para
+              garantir administração contínua do sistema.
+            </p>
+          ) : null}
           <form action={updateUserAction} className="grid gap-3 md:grid-cols-2">
             <input type="hidden" name="userId" value={String(usuarioEdicao.id)} />
             <label className="text-sm text-slate-700 dark:text-slate-200">
@@ -256,7 +263,16 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                   <tr key={usuario.id}>
                     <td className="px-3 py-2">{usuario.nomeCompleto}</td>
                     <td className="px-3 py-2">{usuario.nomeUsuario}</td>
-                    <td className="px-3 py-2">{getRoleLabel(usuario.perfil as UserRole)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{getRoleLabel(usuario.perfil as UserRole)}</span>
+                        {usuario.isDevDefinitivo ? (
+                          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                            DEV Definitivo
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-3 py-2">{usuario.status === "ATIVO" ? "Ativo" : "Inativo"}</td>
                     <td className="px-3 py-2">
                       <div className="btn-group">
@@ -275,6 +291,7 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                           />
                           <button
                             type="submit"
+                            disabled={usuario.isDevDefinitivo || usuario.id === authUser.id}
                             className={usuario.status === "ATIVO" ? "btn-danger" : "btn-secondary"}
                           >
                             {usuario.status === "ATIVO" ? "Inativar" : "Ativar"}
@@ -290,6 +307,16 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                           />
                           <button type="submit" className="btn-secondary">
                             Redefinir Senha
+                          </button>
+                        </form>
+                        <form action={deleteUserAction} className="inline-flex">
+                          <input type="hidden" name="userId" value={String(usuario.id)} />
+                          <button
+                            type="submit"
+                            className="btn-danger"
+                            disabled={usuario.isDevDefinitivo || usuario.id === authUser.id}
+                          >
+                            Remover
                           </button>
                         </form>
                       </div>

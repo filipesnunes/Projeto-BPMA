@@ -12,13 +12,15 @@
     "lint": "next lint",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "auth:bootstrap-dev": "node --experimental-strip-types prisma/bootstrap-dev-admin.ts"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "6.5.0",
+    "dotenv": "^17.3.1",
     "next": "^15.2.8",
     "react": "19.0.0",
     "react-dom": "19.0.0"

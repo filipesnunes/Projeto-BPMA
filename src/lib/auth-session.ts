@@ -103,10 +103,16 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   }
 
   if (session.expiraEm.getTime() < Date.now()) {
+    await prisma.usuarioSessao.deleteMany({
+      where: { tokenHash }
+    });
     return null;
   }
 
   if (session.usuario.status !== StatusUsuario.ATIVO) {
+    await prisma.usuarioSessao.deleteMany({
+      where: { tokenHash }
+    });
     return null;
   }
 

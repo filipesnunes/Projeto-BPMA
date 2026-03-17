@@ -7,6 +7,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -91,6 +92,9 @@ function parseStatusFilter(value: string): StatusTemperaturaEquipamento | null {
 export default async function ControleTemperaturaEquipamentosPage({
   searchParams
 }: PageProps) {
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -387,16 +391,17 @@ export default async function ControleTemperaturaEquipamentosPage({
               inputClassName={INPUT_CLASS}
             />
 
-            <label className="text-sm text-slate-700 dark:text-slate-200">
-              Responsável *
-              <input
-                type="text"
-                name="responsavel"
-                required
-                defaultValue={registroEmEdicao?.responsavel ?? ""}
-                className={INPUT_CLASS}
-              />
-            </label>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+              <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                Responsável
+              </p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                {responsavelLogado}
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Preenchido automaticamente pelo usuário logado.
+              </p>
+            </div>
 
             <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
               Observações (Opcional)

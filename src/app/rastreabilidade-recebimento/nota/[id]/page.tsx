@@ -2,6 +2,7 @@ import { StatusNotaRecebimento } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -99,6 +100,8 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
   const monthSigned = fechamento?.status === "ASSINADO";
   const noteFinalizada = note.statusNota === StatusNotaRecebimento.FINALIZADA;
   const readOnlyMode = monthSigned || noteFinalizada;
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
   const canDeleteNote = !monthSigned && note.statusNota === StatusNotaRecebimento.PENDENTE;
   const returnTo = `/rastreabilidade-recebimento/nota/${note.id}`;
 
@@ -196,6 +199,20 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
           </div>
         ) : null}
 
+        {!readOnlyMode ? (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Responsável pelo Recebimento
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {responsavelLogado}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              As linhas serão salvas automaticamente com o usuário logado.
+            </p>
+          </div>
+        ) : null}
+
         {note.itens.length === 0 ? (
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Esta nota não possui itens cadastrados.
@@ -220,7 +237,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                       <th className={TABLE_HEAD_CLASS}>Aspecto *</th>
                       <th className={TABLE_HEAD_CLASS}>Embalagem *</th>
                       <th className={TABLE_HEAD_CLASS}>Ação Corretiva</th>
-                      <th className={TABLE_HEAD_CLASS}>Responsável *</th>
+                      <th className={TABLE_HEAD_CLASS}>Responsável</th>
                       <th className={TABLE_HEAD_CLASS}>Observações</th>
                       <th className={TABLE_HEAD_CLASS}>Status</th>
                       <th className={TABLE_HEAD_CLASS}>Ação</th>
@@ -345,14 +362,11 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                           />
                         </td>
                         <td className={TABLE_CELL_CLASS}>
-                          <input
-                            type="text"
-                            name={`item-${item.id}-responsavelRecebimento`}
-                            defaultValue={item.responsavelRecebimento ?? ""}
-                            required
-                            disabled={readOnlyMode}
-                            className={`${INPUT_CLASS} min-w-[7.5rem] md:min-w-[8rem]`}
-                          />
+                          <div className="min-w-[7.5rem] rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {readOnlyMode
+                              ? (item.responsavelRecebimento ?? "-")
+                              : responsavelLogado}
+                          </div>
                         </td>
                         <td className={TABLE_CELL_CLASS}>
                           <input

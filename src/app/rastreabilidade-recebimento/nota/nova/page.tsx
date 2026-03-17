@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { getCurrentUser } from "@/lib/auth-session";
+
 import { createManualNoteAction } from "../../actions";
 import { ThemeToggleButton } from "../../theme-toggle-button";
 
@@ -8,7 +10,10 @@ const CARD_CLASS =
 const INPUT_CLASS =
   "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
-export default function NovaNotaRecebimentoPage() {
+export default async function NovaNotaRecebimentoPage() {
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+
   return (
     <div className="space-y-6 dark:text-slate-100">
       <section className={CARD_CLASS}>
@@ -95,10 +100,17 @@ export default function NovaNotaRecebimentoPage() {
             Ação Corretiva
             <input type="text" name="acaoCorretiva" className={INPUT_CLASS} />
           </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            Responsável *
-            <input type="text" name="responsavelRecebimento" required className={INPUT_CLASS} />
-          </label>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Responsável pelo Recebimento
+            </p>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {responsavelLogado}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Preenchido automaticamente pelo usuário logado.
+            </p>
+          </div>
           <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
             Observações
             <textarea name="observacoes" rows={3} className={INPUT_CLASS} />

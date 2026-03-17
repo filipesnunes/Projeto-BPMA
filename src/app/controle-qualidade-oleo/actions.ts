@@ -92,15 +92,17 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return fechamento?.status === StatusFechamentoQualidadeOleo.ASSINADO;
 }
 
-async function getRegistroPayload(formData: FormData) {
+async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
   const fitaInput = getInputValue(formData, "fitaOleo");
   const temperaturaInput = getInputValue(formData, "temperatura");
-  // Mantido manual nesta fase; futuramente deve vir do usuário autenticado.
-  const responsavel = getInputValue(formData, "responsavel");
   const observacao = getInputValue(formData, "observacao");
 
-  if (!fitaInput || !temperaturaInput || !responsavel) {
+  if (!fitaInput || !temperaturaInput) {
     throw new Error("Preencha todos os campos obrigatórios do registro.");
+  }
+
+  if (!responsavelLogado.trim()) {
+    throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
   }
 
   const fitaOption = await findOilOptionByLabel(fitaInput, true);
@@ -121,7 +123,7 @@ async function getRegistroPayload(formData: FormData) {
     status: canonicalRule?.statusAssociado ?? fitaOption.statusAssociado,
     orientacao: canonicalRule?.descricao ?? fitaOption.descricao,
     temperaturaCritica: isTemperatureCritical(temperatura),
-    responsavel,
+    responsavel: responsavelLogado.trim(),
     observacao: observacao || null
   };
 }
@@ -130,10 +132,10 @@ export async function createRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
 
     const data = getTodaySystemDate();
-    const payload = await getRegistroPayload(formData);
+    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
     const { mes, ano } = getMonthYear(data);
 
     if (await isMonthSigned(mes, ano)) {
@@ -160,7 +162,7 @@ export async function updateRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
 
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) {
@@ -180,7 +182,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
     }
 
-    const payload = await getRegistroPayload(formData);
+    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
 
     await prisma.controleQualidadeOleoRegistro.update({
       where: { id },

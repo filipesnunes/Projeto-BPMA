@@ -64,7 +64,6 @@ type ItemInputValues = {
   aspectoSensorial: string;
   embalagem: string;
   acaoCorretiva: string;
-  responsavelRecebimento: string;
   observacoes: string;
 };
 
@@ -261,7 +260,8 @@ function parseRequiredTemperature(value: string): number {
 
 function validateAndBuildItemPayload(
   input: ItemInputValues,
-  categories: CategoryItem[]
+  categories: CategoryItem[],
+  responsavelLogado: string
 ): ValidatedItemPayload {
   if (!input.produto) {
     throw new Error("O campo Produto é obrigatório.");
@@ -271,8 +271,8 @@ function validateAndBuildItemPayload(
     throw new Error("O campo Lote é obrigatório.");
   }
 
-  if (!input.responsavelRecebimento) {
-    throw new Error("O campo Responsável é obrigatório.");
+  if (!responsavelLogado.trim()) {
+    throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
   }
 
   const dataFabricacao = parseRequiredDate(input.dataFabricacao, "Data de Fabricação");
@@ -322,7 +322,7 @@ function validateAndBuildItemPayload(
     aspectoSensorial: aspectoSensorial as ConformidadeRecebimento,
     embalagem: embalagem as ConformidadeRecebimento,
     acaoCorretiva: input.acaoCorretiva || null,
-    responsavelRecebimento: input.responsavelRecebimento,
+    responsavelRecebimento: responsavelLogado.trim(),
     observacoes: input.observacoes || null,
     statusGeral: statusGeral as StatusRecebimento
   };
@@ -474,7 +474,7 @@ export async function createManualNoteAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
 
     const fornecedor = getInputValue(formData, "fornecedor");
     const notaFiscal = getInputValue(formData, "notaFiscal");
@@ -504,10 +504,10 @@ export async function createManualNoteAction(formData: FormData) {
         aspectoSensorial: getInputValue(formData, "aspectoSensorial"),
         embalagem: getInputValue(formData, "embalagem"),
         acaoCorretiva: getInputValue(formData, "acaoCorretiva"),
-        responsavelRecebimento: getInputValue(formData, "responsavelRecebimento"),
         observacoes: getInputValue(formData, "observacoes")
       },
-      categories
+      categories,
+      actor.nomeCompleto
     );
 
     const note = await prisma.rastreabilidadeRecebimentoNota.create({
@@ -517,7 +517,7 @@ export async function createManualNoteAction(formData: FormData) {
         notaFiscal,
         statusNota: StatusNotaRecebimento.PENDENTE,
         origemXml: false,
-        responsavelGeral: itemPayload.responsavelRecebimento
+        responsavelGeral: actor.nomeCompleto
       }
     });
 
@@ -543,7 +543,7 @@ export async function saveNotaItemsAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
 
     const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
     if (!notaId) {
@@ -579,10 +579,10 @@ export async function saveNotaItemsAction(formData: FormData) {
           aspectoSensorial: getItemInputValue(formData, item.id, "aspectoSensorial"),
           embalagem: getItemInputValue(formData, item.id, "embalagem"),
           acaoCorretiva: getItemInputValue(formData, item.id, "acaoCorretiva"),
-          responsavelRecebimento: getItemInputValue(formData, item.id, "responsavelRecebimento"),
           observacoes: getItemInputValue(formData, item.id, "observacoes")
         },
-        categories
+        categories,
+        actor.nomeCompleto
       );
 
       return {
@@ -595,7 +595,7 @@ export async function saveNotaItemsAction(formData: FormData) {
       };
     });
 
-    const responsavelGeral = updates[0]?.data.responsavelRecebimento ?? note.responsavelGeral;
+    const responsavelGeral = actor.nomeCompleto;
 
     await prisma.$transaction(async (tx) => {
       for (const update of updates) {
@@ -625,7 +625,7 @@ export async function finalizeNotaAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
 
     const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
     if (!notaId) {
@@ -665,14 +665,14 @@ export async function finalizeNotaAction(formData: FormData) {
           aspectoSensorial: item.aspectoSensorial ?? "",
           embalagem: item.embalagem ?? "",
           acaoCorretiva: item.acaoCorretiva ?? "",
-          responsavelRecebimento: item.responsavelRecebimento ?? "",
           observacoes: item.observacoes ?? ""
         },
-        categories
+        categories,
+        actor.nomeCompleto
       )
     );
 
-    const responsavelGeral = updates[0]?.responsavelRecebimento ?? note.responsavelGeral;
+    const responsavelGeral = actor.nomeCompleto;
 
     await prisma.$transaction(async (tx) => {
       for (let index = 0; index < note.itens.length; index += 1) {

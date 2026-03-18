@@ -20,57 +20,53 @@ function redirectWithFeedback(pathname: string, type: "success" | "error", feedb
 }
 
 export async function loginAction(formData: FormData) {
-  try {
-    const nomeUsuario = getInputValue(formData, "nomeUsuario");
-    const senha = getInputValue(formData, "senha");
-    const nextPath = getInputValue(formData, "next");
+  const nomeUsuario = getInputValue(formData, "nomeUsuario");
+  const senha = getInputValue(formData, "senha");
+  const nextPath = getInputValue(formData, "next");
 
-    if (!nomeUsuario || !senha) {
-      throw new Error("Informe nome de usuário e senha.");
-    }
-
-    const usuario = await prisma.usuario.findUnique({
-      where: { nomeUsuario },
-      select: {
-        id: true,
-        nomeCompleto: true,
-        senhaHash: true,
-        status: true,
-        obrigarTrocaSenha: true
-      }
-    });
-
-    if (!usuario || !verifyPassword(senha, usuario.senhaHash)) {
-      throw new Error("Login inválido. Verifique usuário e senha.");
-    }
-
-    if (usuario.status !== "ATIVO") {
-      throw new Error("Seu usuário está inativo. Procure seu gestor para reativação.");
-    }
-
-    await prisma.usuario.update({
-      where: { id: usuario.id },
-      data: { ultimoAcesso: new Date() }
-    });
-
-    await createSessionForUser(usuario.id);
-
-    if (usuario.obrigarTrocaSenha) {
-      redirect("/trocar-senha");
-    }
-
-    const safeNext =
-      nextPath && nextPath.startsWith("/") && !nextPath.startsWith("/login")
-        ? nextPath
-        : "/";
-    redirect(safeNext);
-  } catch (error) {
-    const message =
-      error instanceof Error && error.message
-        ? error.message
-        : "Não foi possível realizar o login.";
-    redirectWithFeedback("/login", "error", message);
+  if (!nomeUsuario || !senha) {
+    redirectWithFeedback("/login", "error", "Informe nome de usuário e senha.");
   }
+
+  const usuario = await prisma.usuario.findUnique({
+    where: { nomeUsuario },
+    select: {
+      id: true,
+      nomeCompleto: true,
+      senhaHash: true,
+      status: true,
+      obrigarTrocaSenha: true
+    }
+  });
+
+  if (!usuario || !verifyPassword(senha, usuario.senhaHash)) {
+    redirectWithFeedback("/login", "error", "Login inválido. Verifique usuário e senha.");
+  }
+
+  if (usuario.status !== "ATIVO") {
+    redirectWithFeedback(
+      "/login",
+      "error",
+      "Seu usuário está inativo. Procure seu gestor para reativação."
+    );
+  }
+
+  await prisma.usuario.update({
+    where: { id: usuario.id },
+    data: { ultimoAcesso: new Date() }
+  });
+
+  await createSessionForUser(usuario.id);
+
+  if (usuario.obrigarTrocaSenha) {
+    redirect("/trocar-senha");
+  }
+
+  const safeNext =
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("/login")
+      ? nextPath
+      : "/";
+  redirect(safeNext);
 }
 
 export async function requestPasswordResetAction(formData: FormData) {

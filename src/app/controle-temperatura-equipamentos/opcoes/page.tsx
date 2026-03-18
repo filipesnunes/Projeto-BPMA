@@ -347,7 +347,7 @@ export default async function ControleTemperaturaOpcoesPage({
                     <label className="text-sm text-slate-700 dark:text-slate-200">
                       Status
                       <select name="status" required className={INPUT_CLASS}>
-                        <option value={StatusTemperaturaEquipamento.CONFORME}>Conforme</option>
+                        <option value={StatusTemperaturaEquipamento.CONFORME}>Normal</option>
                         <option value={StatusTemperaturaEquipamento.ALERTA}>Alerta</option>
                         <option value={StatusTemperaturaEquipamento.CRITICO}>Crítico</option>
                       </select>
@@ -423,7 +423,7 @@ export default async function ControleTemperaturaOpcoesPage({
                                       <label className="text-xs text-slate-600 dark:text-slate-300">
                                         Status
                                         <select name="status" defaultValue={regra.status} className={INPUT_CLASS}>
-                                          <option value={StatusTemperaturaEquipamento.CONFORME}>Conforme</option>
+                                          <option value={StatusTemperaturaEquipamento.CONFORME}>Normal</option>
                                           <option value={StatusTemperaturaEquipamento.ALERTA}>Alerta</option>
                                           <option value={StatusTemperaturaEquipamento.CRITICO}>Crítico</option>
                                         </select>

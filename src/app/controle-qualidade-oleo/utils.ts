@@ -1,6 +1,11 @@
 const MINUTE_IN_MS = 60 * 1000;
 
-export type StatusOleo = "ADEQUADO" | "ATENCAO" | "ULTIMA_UTILIZACAO" | "DESCARTAR";
+export type StatusOleo =
+  | "ADEQUADO"
+  | "ATENCAO"
+  | "ULTIMA_UTILIZACAO"
+  | "DESCARTAR"
+  | "SEM_UTILIZACAO";
 
 function createLocalDateOnly(year: number, month: number, day: number): Date {
   return new Date(year, month, day, 0, 0, 0, 0);
@@ -98,11 +103,17 @@ export function formatDateTimeDisplay(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
 
-  return `${day}/${month}/${year}`;
+  return `${day}/${month}/${year} ${hour}:${minute}`;
 }
 
-export function formatTemperatureDisplay(value: number): string {
+export function formatTemperatureDisplay(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+
   return `${value.toLocaleString("pt-BR", {
     minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
     maximumFractionDigits: 1
@@ -158,6 +169,10 @@ export function getStatusLabel(status: StatusOleo): string {
 
   if (status === "ULTIMA_UTILIZACAO") {
     return "Última Utilização";
+  }
+
+  if (status === "SEM_UTILIZACAO") {
+    return "Sem Utilização";
   }
 
   return "Descartar";

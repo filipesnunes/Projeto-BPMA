@@ -17,6 +17,7 @@ import {
   ensureCanReopenMonth,
   validateSignaturePassword
 } from "@/lib/authz";
+import { parseImageUploadFromFormData } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -286,11 +287,22 @@ export async function createRegistroAction(formData: FormData) {
         ? TurnoTemperaturaEquipamento.MANHA
         : TurnoTemperaturaEquipamento.TARDE;
 
+    const fotoDesvio = await parseImageUploadFromFormData({
+      formData,
+      key: "fotoDesvio",
+      required: isCorrectiveActionRequired(payload.status),
+      requiredMessage:
+        "A foto é obrigatória quando a temperatura estiver em Alerta ou Crítico."
+    });
+
     await prisma.controleTemperaturaEquipamento.create({
       data: {
         ...payload,
         data,
-        turno
+        turno,
+        fotoNome: fotoDesvio?.fileName ?? null,
+        fotoMimeType: fotoDesvio?.mimeType ?? null,
+        fotoBase64: fotoDesvio?.base64 ?? null
       }
     });
 
@@ -326,12 +338,31 @@ export async function updateRegistroAction(formData: FormData) {
     }
 
     const payload = await getRegistroPayload(formData, actor.nomeCompleto);
+    const fotoDesvio = await parseImageUploadFromFormData({
+      formData,
+      key: "fotoDesvio"
+    });
+    const exigeFoto = isCorrectiveActionRequired(payload.status);
+    const temFotoExistente = Boolean(existing.fotoBase64 && existing.fotoMimeType);
+
+    if (exigeFoto && !fotoDesvio && !temFotoExistente) {
+      throw new Error(
+        "A foto é obrigatória quando a temperatura estiver em Alerta ou Crítico."
+      );
+    }
 
     await prisma.controleTemperaturaEquipamento.update({
       where: { id },
       data: {
         ...payload,
-        turno: existing.turno
+        turno: existing.turno,
+        ...(fotoDesvio
+          ? {
+              fotoNome: fotoDesvio.fileName,
+              fotoMimeType: fotoDesvio.mimeType,
+              fotoBase64: fotoDesvio.base64
+            }
+          : {})
       }
     });
 

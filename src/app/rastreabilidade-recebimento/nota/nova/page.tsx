@@ -65,8 +65,15 @@ export default async function NovaNotaRecebimentoPage() {
             <input type="date" name="dataValidade" required className={INPUT_CLASS} />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
-            SIF
-            <input type="text" name="sif" className={INPUT_CLASS} />
+            SIF *
+            <input
+              type="text"
+              name="sif"
+              required
+              list="sif-opcoes"
+              defaultValue="Não se aplica"
+              className={INPUT_CLASS}
+            />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Temperatura (°C) *
@@ -122,6 +129,9 @@ export default async function NovaNotaRecebimentoPage() {
             </button>
           </div>
         </form>
+        <datalist id="sif-opcoes">
+          <option value="Não se aplica" />
+        </datalist>
       </section>
     </div>
   );

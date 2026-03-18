@@ -49,6 +49,7 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
   if (value === StatusQualidadeOleo.ATENCAO) return StatusQualidadeOleo.ATENCAO;
   if (value === StatusQualidadeOleo.ULTIMA_UTILIZACAO) return StatusQualidadeOleo.ULTIMA_UTILIZACAO;
   if (value === StatusQualidadeOleo.DESCARTAR) return StatusQualidadeOleo.DESCARTAR;
+  if (value === StatusQualidadeOleo.SEM_UTILIZACAO) return StatusQualidadeOleo.SEM_UTILIZACAO;
   return null;
 }
 
@@ -174,6 +175,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
               <option value={StatusQualidadeOleo.ATENCAO}>Atenção</option>
               <option value={StatusQualidadeOleo.ULTIMA_UTILIZACAO}>Última Utilização</option>
               <option value={StatusQualidadeOleo.DESCARTAR}>Descartar</option>
+              <option value={StatusQualidadeOleo.SEM_UTILIZACAO}>Sem Utilização</option>
             </select>
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
@@ -216,7 +218,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
                 registros.map((registro) => (
                   <tr key={registro.id}>
                     <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
-                    <td className="px-3 py-2">{registro.fitaOleo}</td>
+                    <td className="px-3 py-2">{registro.fitaOleo ?? "-"}</td>
                     <td className={`px-3 py-2 ${registro.temperaturaCritica ? "text-red-600 dark:text-red-300" : ""}`}>
                       {formatTemperatureDisplay(registro.temperatura)}
                     </td>

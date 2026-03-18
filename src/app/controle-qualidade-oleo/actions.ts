@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  StatusQualidadeOleo,
   StatusFechamentoQualidadeOleo
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -95,14 +96,28 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
 async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
   const fitaInput = getInputValue(formData, "fitaOleo");
   const temperaturaInput = getInputValue(formData, "temperatura");
+  const semUtilizacao = getInputValue(formData, "semUtilizacao") === "true";
   const observacao = getInputValue(formData, "observacao");
-
-  if (!fitaInput || !temperaturaInput) {
-    throw new Error("Preencha todos os campos obrigatórios do registro.");
-  }
 
   if (!responsavelLogado.trim()) {
     throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
+  }
+
+  if (semUtilizacao) {
+    return {
+      fitaOleo: null,
+      temperatura: null,
+      status: StatusQualidadeOleo.SEM_UTILIZACAO,
+      orientacao: "Sem utilização no período.",
+      temperaturaCritica: false,
+      semUtilizacao: true,
+      responsavel: responsavelLogado.trim(),
+      observacao: observacao || null
+    };
+  }
+
+  if (!fitaInput || !temperaturaInput) {
+    throw new Error("Preencha todos os campos obrigatórios do registro.");
   }
 
   const fitaOption = await findOilOptionByLabel(fitaInput, true);
@@ -123,6 +138,7 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
     status: canonicalRule?.statusAssociado ?? fitaOption.statusAssociado,
     orientacao: canonicalRule?.descricao ?? fitaOption.descricao,
     temperaturaCritica: isTemperatureCritical(temperatura),
+    semUtilizacao: false,
     responsavel: responsavelLogado.trim(),
     observacao: observacao || null
   };

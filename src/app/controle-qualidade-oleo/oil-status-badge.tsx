@@ -15,6 +15,8 @@ export function OilStatusBadge({ status, temperaturaCritica }: OilStatusBadgePro
         ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
         : status === StatusQualidadeOleo.ULTIMA_UTILIZACAO
           ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800 dark:bg-orange-950 dark:text-orange-200"
+          : status === StatusQualidadeOleo.SEM_UTILIZACAO
+            ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
           : "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200";
 
   return (

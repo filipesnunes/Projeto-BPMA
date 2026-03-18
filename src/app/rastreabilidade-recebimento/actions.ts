@@ -19,6 +19,7 @@ import {
   validateSignaturePassword
 } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import type { UserRole } from "@/lib/rbac";
 
 import {
   hasCategoryWithSameName,
@@ -43,6 +44,14 @@ import {
 const MODULE_PATH = "/rastreabilidade-recebimento";
 const DUPLICATE_NFE_MESSAGE =
   "Esta nota fiscal já foi importada anteriormente e não pode ser cadastrada novamente.";
+
+function canImportXmlAsAdmin(role: UserRole): boolean {
+  return role === "DEV" || role === "GESTOR";
+}
+
+function canEditImportedXmlFields(role: UserRole): boolean {
+  return role === "DEV" || role === "GESTOR";
+}
 
 type FeedbackType = "success" | "error";
 
@@ -72,7 +81,7 @@ type ValidatedItemPayload = {
   lote: string;
   dataFabricacao: Date;
   dataValidade: Date;
-  sif: string | null;
+  sif: string;
   temperatura: number;
   categoriaId: number;
   temperaturaStatus: ConformidadeRecebimento;
@@ -271,6 +280,17 @@ function validateAndBuildItemPayload(
     throw new Error("O campo Lote é obrigatório.");
   }
 
+  const sifNormalizado = input.sif.trim();
+  if (!sifNormalizado) {
+    throw new Error("O campo SIF é obrigatório. Se não se aplicar, selecione \"Não se aplica\".");
+  }
+  const sifValue =
+    sifNormalizado === "__NAO_APLICA__" ||
+    sifNormalizado.toLocaleLowerCase("pt-BR") === "não se aplica" ||
+    sifNormalizado.toLocaleLowerCase("pt-BR") === "nao se aplica"
+      ? "Não se aplica"
+      : sifNormalizado;
+
   if (!responsavelLogado.trim()) {
     throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
   }
@@ -314,7 +334,7 @@ function validateAndBuildItemPayload(
     lote: input.lote,
     dataFabricacao,
     dataValidade,
-    sif: input.sif || null,
+    sif: sifValue,
     temperatura,
     categoriaId: category.id,
     temperaturaStatus: temperaturaStatus as ConformidadeRecebimento,
@@ -382,7 +402,10 @@ export async function importXmlAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await getCurrentUserForAction();
+    const actor = await getCurrentUserForAction();
+    if (!canImportXmlAsAdmin(actor.perfil)) {
+      throw new Error("A importação de XML é permitida apenas para perfil administrativo.");
+    }
 
     const file = formData.get("xmlFile");
     if (!(file instanceof File)) {
@@ -428,8 +451,9 @@ export async function importXmlAction(formData: FormData) {
           cnpjFornecedor: parsed.cnpjFornecedor,
           serieNota: parsed.serieNota,
           identificadorFiscal: fiscalIdentifier,
-          statusNota: StatusNotaRecebimento.PENDENTE,
-          origemXml: true
+          statusNota: StatusNotaRecebimento.IMPORTADA,
+          origemXml: true,
+          responsavelGeral: actor.nomeCompleto
         }
       });
 
@@ -515,7 +539,7 @@ export async function createManualNoteAction(formData: FormData) {
         data,
         fornecedor,
         notaFiscal,
-        statusNota: StatusNotaRecebimento.PENDENTE,
+        statusNota: StatusNotaRecebimento.EM_CONFERENCIA,
         origemXml: false,
         responsavelGeral: actor.nomeCompleto
       }
@@ -565,14 +589,33 @@ export async function saveNotaItemsAction(formData: FormData) {
     }
 
     const categories = await getActiveCategories();
+    const xmlFieldsLocked =
+      note.origemXml && !canEditImportedXmlFields(actor.perfil);
 
     const updates = note.itens.map((item) => {
+      const produtoInput = xmlFieldsLocked
+        ? item.produto
+        : getItemInputValue(formData, item.id, "produto");
+      const loteInput = xmlFieldsLocked
+        ? item.lote ?? ""
+        : getItemInputValue(formData, item.id, "lote");
+      const dataFabricacaoInput = xmlFieldsLocked
+        ? item.dataFabricacao
+          ? formatDateInput(item.dataFabricacao)
+          : ""
+        : getItemInputValue(formData, item.id, "dataFabricacao");
+      const dataValidadeInput = xmlFieldsLocked
+        ? item.dataValidade
+          ? formatDateInput(item.dataValidade)
+          : ""
+        : getItemInputValue(formData, item.id, "dataValidade");
+
       const payload = validateAndBuildItemPayload(
         {
-          produto: getItemInputValue(formData, item.id, "produto"),
-          lote: getItemInputValue(formData, item.id, "lote"),
-          dataFabricacao: getItemInputValue(formData, item.id, "dataFabricacao"),
-          dataValidade: getItemInputValue(formData, item.id, "dataValidade"),
+          produto: produtoInput,
+          lote: loteInput,
+          dataFabricacao: dataFabricacaoInput,
+          dataValidade: dataValidadeInput,
           sif: getItemInputValue(formData, item.id, "sif"),
           temperatura: getItemInputValue(formData, item.id, "temperatura"),
           transporteEntregador: getItemInputValue(formData, item.id, "transporteEntregador"),
@@ -608,7 +651,7 @@ export async function saveNotaItemsAction(formData: FormData) {
       await tx.rastreabilidadeRecebimentoNota.update({
         where: { id: note.id },
         data: {
-          statusNota: StatusNotaRecebimento.PENDENTE,
+          statusNota: StatusNotaRecebimento.EM_CONFERENCIA,
           responsavelGeral
         }
       });
@@ -777,8 +820,8 @@ export async function deleteNoteAction(formData: FormData) {
       throw new Error("Esta nota pertence a um período já fechado e não pode ser excluída.");
     }
 
-    if (note.statusNota !== StatusNotaRecebimento.PENDENTE) {
-      throw new Error("Somente notas com status Pendente podem ser excluídas.");
+    if (note.statusNota === StatusNotaRecebimento.FINALIZADA) {
+      throw new Error("Somente notas pendentes de conferência podem ser excluídas.");
     }
 
     await prisma.rastreabilidadeRecebimentoNota.delete({
@@ -835,7 +878,7 @@ export async function closeMonthAction(formData: FormData) {
     const pendentes = await prisma.rastreabilidadeRecebimentoNota.count({
       where: {
         data: { gte: start, lte: end },
-        statusNota: StatusNotaRecebimento.PENDENTE
+        statusNota: { not: StatusNotaRecebimento.FINALIZADA }
       }
     });
 

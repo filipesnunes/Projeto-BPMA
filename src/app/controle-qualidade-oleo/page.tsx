@@ -5,8 +5,10 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
 import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import {
   closeMonthAction,
@@ -87,12 +89,17 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
     return StatusQualidadeOleo.DESCARTAR;
   }
 
+  if (value === StatusQualidadeOleo.SEM_UTILIZACAO) {
+    return StatusQualidadeOleo.SEM_UTILIZACAO;
+  }
+
   return null;
 }
 
 export default async function ControleQualidadeOleoPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
   const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
 
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
@@ -167,7 +174,10 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     : null;
 
   let fitaFormOptions = fitaOptionsAtivas;
-  if (registroEmEdicao && !fitaOptionsAtivas.some((item) => item.rotulo === registroEmEdicao.fitaOleo)) {
+  if (
+    registroEmEdicao?.fitaOleo &&
+    !fitaOptionsAtivas.some((item) => item.rotulo === registroEmEdicao.fitaOleo)
+  ) {
     const optionInAll = fitaOptions.find((item) => item.rotulo === registroEmEdicao.fitaOleo);
 
     if (optionInAll) {
@@ -281,6 +291,9 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
             <Link href="/controle-qualidade-oleo/opcoes" className="btn-secondary">
               Gerenciar Opções
             </Link>
+            <Link href="/chamados-manutencao?origem=OLEO" className="btn-secondary">
+              Abrir Chamado de Manutenção
+            </Link>
             <ThemeToggleButton />
           </div>
         </div>
@@ -361,9 +374,12 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               defaultFita={registroEmEdicao?.fitaOleo ?? ""}
               defaultTemperatura={
                 registroEmEdicao
-                  ? String(registroEmEdicao.temperatura).replace(".", ",")
+                  ? registroEmEdicao.temperatura !== null
+                    ? String(registroEmEdicao.temperatura).replace(".", ",")
+                    : ""
                   : ""
               }
+              defaultSemUtilizacao={registroEmEdicao?.semUtilizacao ?? false}
               inputClassName={INPUT_CLASS}
             />
 
@@ -457,6 +473,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               <option value={StatusQualidadeOleo.ATENCAO}>Atenção</option>
               <option value={StatusQualidadeOleo.ULTIMA_UTILIZACAO}>Última Utilização</option>
               <option value={StatusQualidadeOleo.DESCARTAR}>Descartar</option>
+              <option value={StatusQualidadeOleo.SEM_UTILIZACAO}>Sem Utilização</option>
             </select>
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
@@ -520,15 +537,24 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                     query.set("editId", String(registro.id));
                     return buildPathWithParams(query);
                   })();
+                  const hrefChamado = `/chamados-manutencao?origem=OLEO&registroId=${registro.id}&area=${encodeURIComponent(
+                    "Fritadeira"
+                  )}&descricao=${encodeURIComponent(
+                    `Ocorrência no controle de óleo: status ${getStatusLabel(
+                      registro.status
+                    )}.`
+                  )}`;
 
                   return (
                     <tr key={registro.id}>
                       <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
-                      <td className="px-3 py-2">{registro.fitaOleo}</td>
+                      <td className="px-3 py-2">{registro.fitaOleo ?? "-"}</td>
                       <td className={`px-3 py-2 ${registro.temperaturaCritica ? "text-red-600 dark:text-red-300" : ""}`}>
                         {formatTemperatureDisplay(registro.temperatura)}
                         {registro.temperaturaCritica ? (
                           <p className="text-xs">Acima de 180°C</p>
+                        ) : registro.semUtilizacao ? (
+                          <p className="text-xs">Sem Utilização no Período</p>
                         ) : null}
                       </td>
                       <td className="px-3 py-2">
@@ -545,6 +571,9 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                         <div className="btn-group">
                           <Link href={hrefEditar} className="btn-action">
                             Editar
+                          </Link>
+                          <Link href={hrefChamado} className="btn-secondary">
+                            Abrir Chamado
                           </Link>
                           <form action={deleteRegistroAction} className="m-0">
                             <input type="hidden" name="id" value={registro.id} />
@@ -631,7 +660,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                   registrosFechamento.map((registro) => (
                     <tr key={registro.id}>
                       <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
-                      <td className="px-3 py-2">{registro.fitaOleo}</td>
+                      <td className="px-3 py-2">{registro.fitaOleo ?? "-"}</td>
                       <td className={`px-3 py-2 ${registro.temperaturaCritica ? "text-red-600 dark:text-red-300" : ""}`}>
                         {formatTemperatureDisplay(registro.temperatura)}
                       </td>
@@ -650,7 +679,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                 Mês assinado por <strong>{fechamentoAtual?.responsavelTecnico}</strong>.
               </p>
               <p>
-                Data da assinatura: <strong>{fechamentoAtual ? formatDateDisplay(fechamentoAtual.dataAssinatura) : "-"}</strong>
+                Data da assinatura: <strong>{fechamentoAtual ? formatDateTimeDisplay(fechamentoAtual.dataAssinatura) : "-"}</strong>
               </p>
               <form id={reaberturaFormId} action={reopenMonthAction} className="mt-4">
                 <input type="hidden" name="mes" value={String(fechamentoMes)} />
@@ -668,12 +697,11 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                 Confirme sua Senha *
                 <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Data da assinatura</p>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {formatDateTimeDisplay(now)}
-                </p>
-              </div>
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
               <div className="md:col-span-2">
                 <button type="submit" className="btn-primary">
                   Fechar Mês

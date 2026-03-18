@@ -43,7 +43,19 @@ function firstParam(value: string | string[] | undefined): string {
 }
 
 function getNotaStatusLabel(status: StatusNotaRecebimento): string {
-  return status === StatusNotaRecebimento.FINALIZADA ? "Finalizada" : "Pendente";
+  if (status === StatusNotaRecebimento.FINALIZADA) {
+    return "Finalizada";
+  }
+
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "Importada";
+  }
+
+  if (status === StatusNotaRecebimento.EM_CONFERENCIA) {
+    return "Em Conferência";
+  }
+
+  return "Pendente";
 }
 
 function getNotaStatusClass(status: StatusNotaRecebimento): string {
@@ -51,7 +63,15 @@ function getNotaStatusClass(status: StatusNotaRecebimento): string {
     return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
   }
 
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200";
+  }
+
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+}
+
+function canEditImportedXmlFields(role: string | undefined): boolean {
+  return role === "DEV" || role === "GESTOR";
 }
 
 function formatCnpj(value: string): string {
@@ -102,7 +122,8 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
   const readOnlyMode = monthSigned || noteFinalizada;
   const authUser = await getCurrentUser();
   const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
-  const canDeleteNote = !monthSigned && note.statusNota === StatusNotaRecebimento.PENDENTE;
+  const xmlFieldsLocked = note.origemXml && !canEditImportedXmlFields(authUser?.perfil);
+  const canDeleteNote = !monthSigned && note.statusNota !== StatusNotaRecebimento.FINALIZADA;
   const returnTo = `/rastreabilidade-recebimento/nota/${note.id}`;
 
   const query = await searchParams;
@@ -135,6 +156,16 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
           <div className="btn-group">
             <Link href="/rastreabilidade-recebimento" className="btn-secondary">
               Voltar para Módulo
+            </Link>
+            <Link
+              href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${note.id}&area=${encodeURIComponent(
+                note.fornecedor
+              )}&descricao=${encodeURIComponent(
+                `Ocorrência no recebimento da nota ${note.notaFiscal} (${note.fornecedor}).`
+              )}`}
+              className="btn-secondary"
+            >
+              Abrir Chamado de Manutenção
             </Link>
             {canDeleteNote ? <DeleteNoteModal formId={`delete-note-from-note-${note.id}`} /> : null}
             <ThemeToggleButton />
@@ -213,6 +244,13 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
           </div>
         ) : null}
 
+        {!readOnlyMode && xmlFieldsLocked ? (
+          <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200">
+            Dados importados do XML (produto, lote e datas) estão bloqueados para edição operacional.
+            Preencha apenas os campos de conferência física.
+          </div>
+        ) : null}
+
         {note.itens.length === 0 ? (
           <p className="text-sm text-slate-600 dark:text-slate-300">
             Esta nota não possui itens cadastrados.
@@ -252,7 +290,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                             name={`item-${item.id}-produto`}
                             defaultValue={item.produto}
                             required
-                            disabled={readOnlyMode}
+                            disabled={readOnlyMode || xmlFieldsLocked}
                             className={`${INPUT_CLASS} min-w-[9rem] md:min-w-[11rem]`}
                           />
                         </td>
@@ -262,7 +300,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                             name={`item-${item.id}-lote`}
                             defaultValue={item.lote ?? ""}
                             required
-                            disabled={readOnlyMode}
+                            disabled={readOnlyMode || xmlFieldsLocked}
                             className={`${INPUT_CLASS} min-w-[5.5rem] md:min-w-[6.5rem]`}
                           />
                         </td>
@@ -274,7 +312,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                               item.dataFabricacao ? formatDateInput(item.dataFabricacao) : ""
                             }
                             required
-                            disabled={readOnlyMode}
+                            disabled={readOnlyMode || xmlFieldsLocked}
                             className={`${INPUT_CLASS} min-w-[7.5rem]`}
                           />
                         </td>
@@ -286,7 +324,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                               item.dataValidade ? formatDateInput(item.dataValidade) : ""
                             }
                             required
-                            disabled={readOnlyMode}
+                            disabled={readOnlyMode || xmlFieldsLocked}
                             className={`${INPUT_CLASS} min-w-[7.5rem]`}
                           />
                         </td>
@@ -294,7 +332,9 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                           <input
                             type="text"
                             name={`item-${item.id}-sif`}
-                            defaultValue={item.sif ?? ""}
+                            defaultValue={item.sif ?? "Não se aplica"}
+                            list="sif-opcoes"
+                            required
                             disabled={readOnlyMode}
                             className={`${INPUT_CLASS} min-w-[4.5rem] md:min-w-[5rem]`}
                           />
@@ -408,6 +448,9 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
                   </tbody>
                 </table>
               </div>
+              <datalist id="sif-opcoes">
+                <option value="Não se aplica" />
+              </datalist>
 
               {!readOnlyMode ? (
                 <div className="mt-4 btn-group">

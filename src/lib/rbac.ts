@@ -26,7 +26,8 @@ const MODULE_ACCESS: Record<UserRole, string[]> = {
     "/controle-qualidade-oleo",
     "/rastreabilidade-recebimento",
     "/controle-buffet-amostras",
-    "/plano-limpeza"
+    "/plano-limpeza",
+    "/chamados-manutencao"
   ],
   GESTOR: [
     "/higienizacao-hortifruti",
@@ -34,7 +35,8 @@ const MODULE_ACCESS: Record<UserRole, string[]> = {
     "/controle-qualidade-oleo",
     "/rastreabilidade-recebimento",
     "/controle-buffet-amostras",
-    "/plano-limpeza"
+    "/plano-limpeza",
+    "/chamados-manutencao"
   ],
   SUPERVISOR: [
     "/higienizacao-hortifruti",
@@ -42,7 +44,8 @@ const MODULE_ACCESS: Record<UserRole, string[]> = {
     "/controle-qualidade-oleo",
     "/rastreabilidade-recebimento",
     "/controle-buffet-amostras",
-    "/plano-limpeza"
+    "/plano-limpeza",
+    "/chamados-manutencao"
   ],
   RESPONSAVEL_TECNICO: [
     "/higienizacao-hortifruti",
@@ -50,7 +53,8 @@ const MODULE_ACCESS: Record<UserRole, string[]> = {
     "/controle-qualidade-oleo",
     "/rastreabilidade-recebimento",
     "/controle-buffet-amostras",
-    "/plano-limpeza"
+    "/plano-limpeza",
+    "/chamados-manutencao"
   ],
   FUNCIONARIO: [
     "/higienizacao-hortifruti",
@@ -58,7 +62,8 @@ const MODULE_ACCESS: Record<UserRole, string[]> = {
     "/controle-qualidade-oleo",
     "/rastreabilidade-recebimento",
     "/controle-buffet-amostras",
-    "/plano-limpeza"
+    "/plano-limpeza",
+    "/chamados-manutencao"
   ]
 };
 
@@ -120,6 +125,14 @@ export function canResetPassword(actorRole: UserRole, targetRole: UserRole): boo
   }
 
   return false;
+}
+
+export function canOpenMaintenanceTicket(role: UserRole): boolean {
+  return MODULE_ACCESS[role].includes("/chamados-manutencao");
+}
+
+export function canUpdateMaintenanceTicket(role: UserRole): boolean {
+  return role === "DEV" || role === "GESTOR" || role === "SUPERVISOR";
 }
 
 export function canAccessPath(role: UserRole, pathname: string): boolean {

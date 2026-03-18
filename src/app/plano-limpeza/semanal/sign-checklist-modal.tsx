@@ -8,6 +8,8 @@ import { formatDateDisplay, getWeeklyDayLabel } from "../utils";
 type WeeklySignChecklistModalProps = {
   closeHref: string;
   returnTo: string;
+  usuarioAssinando: string;
+  dataHoraAtual: string;
   execution: {
     executionId: number;
     area: string;
@@ -23,6 +25,8 @@ type WeeklySignChecklistModalProps = {
     status: StatusPlanoLimpeza;
     assinaturaResponsavel: string;
     assinaturaSupervisor: string;
+    observacaoResponsavel: string | null;
+    observacaoSupervisor: string | null;
     etapa: "responsavel" | "supervisor" | null;
     item: {
       id: number;
@@ -37,6 +41,8 @@ type WeeklySignChecklistModalProps = {
 export function WeeklySignChecklistModal({
   closeHref,
   returnTo,
+  usuarioAssinando,
+  dataHoraAtual,
   execution,
   items
 }: WeeklySignChecklistModalProps) {
@@ -76,6 +82,15 @@ export function WeeklySignChecklistModal({
               <StatusBadge status={execution.statusGeral} />
             </div>
           </div>
+          <div className="md:col-span-2">
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Assinatura Atual
+            </p>
+            <p className="font-medium text-slate-800 dark:text-slate-100">{usuarioAssinando}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Data e Hora: {dataHoraAtual}
+            </p>
+          </div>
         </div>
 
         <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -92,6 +107,8 @@ export function WeeklySignChecklistModal({
                   <th className="px-3 py-2">Quem</th>
                   <th className="px-3 py-2">Assinatura do Responsável</th>
                   <th className="px-3 py-2">Assinatura do Supervisor</th>
+                  <th className="px-3 py-2">Obs. Responsável</th>
+                  <th className="px-3 py-2">Obs. Supervisor</th>
                   <th className="px-3 py-2">Status do Item</th>
                   <th className="px-3 py-2">Ações</th>
                 </tr>
@@ -99,7 +116,7 @@ export function WeeklySignChecklistModal({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                    <td colSpan={10} className="px-3 py-2 text-slate-500 dark:text-slate-400">
                       Nenhum item encontrado para esta execução semanal.
                     </td>
                   </tr>
@@ -117,11 +134,17 @@ export function WeeklySignChecklistModal({
                         {executionItem.assinaturaSupervisor || "-"}
                       </td>
                       <td className="px-3 py-2">
+                        {executionItem.observacaoResponsavel || "-"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {executionItem.observacaoSupervisor || "-"}
+                      </td>
+                      <td className="px-3 py-2">
                         <StatusBadge status={executionItem.status} />
                       </td>
                       <td className="px-3 py-2">
                         {executionItem.etapa === "responsavel" ? (
-                          <form action={updateWeeklyRecordAction} className="flex min-w-[280px] gap-2">
+                          <form action={updateWeeklyRecordAction} className="grid min-w-[320px] gap-2">
                             <input type="hidden" name="id" value={String(executionItem.id)} />
                             <input type="hidden" name="returnTo" value={returnTo} />
                             <input type="hidden" name="etapa" value="responsavel" />
@@ -132,12 +155,18 @@ export function WeeklySignChecklistModal({
                               placeholder="Confirme sua senha"
                               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                             />
+                            <input
+                              type="text"
+                              name="observacaoAssinatura"
+                              placeholder="Observação (Opcional)"
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                            />
                             <button type="submit" className="btn-primary whitespace-nowrap">
                               Assinar
                             </button>
                           </form>
                         ) : executionItem.etapa === "supervisor" ? (
-                          <form action={updateWeeklyRecordAction} className="flex min-w-[280px] gap-2">
+                          <form action={updateWeeklyRecordAction} className="grid min-w-[320px] gap-2">
                             <input type="hidden" name="id" value={String(executionItem.id)} />
                             <input type="hidden" name="returnTo" value={returnTo} />
                             <input type="hidden" name="etapa" value="supervisor" />
@@ -146,6 +175,12 @@ export function WeeklySignChecklistModal({
                               name="senhaConfirmacao"
                               required
                               placeholder="Confirme sua senha"
+                              className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+                            />
+                            <input
+                              type="text"
+                              name="observacaoAssinatura"
+                              placeholder="Observação (Opcional)"
                               className="w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-xs outline-none focus:border-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                             />
                             <button type="submit" className="btn-primary whitespace-nowrap">

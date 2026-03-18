@@ -4,6 +4,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { getImageDataUrl } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
 
 import { TemperatureStatusBadge } from "../temperature-status-badge";
@@ -190,7 +191,7 @@ export default async function ControleTemperaturaHistoricoPage({
               className={INPUT_CLASS}
             >
               <option value="">Todos</option>
-              <option value={StatusTemperaturaEquipamento.CONFORME}>Conforme</option>
+              <option value={StatusTemperaturaEquipamento.CONFORME}>Normal</option>
               <option value={StatusTemperaturaEquipamento.ALERTA}>Alerta</option>
               <option value={StatusTemperaturaEquipamento.CRITICO}>Crítico</option>
             </select>
@@ -231,6 +232,7 @@ export default async function ControleTemperaturaHistoricoPage({
                 <th className="px-3 py-2">Temperatura</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 min-w-52">Ação Corretiva</th>
+                <th className="px-3 py-2">Foto</th>
                 <th className="px-3 py-2">Responsável</th>
                 <th className="px-3 py-2">Observações</th>
               </tr>
@@ -238,7 +240,7 @@ export default async function ControleTemperaturaHistoricoPage({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {registros.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400" colSpan={8}>
+                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400" colSpan={9}>
                     Nenhum registro encontrado.
                   </td>
                 </tr>
@@ -254,6 +256,15 @@ export default async function ControleTemperaturaHistoricoPage({
                     </td>
                     <td className="px-3 py-2 max-w-64 whitespace-normal break-words">
                       {registro.acaoCorretiva ?? "-"}
+                    </td>
+                    <td className="px-3 py-2">
+                      {getImageDataUrl(registro.fotoMimeType, registro.fotoBase64) ? (
+                        <span className="text-xs text-slate-600 dark:text-slate-300">
+                          Foto Anexada
+                        </span>
+                      ) : (
+                        "-"
+                      )}
                     </td>
                     <td className="px-3 py-2">{registro.responsavel}</td>
                     <td className="px-3 py-2">{registro.observacoes ?? "-"}</td>

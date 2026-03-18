@@ -5,7 +5,10 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
+import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import { closeWeeklyMonthAction, reopenWeeklyMonthAction } from "../actions";
 import { MONTH_OPTIONS, WEEKLY_AREAS, WEEKLY_STATUS_OPTIONS } from "../constants";
@@ -59,6 +62,10 @@ function includesIgnoreCase(text: string, search: string): boolean {
 }
 
 export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProps) {
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
+
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -191,6 +198,8 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
           status: true,
           assinaturaResponsavel: true,
           assinaturaSupervisor: true,
+          observacaoResponsavel: true,
+          observacaoSupervisor: true,
           item: {
             select: {
               id: true,
@@ -311,6 +320,9 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
             </Link>
             <Link href="/plano-limpeza/semanal/opcoes" className="btn-secondary">
               Gerenciar Plano Semanal
+            </Link>
+            <Link href="/chamados-manutencao?origem=LIMPEZA" className="btn-secondary">
+              Abrir Chamado de Manutenção
             </Link>
             <ThemeToggleButton />
           </div>
@@ -621,7 +633,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
               <p>
                 Data da assinatura:{" "}
                 <strong>
-                  {fechamentoAtual ? formatDateDisplay(fechamentoAtual.dataAssinatura) : "-"}
+                  {fechamentoAtual ? formatDateTimeDisplay(fechamentoAtual.dataAssinatura) : "-"}
                 </strong>
               </p>
               <form id={reaberturaFormId} action={reopenWeeklyMonthAction} className="mt-4">
@@ -640,17 +652,11 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
                 Confirme sua Senha *
                 <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Data da assinatura
-                </p>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {formatDateTimeDisplay(now)}
-                </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  O responsável será o usuário logado.
-                </p>
-              </div>
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
               <div className="md:col-span-2">
                 <button type="submit" className="btn-primary">
                   Fechar Mês
@@ -667,12 +673,16 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
         <WeeklySignChecklistModal
           closeHref={returnTo}
           returnTo={returnTo}
+          usuarioAssinando={responsavelLogado}
+          dataHoraAtual={formatDateTimeDisplay(now)}
           execution={executionParaAssinatura}
           items={executionItemsParaAssinatura.map((executionItem) => ({
             id: executionItem.id,
             status: executionItem.status,
             assinaturaResponsavel: executionItem.assinaturaResponsavel,
             assinaturaSupervisor: executionItem.assinaturaSupervisor,
+            observacaoResponsavel: executionItem.observacaoResponsavel,
+            observacaoSupervisor: executionItem.observacaoSupervisor,
             etapa: getWeeklySignStage(executionItem),
             item: {
               id: executionItem.item.id,

@@ -37,6 +37,11 @@ export const modules: AppModule[] = [
     href: "/plano-limpeza",
     allowedRoles: ["DEV", "GESTOR", "SUPERVISOR", "RESPONSAVEL_TECNICO", "FUNCIONARIO"]
   },
+  {
+    name: "Chamados de Manutenção",
+    href: "/chamados-manutencao",
+    allowedRoles: ["DEV", "GESTOR", "SUPERVISOR", "RESPONSAVEL_TECNICO", "FUNCIONARIO"]
+  },
 ];
 
 export function getModulesForRole(role: UserRole): AppModule[] {

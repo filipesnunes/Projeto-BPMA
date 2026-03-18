@@ -1,7 +1,10 @@
 import { StatusFechamentoPlanoLimpeza, StatusPlanoLimpeza, TipoPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
+import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import { bulkSignDailyByDateAction } from "@/app/plano-limpeza/actions";
 import { StatusBadge } from "@/app/plano-limpeza/status-badge";
@@ -13,6 +16,7 @@ import {
 import {
   formatDateDisplay,
   formatDateInput,
+  formatDateTimeDisplay,
   getMonthYear,
   getTurnoLabel,
   parseDateInput
@@ -36,6 +40,11 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
   params,
   searchParams
 }: PageProps) {
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
+  const now = new Date();
+
   const { data } = await params;
   const query = await searchParams;
   const feedback = firstParam(query.feedback).trim();
@@ -180,6 +189,14 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
             <input type="hidden" name="data" value={normalizedDate} />
             <input type="hidden" name="returnTo" value={returnTo} />
 
+            <div className="md:col-span-2">
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
+            </div>
+
             <label className="text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
               Confirme sua Senha *
               <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
@@ -229,13 +246,14 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
                 <th className="px-3 py-2">Responsável</th>
                 <th className="px-3 py-2">Supervisor</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Observação</th>
+                <th className="px-3 py-2">Obs. Responsável</th>
+                <th className="px-3 py-2">Obs. Supervisor</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {registros.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-3 text-slate-500 dark:text-slate-400">
+                  <td colSpan={7} className="px-3 py-3 text-slate-500 dark:text-slate-400">
                     Nenhum registro para este dia.
                   </td>
                 </tr>
@@ -249,7 +267,10 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
                     <td className="px-3 py-2">
                       <StatusBadge status={registro.status} />
                     </td>
-                    <td className="px-3 py-2">{registro.observacao || "-"}</td>
+                    <td className="px-3 py-2">
+                      {registro.observacaoResponsavel || registro.observacao || "-"}
+                    </td>
+                    <td className="px-3 py-2">{registro.observacaoSupervisor || "-"}</td>
                   </tr>
                 ))
               )}

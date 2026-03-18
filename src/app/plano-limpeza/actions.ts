@@ -144,6 +144,7 @@ export async function updateDailyRecordAction(formData: FormData) {
 
     const etapa = getInputValue(formData, "etapa");
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+    const observacaoAssinatura = getInputValue(formData, "observacaoAssinatura");
 
     const etapaPermitida = getDailySignStage(existing);
     if (!etapaPermitida) {
@@ -163,14 +164,16 @@ export async function updateDailyRecordAction(formData: FormData) {
         where: { id },
         data: {
           assinaturaResponsavel: actor.nomeCompleto,
-          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
+          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
+          observacaoResponsavel: observacaoAssinatura || null
         }
       });
       await createSignatureLog({
         user: actor,
         tipo: "RESPONSAVEL",
         modulo: "plano-limpeza/diario",
-        referenciaId: String(id)
+        referenciaId: String(id),
+        observacao: observacaoAssinatura || null
       });
     } else {
       ensureCanSignSupervisor(actor.perfil);
@@ -182,14 +185,16 @@ export async function updateDailyRecordAction(formData: FormData) {
         where: { id },
         data: {
           assinaturaSupervisor: actor.nomeCompleto,
-          status: StatusPlanoLimpeza.CONCLUIDO
+          status: StatusPlanoLimpeza.CONCLUIDO,
+          observacaoSupervisor: observacaoAssinatura || null
         }
       });
       await createSignatureLog({
         user: actor,
         tipo: "SUPERVISOR",
         modulo: "plano-limpeza/diario",
-        referenciaId: String(id)
+        referenciaId: String(id),
+        observacao: observacaoAssinatura || null
       });
     }
 
@@ -388,12 +393,21 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
 
     await prisma.$transaction(async (tx) => {
       if (aguardandoIds.length > 0) {
+        const updateData: {
+          assinaturaSupervisor: string;
+          status: StatusPlanoLimpeza;
+          observacaoSupervisor?: string;
+        } = {
+          assinaturaSupervisor: actor.nomeCompleto,
+          status: StatusPlanoLimpeza.CONCLUIDO
+        };
+        if (observacao) {
+          updateData.observacaoSupervisor = observacao;
+        }
+
         await tx.planoLimpezaDiarioRegistro.updateMany({
           where: { id: { in: aguardandoIds } },
-          data: {
-            assinaturaSupervisor: actor.nomeCompleto,
-            status: StatusPlanoLimpeza.CONCLUIDO
-          }
+          data: updateData
         });
       }
 
@@ -402,7 +416,8 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
           assinaturaResponsavel: string;
           assinaturaSupervisor: string;
           status: StatusPlanoLimpeza;
-          observacao?: string;
+          observacaoResponsavel?: string;
+          observacaoSupervisor?: string;
         } = {
           assinaturaResponsavel: actor.nomeCompleto,
           assinaturaSupervisor: actor.nomeCompleto,
@@ -410,7 +425,8 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
         };
 
         if (observacao) {
-          dataUpdate.observacao = observacao;
+          dataUpdate.observacaoResponsavel = observacao;
+          dataUpdate.observacaoSupervisor = observacao;
         }
 
         await tx.planoLimpezaDiarioRegistro.updateMany({
@@ -472,6 +488,7 @@ export async function updateWeeklyRecordAction(formData: FormData) {
 
     const etapa = getInputValue(formData, "etapa");
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+    const observacaoAssinatura = getInputValue(formData, "observacaoAssinatura");
 
     const etapaPermitida = getWeeklySignStage({
       status: existing.status,
@@ -495,14 +512,16 @@ export async function updateWeeklyRecordAction(formData: FormData) {
         where: { id },
         data: {
           assinaturaResponsavel: actor.nomeCompleto,
-          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR
+          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
+          observacaoResponsavel: observacaoAssinatura || null
         }
       });
       await createSignatureLog({
         user: actor,
         tipo: "RESPONSAVEL",
         modulo: "plano-limpeza/semanal",
-        referenciaId: String(id)
+        referenciaId: String(id),
+        observacao: observacaoAssinatura || null
       });
     } else {
       ensureCanSignSupervisor(actor.perfil);
@@ -514,14 +533,16 @@ export async function updateWeeklyRecordAction(formData: FormData) {
         where: { id },
         data: {
           assinaturaSupervisor: actor.nomeCompleto,
-          status: StatusPlanoLimpeza.CONCLUIDO
+          status: StatusPlanoLimpeza.CONCLUIDO,
+          observacaoSupervisor: observacaoAssinatura || null
         }
       });
       await createSignatureLog({
         user: actor,
         tipo: "SUPERVISOR",
         modulo: "plano-limpeza/semanal",
-        referenciaId: String(id)
+        referenciaId: String(id),
+        observacao: observacaoAssinatura || null
       });
     }
 

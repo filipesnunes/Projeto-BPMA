@@ -7,8 +7,12 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
+import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { getCurrentUser } from "@/lib/auth-session";
+import { getImageDataUrl } from "@/lib/image-upload";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import {
   closeMonthAction,
@@ -94,6 +98,7 @@ export default async function ControleTemperaturaEquipamentosPage({
 }: PageProps) {
   const authUser = await getCurrentUser();
   const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
 
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
@@ -199,6 +204,9 @@ export default async function ControleTemperaturaEquipamentosPage({
   const registroEmEdicao = editId
     ? await prisma.controleTemperaturaEquipamento.findUnique({ where: { id: editId } })
     : null;
+  const fotoRegistroEmEdicao = registroEmEdicao
+    ? getImageDataUrl(registroEmEdicao.fotoMimeType, registroEmEdicao.fotoBase64)
+    : null;
 
   const equipamentoFormOptions =
     registroEmEdicao && !equipamentoOptionsAtivas.includes(registroEmEdicao.equipamento)
@@ -298,6 +306,12 @@ export default async function ControleTemperaturaEquipamentosPage({
             </Link>
             <Link href="/controle-temperatura-equipamentos/opcoes" className="btn-secondary">
               Gerenciar Opções
+            </Link>
+            <Link
+              href="/chamados-manutencao?origem=TEMPERATURA"
+              className="btn-secondary"
+            >
+              Abrir Chamado de Manutenção
             </Link>
             <ThemeToggleButton />
           </div>
@@ -403,6 +417,15 @@ export default async function ControleTemperaturaEquipamentosPage({
               </p>
             </div>
 
+            <ImageUploadField
+              name="fotoDesvio"
+              label="Foto da Evidência"
+              existingImageDataUrl={fotoRegistroEmEdicao}
+              existingFileName={registroEmEdicao?.fotoNome ?? null}
+              helperText="Obrigatória quando o status calculado for Alerta ou Crítico."
+              inputClassName={INPUT_CLASS}
+            />
+
             <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
               Observações (Opcional)
               <textarea
@@ -481,7 +504,7 @@ export default async function ControleTemperaturaEquipamentosPage({
               className={INPUT_CLASS}
             >
               <option value="">Todos</option>
-              <option value={StatusTemperaturaEquipamento.CONFORME}>Conforme</option>
+              <option value={StatusTemperaturaEquipamento.CONFORME}>Normal</option>
               <option value={StatusTemperaturaEquipamento.ALERTA}>Alerta</option>
               <option value={StatusTemperaturaEquipamento.CRITICO}>Crítico</option>
             </select>
@@ -528,6 +551,7 @@ export default async function ControleTemperaturaEquipamentosPage({
                 <th className="px-3 py-2">Temperatura</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 min-w-52">Ação Corretiva</th>
+                <th className="px-3 py-2">Foto</th>
                 <th className="px-3 py-2">Responsável</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -535,7 +559,7 @@ export default async function ControleTemperaturaEquipamentosPage({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {registros.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400" colSpan={8}>
+                  <td className="px-3 py-3 text-slate-500 dark:text-slate-400" colSpan={9}>
                     Nenhum registro encontrado.
                   </td>
                 </tr>
@@ -548,6 +572,17 @@ export default async function ControleTemperaturaEquipamentosPage({
                     query.set("editId", String(registro.id));
                     return buildPathWithParams(query);
                   })();
+                  const fotoDataUrl = getImageDataUrl(
+                    registro.fotoMimeType,
+                    registro.fotoBase64
+                  );
+                  const hrefChamado = `/chamados-manutencao?origem=TEMPERATURA&registroId=${registro.id}&area=${encodeURIComponent(
+                    registro.equipamento
+                  )}&descricao=${encodeURIComponent(
+                    `Desvio de temperatura no equipamento ${registro.equipamento} (${formatTemperatureDisplay(
+                      registro.temperaturaAferida
+                    )}).`
+                  )}`;
 
                   return (
                     <tr key={registro.id}>
@@ -561,11 +596,31 @@ export default async function ControleTemperaturaEquipamentosPage({
                       <td className="px-3 py-2 max-w-64 whitespace-normal break-words">
                         {registro.acaoCorretiva ?? "-"}
                       </td>
+                      <td className="px-3 py-2">
+                        {fotoDataUrl ? (
+                          <details>
+                            <summary className="cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-200">
+                              Ver Foto
+                            </summary>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={fotoDataUrl}
+                              alt={`Foto do registro ${registro.id}`}
+                              className="mt-2 h-20 w-20 rounded-md border border-slate-200 object-cover dark:border-slate-700"
+                            />
+                          </details>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                       <td className="px-3 py-2">
                         <div className="btn-group">
                           <Link href={hrefEditar} className="btn-action">
                             Editar
+                          </Link>
+                          <Link href={hrefChamado} className="btn-secondary">
+                            Abrir Chamado
                           </Link>
                           <form action={deleteRegistroAction} className="m-0">
                             <input type="hidden" name="id" value={registro.id} />
@@ -639,13 +694,14 @@ export default async function ControleTemperaturaEquipamentosPage({
                   <th className="px-3 py-2">Temperatura</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2 min-w-52">Ação Corretiva</th>
+                  <th className="px-3 py-2">Foto</th>
                   <th className="px-3 py-2">Responsável</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {registrosFechamento.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400" colSpan={6}>
+                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400" colSpan={7}>
                       Nenhum registro no período selecionado.
                     </td>
                   </tr>
@@ -658,6 +714,15 @@ export default async function ControleTemperaturaEquipamentosPage({
                       <td className="px-3 py-2">{getStatusLabel(registro.status)}</td>
                       <td className="px-3 py-2 max-w-64 whitespace-normal break-words">
                         {registro.acaoCorretiva ?? "-"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {getImageDataUrl(registro.fotoMimeType, registro.fotoBase64) ? (
+                          <span className="text-xs text-slate-600 dark:text-slate-300">
+                            Foto Anexada
+                          </span>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                     </tr>
@@ -673,7 +738,7 @@ export default async function ControleTemperaturaEquipamentosPage({
                 Mês assinado por <strong>{fechamentoAtual?.responsavelTecnico}</strong>.
               </p>
               <p>
-                Data da assinatura: <strong>{fechamentoAtual ? formatDateDisplay(fechamentoAtual.dataAssinatura) : "-"}</strong>
+                Data da assinatura: <strong>{fechamentoAtual ? formatDateTimeDisplay(fechamentoAtual.dataAssinatura) : "-"}</strong>
               </p>
               <form id={reaberturaFormId} action={reopenMonthAction} className="mt-4">
                 <input type="hidden" name="mes" value={String(fechamentoMes)} />
@@ -691,12 +756,11 @@ export default async function ControleTemperaturaEquipamentosPage({
                 Confirme sua Senha *
                 <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Data da assinatura</p>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {formatDateTimeDisplay(now)}
-                </p>
-              </div>
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
               <div className="md:col-span-2">
                 <button type="submit" className="btn-primary">
                   Fechar Mês

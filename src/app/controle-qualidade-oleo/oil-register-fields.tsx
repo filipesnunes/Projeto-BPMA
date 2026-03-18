@@ -20,6 +20,7 @@ type OilRegisterFieldsProps = {
   options: OilStripOptionPreview[];
   defaultFita?: string;
   defaultTemperatura?: string;
+  defaultSemUtilizacao?: boolean;
   inputClassName: string;
 };
 
@@ -27,32 +28,67 @@ export function OilRegisterFields({
   options,
   defaultFita = "",
   defaultTemperatura = "",
+  defaultSemUtilizacao = false,
   inputClassName
 }: OilRegisterFieldsProps) {
   const [fitaSelecionada, setFitaSelecionada] = useState(defaultFita);
   const [temperaturaInput, setTemperaturaInput] = useState(defaultTemperatura);
+  const [semUtilizacao, setSemUtilizacao] = useState(defaultSemUtilizacao);
 
   const optionMap = useMemo(() => {
     return new Map(options.map((option) => [option.rotulo, option]));
   }, [options]);
 
-  const optionSelecionada = optionMap.get(fitaSelecionada);
+  const optionSelecionada = semUtilizacao ? null : optionMap.get(fitaSelecionada);
   const regraCanonicaSelecionada = optionSelecionada
     ? findCanonicalOilStripRuleByLabel(optionSelecionada.rotulo)
     : null;
-  const statusAutomatico = optionSelecionada
-    ? getStatusLabel(
-        regraCanonicaSelecionada?.statusAssociado ?? optionSelecionada.statusAssociado
-      )
-    : "";
+  const statusAutomatico = semUtilizacao
+    ? "Sem Utilização"
+    : optionSelecionada
+      ? getStatusLabel(
+          regraCanonicaSelecionada?.statusAssociado ?? optionSelecionada.statusAssociado
+        )
+      : "";
   const orientacaoAutomatica =
-    regraCanonicaSelecionada?.descricao ?? optionSelecionada?.descricao ?? "";
+    semUtilizacao
+      ? "Equipamento sem utilização no período. Registro salvo para rastreabilidade."
+      : regraCanonicaSelecionada?.descricao ?? optionSelecionada?.descricao ?? "";
 
-  const temperatura = parseTemperatureInput(temperaturaInput);
+  const temperatura = semUtilizacao ? null : parseTemperatureInput(temperaturaInput);
   const temperaturaCritica = temperatura !== null && isTemperatureCritical(temperatura);
 
   return (
     <>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
+        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+          Situação do Equipamento no Período *
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={semUtilizacao ? "btn-secondary" : "btn-primary"}
+            onClick={() => {
+              setSemUtilizacao(false);
+            }}
+          >
+            Com Utilização
+          </button>
+          <button
+            type="button"
+            className={semUtilizacao ? "btn-primary" : "btn-secondary"}
+            onClick={() => {
+              setSemUtilizacao(true);
+              setFitaSelecionada("");
+              setTemperaturaInput("");
+            }}
+          >
+            Sem Utilização no Período
+          </button>
+        </div>
+        <input type="hidden" name="semUtilizacao" value={semUtilizacao ? "true" : "false"} />
+      </div>
+
       <fieldset className="md:col-span-2">
         <legend className="text-sm text-slate-700 dark:text-slate-200">% da Fita do Óleo *</legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -71,8 +107,9 @@ export function OilRegisterFields({
                 <input
                   type="radio"
                   name="fitaOleo"
-                  required
+                  required={!semUtilizacao}
                   value={option.rotulo}
+                  disabled={semUtilizacao}
                   checked={isSelected}
                   onChange={(event) => {
                     setFitaSelecionada(event.target.value);
@@ -110,7 +147,7 @@ export function OilRegisterFields({
         <input
           type="text"
           name="temperatura"
-          required
+          required={!semUtilizacao}
           inputMode="decimal"
           placeholder="Ex.: 175"
           value={temperaturaInput}
@@ -119,10 +156,16 @@ export function OilRegisterFields({
               ? "border-red-400 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-950 dark:text-red-200"
               : ""
           }`}
+          disabled={semUtilizacao}
           onChange={(event) => {
             setTemperaturaInput(event.target.value);
           }}
         />
+        {semUtilizacao ? (
+          <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+            Temperatura não é exigida quando o equipamento não foi utilizado no período.
+          </span>
+        ) : null}
         {temperaturaCritica ? (
           <span className="mt-1 block text-xs text-red-600 dark:text-red-300">
             Temperatura acima de 180°C: fora do padrão / crítico.
@@ -143,7 +186,11 @@ export function OilRegisterFields({
         <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Fita Selecionada
         </p>
-        {optionSelecionada ? (
+        {semUtilizacao ? (
+          <p className="text-sm text-slate-800 dark:text-slate-100">
+            Sem Utilização no Período
+          </p>
+        ) : optionSelecionada ? (
           <div className="mt-2 flex items-center gap-3">
             <Image
               src={getOilStripImageByLabel(optionSelecionada.rotulo)}

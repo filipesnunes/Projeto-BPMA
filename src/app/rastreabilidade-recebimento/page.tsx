@@ -5,7 +5,10 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
+import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import {
   closeMonthAction,
@@ -62,7 +65,19 @@ function buildPathWithParams(params: URLSearchParams): string {
 }
 
 function getNotaStatusLabel(status: StatusNotaRecebimento): string {
-  return status === StatusNotaRecebimento.FINALIZADA ? "Finalizada" : "Pendente";
+  if (status === StatusNotaRecebimento.FINALIZADA) {
+    return "Finalizada";
+  }
+
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "Importada";
+  }
+
+  if (status === StatusNotaRecebimento.EM_CONFERENCIA) {
+    return "Em Conferência";
+  }
+
+  return "Pendente";
 }
 
 function getNotaStatusClass(status: StatusNotaRecebimento): string {
@@ -70,10 +85,23 @@ function getNotaStatusClass(status: StatusNotaRecebimento): string {
     return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
   }
 
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200";
+  }
+
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
 }
 
+function canImportXml(role: string | null): boolean {
+  return role === "DEV" || role === "GESTOR";
+}
+
 export default async function RastreabilidadeRecebimentoPage({ searchParams }: PageProps) {
+  const authUser = await getCurrentUser();
+  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
+  const permitirImportacao = canImportXml(authUser?.perfil ?? null);
+
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -95,7 +123,13 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
 
   const wherePendentesHoje: Prisma.RastreabilidadeRecebimentoNotaWhereInput = {
     data: todaySystemDate,
-    statusNota: StatusNotaRecebimento.PENDENTE
+    statusNota: {
+      in: [
+        StatusNotaRecebimento.PENDENTE,
+        StatusNotaRecebimento.IMPORTADA,
+        StatusNotaRecebimento.EM_CONFERENCIA
+      ]
+    }
   };
 
   if (filtroFornecedor) {
@@ -190,6 +224,9 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
             <Link href="/rastreabilidade-recebimento/opcoes" className="btn-secondary">
               Gerenciar Categorias
             </Link>
+            <Link href="/chamados-manutencao?origem=RECEBIMENTO" className="btn-secondary">
+              Abrir Chamado de Manutenção
+            </Link>
             <ThemeToggleButton />
           </div>
         </div>
@@ -214,7 +251,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
               Ações Principais
             </h2>
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Importe o XML da nota fiscal ou registre um recebimento manual.
+              Importe o XML da nota fiscal (ADM) e faça a conferência operacional na nota.
             </p>
           </div>
           <Link href="/rastreabilidade-recebimento/nota/nova" className="btn-primary">
@@ -222,27 +259,33 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
           </Link>
         </div>
 
-        <form
-          action={importXmlAction}
-          className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-[1fr_auto] dark:bg-slate-800"
-        >
-          <input type="hidden" name="returnTo" value={returnTo} />
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            Importar XML da Nota Fiscal
-            <input
-              type="file"
-              name="xmlFile"
-              accept=".xml,text/xml,application/xml"
-              required
-              className={INPUT_CLASS}
-            />
-          </label>
-          <div className="md:flex md:items-end">
-            <button type="submit" className="btn-secondary">
-              Importar XML
-            </button>
+        {permitirImportacao ? (
+          <form
+            action={importXmlAction}
+            className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-[1fr_auto] dark:bg-slate-800"
+          >
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <label className="text-sm text-slate-700 dark:text-slate-200">
+              Importar XML da Nota Fiscal (ADM)
+              <input
+                type="file"
+                name="xmlFile"
+                accept=".xml,text/xml,application/xml"
+                required
+                className={INPUT_CLASS}
+              />
+            </label>
+            <div className="md:flex md:items-end">
+              <button type="submit" className="btn-secondary">
+                Importar XML
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+            A importação de XML está disponível para perfis administrativos.
           </div>
-        </form>
+        )}
       </section>
 
       <section className={CARD_CLASS}>
@@ -349,6 +392,16 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                           className="btn-action"
                         >
                           Conferir Nota
+                        </Link>
+                        <Link
+                          href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${nota.id}&area=${encodeURIComponent(
+                            nota.fornecedor
+                          )}&descricao=${encodeURIComponent(
+                            `Ocorrência no recebimento da nota ${nota.notaFiscal} (${nota.fornecedor}).`
+                          )}`}
+                          className="btn-secondary"
+                        >
+                          Abrir Chamado
                         </Link>
                         <DeleteNoteModal formId={`delete-note-day-${nota.id}`} />
                       </div>
@@ -465,11 +518,21 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                           >
                             Abrir Nota
                           </Link>
-                          {nota.statusNota === StatusNotaRecebimento.PENDENTE ? (
+                          <Link
+                            href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${nota.id}&area=${encodeURIComponent(
+                              nota.fornecedor
+                            )}&descricao=${encodeURIComponent(
+                              `Ocorrência no recebimento da nota ${nota.notaFiscal} (${nota.fornecedor}).`
+                            )}`}
+                            className="btn-secondary"
+                          >
+                            Abrir Chamado
+                          </Link>
+                          {nota.statusNota !== StatusNotaRecebimento.FINALIZADA ? (
                             <DeleteNoteModal formId={`delete-note-month-${nota.id}`} />
                           ) : null}
                         </div>
-                        {nota.statusNota === StatusNotaRecebimento.PENDENTE ? (
+                        {nota.statusNota !== StatusNotaRecebimento.FINALIZADA ? (
                           <form
                             id={`delete-note-month-${nota.id}`}
                             action={deleteNoteAction}
@@ -495,7 +558,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
               <p>
                 Data da assinatura:{" "}
                 <strong>
-                  {fechamentoAtual ? formatDateDisplay(fechamentoAtual.dataAssinatura) : "-"}
+                  {fechamentoAtual ? formatDateTimeDisplay(fechamentoAtual.dataAssinatura) : "-"}
                 </strong>
               </p>
               <form id={reaberturaFormId} action={reopenMonthAction} className="mt-4">
@@ -514,14 +577,11 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                 Confirme sua Senha *
                 <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                  Data da assinatura
-                </p>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {formatDateTimeDisplay(now)}
-                </p>
-              </div>
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
               <div className="md:col-span-2">
                 <button type="submit" className="btn-primary">
                   Fechar Mês

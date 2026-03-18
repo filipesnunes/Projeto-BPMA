@@ -51,17 +51,35 @@ function buildPathWithParams(params: URLSearchParams): string {
 
 function parseStatusNotaFilter(value: string): StatusNotaRecebimento | null {
   if (value === StatusNotaRecebimento.PENDENTE) return StatusNotaRecebimento.PENDENTE;
+  if (value === StatusNotaRecebimento.IMPORTADA) return StatusNotaRecebimento.IMPORTADA;
+  if (value === StatusNotaRecebimento.EM_CONFERENCIA) return StatusNotaRecebimento.EM_CONFERENCIA;
   if (value === StatusNotaRecebimento.FINALIZADA) return StatusNotaRecebimento.FINALIZADA;
   return null;
 }
 
 function getNotaStatusLabel(status: StatusNotaRecebimento): string {
-  return status === StatusNotaRecebimento.FINALIZADA ? "Finalizada" : "Pendente";
+  if (status === StatusNotaRecebimento.FINALIZADA) {
+    return "Finalizada";
+  }
+
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "Importada";
+  }
+
+  if (status === StatusNotaRecebimento.EM_CONFERENCIA) {
+    return "Em Conferência";
+  }
+
+  return "Pendente";
 }
 
 function getNotaStatusClass(status: StatusNotaRecebimento): string {
   if (status === StatusNotaRecebimento.FINALIZADA) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
+  }
+
+  if (status === StatusNotaRecebimento.IMPORTADA) {
+    return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200";
   }
 
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
@@ -225,6 +243,8 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
             <select name="filtroStatus" defaultValue={filtroStatus ?? ""} className={INPUT_CLASS}>
               <option value="">Todos</option>
               <option value={StatusNotaRecebimento.PENDENTE}>Pendente</option>
+              <option value={StatusNotaRecebimento.IMPORTADA}>Importada</option>
+              <option value={StatusNotaRecebimento.EM_CONFERENCIA}>Em Conferência</option>
               <option value={StatusNotaRecebimento.FINALIZADA}>Finalizada</option>
             </select>
           </label>
@@ -295,11 +315,11 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
                         >
                           Abrir Nota
                         </Link>
-                        {nota.statusNota === StatusNotaRecebimento.PENDENTE ? (
+                        {nota.statusNota !== StatusNotaRecebimento.FINALIZADA ? (
                           <DeleteNoteModal formId={`delete-note-history-${nota.id}`} />
                         ) : null}
                       </div>
-                      {nota.statusNota === StatusNotaRecebimento.PENDENTE ? (
+                      {nota.statusNota !== StatusNotaRecebimento.FINALIZADA ? (
                         <form
                           id={`delete-note-history-${nota.id}`}
                           action={deleteNoteAction}

@@ -7,11 +7,13 @@ import {
   canCloseMonth,
   canManageModuleOptions,
   canManageUsers,
+  canOpenMaintenanceTicket,
   canReopenMonth,
   canResetPassword,
   canSignAsResponsible,
   canSignAsSupervisor,
   canSignTechnical,
+  canUpdateMaintenanceTicket,
   canViewResetRequests,
   type UserRole
 } from "@/lib/rbac";
@@ -67,6 +69,18 @@ export function ensureCanSignTechnical(role: UserRole) {
 export function ensureCanResetPassword(actorRole: UserRole, targetRole: UserRole) {
   if (!canResetPassword(actorRole, targetRole)) {
     throw new Error("Você não tem permissão para redefinir a senha deste usuário.");
+  }
+}
+
+export function ensureCanOpenMaintenance(role: UserRole) {
+  if (!canOpenMaintenanceTicket(role)) {
+    throw new Error("Seu perfil não pode abrir chamados de manutenção.");
+  }
+}
+
+export function ensureCanUpdateMaintenance(role: UserRole) {
+  if (!canUpdateMaintenanceTicket(role)) {
+    throw new Error("Seu perfil não pode atualizar chamados de manutenção.");
   }
 }
 

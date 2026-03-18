@@ -10,6 +10,8 @@ const INPUT_CLASS =
 type DailySignChecklistModalProps = {
   closeHref: string;
   returnTo: string;
+  usuarioAssinando: string;
+  dataHoraAtual: string;
   record: {
     id: number;
     data: Date;
@@ -25,6 +27,8 @@ type DailySignChecklistModalProps = {
 export function DailySignChecklistModal({
   closeHref,
   returnTo,
+  usuarioAssinando,
+  dataHoraAtual,
   record,
   etapa
 }: DailySignChecklistModalProps) {
@@ -66,11 +70,10 @@ export function DailySignChecklistModal({
           <input type="hidden" name="etapa" value={etapa} />
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800">
-            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              Assinatura
-            </p>
-            <p className="font-medium text-slate-800 dark:text-slate-100">
-              O usuário logado será registrado automaticamente.
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Assinatura</p>
+            <p className="font-medium text-slate-800 dark:text-slate-100">{usuarioAssinando}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Data e Hora: {dataHoraAtual}
             </p>
           </div>
 
@@ -96,6 +99,15 @@ export function DailySignChecklistModal({
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Confirme sua senha *
             <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
+          </label>
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            Observação (Opcional)
+            <textarea
+              name="observacaoAssinatura"
+              rows={2}
+              className={INPUT_CLASS}
+              placeholder="Intercorrências da execução, se houver."
+            />
           </label>
 
           <div className="btn-group">

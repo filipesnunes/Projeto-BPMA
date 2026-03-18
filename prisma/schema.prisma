@@ -55,6 +55,7 @@ enum StatusQualidadeOleo {
   ATENCAO
   ULTIMA_UTILIZACAO
   DESCARTAR
+  SEM_UTILIZACAO
 }
 
 enum StatusFechamentoQualidadeOleo {
@@ -80,6 +81,8 @@ enum StatusFechamentoRastreabilidadeRecebimento {
 
 enum StatusNotaRecebimento {
   PENDENTE
+  IMPORTADA
+  EM_CONFERENCIA
   FINALIZADA
 }
 
@@ -131,6 +134,27 @@ enum TipoAssinaturaSistema {
   FECHAMENTO_MENSAL
 }
 
+enum OrigemChamadoManutencao {
+  TEMPERATURA
+  LIMPEZA
+  OLEO
+  RECEBIMENTO
+  MANUAL
+}
+
+enum PrioridadeChamadoManutencao {
+  BAIXA
+  MEDIA
+  ALTA
+}
+
+enum StatusChamadoManutencao {
+  ABERTO
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
 model Usuario {
   id                  Int                              @id @default(autoincrement())
   nomeCompleto        String
@@ -150,6 +174,7 @@ model Usuario {
   solicitacoesComoAlvo SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoUsuarioAlvo")
   solicitacoesTratadas SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoTratadaPor")
   logsAssinatura      LogAssinatura[]
+  chamadosManutencaoCriados ChamadoManutencao[]        @relation("ChamadoCriadoPor")
 
   @@index([perfil, status, isDevDefinitivo])
   @@map("usuario")
@@ -263,6 +288,9 @@ model ControleTemperaturaEquipamento {
   temperaturaAferida  Float
   status              StatusTemperaturaEquipamento
   acaoCorretiva       String?
+  fotoNome            String?
+  fotoMimeType        String?
+  fotoBase64          String?                          @db.Text
   responsavel         String
   observacoes         String?
   createdAt           DateTime                        @default(now())
@@ -347,13 +375,14 @@ model ControleTemperaturaCategoriaRegra {
 model ControleQualidadeOleoRegistro {
   id                Int                @id @default(autoincrement())
   data              DateTime           @db.Date
-  fitaOleo          String
-  temperatura       Float
+  fitaOleo          String?
+  temperatura       Float?
   status            StatusQualidadeOleo
   orientacao        String
   responsavel       String
   observacao        String?
   temperaturaCritica Boolean           @default(false)
+  semUtilizacao     Boolean            @default(false)
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 
@@ -493,6 +522,8 @@ model PlanoLimpezaDiarioRegistro {
   assinaturaResponsavel  String           @default("")
   assinaturaSupervisor   String           @default("")
   observacao             String?
+  observacaoResponsavel  String?
+  observacaoSupervisor   String?
   status                 StatusPlanoLimpeza @default(PENDENTE)
   createdAt              DateTime         @default(now())
   updatedAt              DateTime         @updatedAt
@@ -546,6 +577,8 @@ model PlanoLimpezaSemanalExecucao {
   item                 PlanoLimpezaSemanalItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
   assinaturaResponsavel String
   assinaturaSupervisor String
+  observacaoResponsavel String?
+  observacaoSupervisor String?
   status               StatusPlanoLimpeza  @default(PENDENTE)
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
@@ -572,4 +605,37 @@ model PlanoLimpezaFechamento {
   @@unique([tipo, mes, ano])
   @@index([tipo, status])
   @@map("plano_limpeza_fechamento")
+}
+
+model ChamadoManutencao {
+  id                           Int                        @id @default(autoincrement())
+  titulo                       String
+  descricao                    String
+  areaLocal                    String
+  origem                       OrigemChamadoManutencao
+  prioridade                   PrioridadeChamadoManutencao @default(MEDIA)
+  status                       StatusChamadoManutencao    @default(ABERTO)
+  contextoModulo               String?
+  contextoRegistroId           String?
+  fotoNome                     String?
+  fotoMimeType                 String?
+  fotoBase64                   String?                    @db.Text
+  criadoPorId                  Int
+  criadoPor                    Usuario                    @relation("ChamadoCriadoPor", fields: [criadoPorId], references: [id], onDelete: Restrict)
+  criadoPorNome                String
+  assinaturaAberturaUsuarioId  Int
+  assinaturaAberturaNomeUsuario String
+  assinaturaAberturaPerfil     PerfilUsuario
+  assinaturaAberturaDataHora   DateTime                   @default(now())
+  dataHoraCriacao              DateTime                   @default(now())
+  dataHoraConclusao            DateTime?
+  observacaoConclusao          String?
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime                   @updatedAt
+
+  @@index([status, dataHoraCriacao])
+  @@index([origem, status])
+  @@index([areaLocal])
+  @@index([criadoPorId])
+  @@map("chamado_manutencao")
 }

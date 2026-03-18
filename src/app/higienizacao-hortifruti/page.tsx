@@ -5,8 +5,10 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
+import { SignatureContextCard } from "@/components/auth/signature-context-card";
 import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
+import { getRoleLabel } from "@/lib/rbac";
 
 import {
   closeMonthAction,
@@ -70,6 +72,7 @@ export default async function HigienizacaoHortifrutiPage({
 }: PageProps) {
   const authUser = await getCurrentUser();
   const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
+  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
 
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
@@ -469,10 +472,11 @@ export default async function HigienizacaoHortifrutiPage({
                 Confirme sua Senha *
                 <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
               </label>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
-                <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Data da assinatura</p>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{formatDateTimeDisplay(now)}</p>
-              </div>
+              <SignatureContextCard
+                nomeUsuario={responsavelLogado}
+                perfil={perfilLogado}
+                dataHora={formatDateTimeDisplay(now)}
+              />
               <div className="md:col-span-2"><button type="submit" className="btn-primary">Fechar Mês</button></div>
             </form>
           )}

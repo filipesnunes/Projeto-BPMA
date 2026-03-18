@@ -81,7 +81,9 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
         area: true,
         assinaturaResponsavel: true,
         assinaturaSupervisor: true,
-        status: true
+        status: true,
+        observacaoResponsavel: true,
+        observacaoSupervisor: true
       },
       orderBy: [{ dataExecucao: "desc" }, { createdAt: "desc" }]
     }),
@@ -123,6 +125,21 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
 
     return true;
   });
+
+  const observacoesPorAreaSemana = new Map<string, number>();
+  for (const record of rawRecords) {
+    const weekRange = getWeekDateRangeForDate(record.dataExecucao);
+    const key = `${record.area}|${formatDateInput(weekRange.start)}`;
+    const hasObservation = Boolean(
+      (record.observacaoResponsavel && record.observacaoResponsavel.trim()) ||
+        (record.observacaoSupervisor && record.observacaoSupervisor.trim())
+    );
+    if (!hasObservation) {
+      continue;
+    }
+
+    observacoesPorAreaSemana.set(key, (observacoesPorAreaSemana.get(key) ?? 0) + 1);
+  }
 
   const areaOptions = Array.from(
     new Set([
@@ -237,13 +254,14 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                 <th className="px-3 py-2">Itens Configurados</th>
                 <th className="px-3 py-2">Responsável</th>
                 <th className="px-3 py-2">Supervisor</th>
+                <th className="px-3 py-2">Observações</th>
                 <th className="px-3 py-2">Status Geral</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {summaries.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-3 text-slate-500 dark:text-slate-400">
+                  <td colSpan={7} className="px-3 py-3 text-slate-500 dark:text-slate-400">
                     Nenhuma execução encontrada.
                   </td>
                 </tr>
@@ -257,6 +275,11 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                     <td className="px-3 py-2">{summary.totalRegistrosOriginais}</td>
                     <td className="px-3 py-2">{summary.assinaturaResponsavel || "-"}</td>
                     <td className="px-3 py-2">{summary.assinaturaSupervisor || "-"}</td>
+                    <td className="px-3 py-2">
+                      {(observacoesPorAreaSemana.get(
+                        `${summary.area}|${formatDateInput(summary.weekStart)}`
+                      ) ?? 0) || "-"}
+                    </td>
                     <td className="px-3 py-2">
                       <StatusBadge status={summary.statusGeral} />
                     </td>

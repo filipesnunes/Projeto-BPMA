@@ -2,7 +2,6 @@
 
 import {
   OrigemChamadoManutencao,
-  PrioridadeChamadoManutencao,
   StatusChamadoManutencao
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -41,13 +40,8 @@ function parseOrigem(value: string): OrigemChamadoManutencao {
   if (value === OrigemChamadoManutencao.LIMPEZA) return OrigemChamadoManutencao.LIMPEZA;
   if (value === OrigemChamadoManutencao.OLEO) return OrigemChamadoManutencao.OLEO;
   if (value === OrigemChamadoManutencao.RECEBIMENTO) return OrigemChamadoManutencao.RECEBIMENTO;
+  if (value === OrigemChamadoManutencao.HORTIFRUTI) return OrigemChamadoManutencao.HORTIFRUTI;
   return OrigemChamadoManutencao.MANUAL;
-}
-
-function parsePrioridade(value: string): PrioridadeChamadoManutencao {
-  if (value === PrioridadeChamadoManutencao.BAIXA) return PrioridadeChamadoManutencao.BAIXA;
-  if (value === PrioridadeChamadoManutencao.ALTA) return PrioridadeChamadoManutencao.ALTA;
-  return PrioridadeChamadoManutencao.MEDIA;
 }
 
 function parseStatus(value: string): StatusChamadoManutencao | null {
@@ -101,10 +95,8 @@ export async function createChamadoAction(formData: FormData) {
     ensureCanOpenMaintenance(actor.perfil);
 
     const descricao = getInputValue(formData, "descricao");
-    const areaLocal = getInputValue(formData, "areaLocal");
     const tituloInput = getInputValue(formData, "titulo");
     const origem = parseOrigem(getInputValue(formData, "origem"));
-    const prioridade = parsePrioridade(getInputValue(formData, "prioridade"));
     const contextoModulo = getInputValue(formData, "contextoModulo");
     const contextoRegistroId = getInputValue(formData, "contextoRegistroId");
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
@@ -113,27 +105,24 @@ export async function createChamadoAction(formData: FormData) {
       throw new Error("A descrição do chamado é obrigatória.");
     }
 
-    if (!areaLocal) {
-      throw new Error("Informe a área/local do chamado.");
-    }
-
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     const foto = await parseImageUploadFromFormData({
       formData,
-      key: "fotoChamado"
+      key: "fotoChamado",
+      required: true,
+      requiredMessage: "Anexe uma foto para abrir o chamado de manutenção."
     });
 
-    const titulo = tituloInput || `Chamado - ${areaLocal}`;
+    const titulo = tituloInput || "Chamado de Manutenção";
     const now = new Date();
 
     const chamado = await prisma.chamadoManutencao.create({
       data: {
         titulo,
         descricao,
-        areaLocal,
+        areaLocal: origem,
         origem,
-        prioridade,
         status: StatusChamadoManutencao.ABERTO,
         contextoModulo: contextoModulo || null,
         contextoRegistroId: contextoRegistroId || null,

@@ -157,16 +157,6 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
             <Link href="/rastreabilidade-recebimento" className="btn-secondary">
               Voltar para Módulo
             </Link>
-            <Link
-              href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${note.id}&area=${encodeURIComponent(
-                note.fornecedor
-              )}&descricao=${encodeURIComponent(
-                `Ocorrência no recebimento da nota ${note.notaFiscal} (${note.fornecedor}).`
-              )}`}
-              className="btn-secondary"
-            >
-              Abrir Chamado de Manutenção
-            </Link>
             {canDeleteNote ? <DeleteNoteModal formId={`delete-note-from-note-${note.id}`} /> : null}
             <ThemeToggleButton />
           </div>

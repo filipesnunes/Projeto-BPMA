@@ -393,16 +393,6 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                         >
                           Conferir Nota
                         </Link>
-                        <Link
-                          href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${nota.id}&area=${encodeURIComponent(
-                            nota.fornecedor
-                          )}&descricao=${encodeURIComponent(
-                            `Ocorrência no recebimento da nota ${nota.notaFiscal} (${nota.fornecedor}).`
-                          )}`}
-                          className="btn-secondary"
-                        >
-                          Abrir Chamado
-                        </Link>
                         <DeleteNoteModal formId={`delete-note-day-${nota.id}`} />
                       </div>
                       <form
@@ -517,16 +507,6 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                             className="btn-action"
                           >
                             Abrir Nota
-                          </Link>
-                          <Link
-                            href={`/chamados-manutencao?origem=RECEBIMENTO&registroId=${nota.id}&area=${encodeURIComponent(
-                              nota.fornecedor
-                            )}&descricao=${encodeURIComponent(
-                              `Ocorrência no recebimento da nota ${nota.notaFiscal} (${nota.fornecedor}).`
-                            )}`}
-                            className="btn-secondary"
-                          >
-                            Abrir Chamado
                           </Link>
                           {nota.statusNota !== StatusNotaRecebimento.FINALIZADA ? (
                             <DeleteNoteModal formId={`delete-note-month-${nota.id}`} />

@@ -423,6 +423,9 @@ export default async function ControleTemperaturaEquipamentosPage({
               existingImageDataUrl={fotoRegistroEmEdicao}
               existingFileName={registroEmEdicao?.fotoNome ?? null}
               helperText="Obrigatória quando o status calculado for Alerta ou Crítico."
+              requiredStatusFieldName="statusCalculado"
+              requiredStatusValues={["ALERTA", "CRITICO"]}
+              requiredMessage="Anexe uma foto para continuar. Ela é obrigatória quando a temperatura estiver em Alerta ou Crítico."
               inputClassName={INPUT_CLASS}
             />
 
@@ -576,14 +579,6 @@ export default async function ControleTemperaturaEquipamentosPage({
                     registro.fotoMimeType,
                     registro.fotoBase64
                   );
-                  const hrefChamado = `/chamados-manutencao?origem=TEMPERATURA&registroId=${registro.id}&area=${encodeURIComponent(
-                    registro.equipamento
-                  )}&descricao=${encodeURIComponent(
-                    `Desvio de temperatura no equipamento ${registro.equipamento} (${formatTemperatureDisplay(
-                      registro.temperaturaAferida
-                    )}).`
-                  )}`;
-
                   return (
                     <tr key={registro.id}>
                       <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
@@ -618,9 +613,6 @@ export default async function ControleTemperaturaEquipamentosPage({
                         <div className="btn-group">
                           <Link href={hrefEditar} className="btn-action">
                             Editar
-                          </Link>
-                          <Link href={hrefChamado} className="btn-secondary">
-                            Abrir Chamado
                           </Link>
                           <form action={deleteRegistroAction} className="m-0">
                             <input type="hidden" name="id" value={registro.id} />

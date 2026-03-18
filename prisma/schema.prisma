@@ -139,6 +139,7 @@ enum OrigemChamadoManutencao {
   LIMPEZA
   OLEO
   RECEBIMENTO
+  HORTIFRUTI
   MANUAL
 }
 

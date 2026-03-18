@@ -70,6 +70,7 @@ export function AutomaticCorrectiveActionFields({
 
     if (!categoria || temperatura === null) {
       return {
+        statusValue: "",
         statusLabel: "",
         acaoCorretiva: defaultAcaoCorretiva ?? ""
       };
@@ -80,12 +81,14 @@ export function AutomaticCorrectiveActionFields({
 
     if (!regraCorrespondente) {
       return {
+        statusValue: "",
         statusLabel: "",
         acaoCorretiva: defaultAcaoCorretiva ?? ""
       };
     }
 
     return {
+      statusValue: regraCorrespondente.status,
       statusLabel: getStatusLabel(regraCorrespondente.status),
       acaoCorretiva: regraCorrespondente.acaoCorretiva
     };
@@ -129,6 +132,7 @@ export function AutomaticCorrectiveActionFields({
 
       <label className="text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
         Ação Corretiva (Automática)
+        <input type="hidden" name="statusCalculado" value={avaliacao.statusValue} readOnly />
         <input type="hidden" name="acaoCorretiva" value={avaliacao.acaoCorretiva} readOnly />
         <input
           type="text"

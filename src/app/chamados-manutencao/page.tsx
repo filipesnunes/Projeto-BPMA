@@ -1,6 +1,5 @@
 import {
   OrigemChamadoManutencao,
-  PrioridadeChamadoManutencao,
   Prisma,
   StatusChamadoManutencao
 } from "@prisma/client";
@@ -49,18 +48,12 @@ function parseStatus(value: string): StatusChamadoManutencao | null {
   return null;
 }
 
-function parsePrioridade(value: string): PrioridadeChamadoManutencao | null {
-  if (value === PrioridadeChamadoManutencao.BAIXA) return PrioridadeChamadoManutencao.BAIXA;
-  if (value === PrioridadeChamadoManutencao.MEDIA) return PrioridadeChamadoManutencao.MEDIA;
-  if (value === PrioridadeChamadoManutencao.ALTA) return PrioridadeChamadoManutencao.ALTA;
-  return null;
-}
-
 function parseOrigem(value: string): OrigemChamadoManutencao {
   if (value === OrigemChamadoManutencao.TEMPERATURA) return OrigemChamadoManutencao.TEMPERATURA;
   if (value === OrigemChamadoManutencao.LIMPEZA) return OrigemChamadoManutencao.LIMPEZA;
   if (value === OrigemChamadoManutencao.OLEO) return OrigemChamadoManutencao.OLEO;
   if (value === OrigemChamadoManutencao.RECEBIMENTO) return OrigemChamadoManutencao.RECEBIMENTO;
+  if (value === OrigemChamadoManutencao.HORTIFRUTI) return OrigemChamadoManutencao.HORTIFRUTI;
   return OrigemChamadoManutencao.MANUAL;
 }
 
@@ -85,10 +78,13 @@ function getStatusClass(status: StatusChamadoManutencao): string {
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
 }
 
-function getPrioridadeLabel(prioridade: PrioridadeChamadoManutencao): string {
-  if (prioridade === PrioridadeChamadoManutencao.BAIXA) return "Baixa";
-  if (prioridade === PrioridadeChamadoManutencao.ALTA) return "Alta";
-  return "Média";
+function getOrigemLabel(origem: OrigemChamadoManutencao): string {
+  if (origem === OrigemChamadoManutencao.TEMPERATURA) return "Temperatura";
+  if (origem === OrigemChamadoManutencao.LIMPEZA) return "Limpeza";
+  if (origem === OrigemChamadoManutencao.OLEO) return "Óleo";
+  if (origem === OrigemChamadoManutencao.RECEBIMENTO) return "Recebimento";
+  if (origem === OrigemChamadoManutencao.HORTIFRUTI) return "Hortifruti";
+  return "Outros";
 }
 
 export default async function ChamadosManutencaoPage({ searchParams }: PageProps) {
@@ -103,24 +99,19 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
   const origemPrefill = parseOrigem(firstParam(params.origem));
-  const areaPrefill = firstParam(params.area).trim();
   const descricaoPrefill = firstParam(params.descricao).trim();
   const registroIdPrefill = firstParam(params.registroId).trim();
 
   const filtroStatus = parseStatus(firstParam(params.filtroStatus));
-  const filtroPrioridade = parsePrioridade(firstParam(params.filtroPrioridade));
-  const filtroArea = firstParam(params.filtroArea).trim();
+  const filtroOrigem = firstParam(params.filtroOrigem).trim();
   const filtroData = firstParam(params.filtroData).trim();
 
   const where: Prisma.ChamadoManutencaoWhereInput = {};
   if (filtroStatus) {
     where.status = filtroStatus;
   }
-  if (filtroPrioridade) {
-    where.prioridade = filtroPrioridade;
-  }
-  if (filtroArea) {
-    where.areaLocal = { contains: filtroArea, mode: "insensitive" };
+  if (filtroOrigem) {
+    where.origem = parseOrigem(filtroOrigem);
   }
   if (filtroData) {
     const date = new Date(`${filtroData}T00:00:00`);
@@ -188,36 +179,26 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
               className={INPUT_CLASS}
             />
           </label>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Usuário
+            </p>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              {usuarioLogado}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Preenchido automaticamente pelo usuário logado.
+            </p>
+          </div>
           <label className="text-sm text-slate-700 dark:text-slate-200">
-            Área / Local *
-            <input
-              type="text"
-              name="areaLocal"
-              required
-              defaultValue={areaPrefill}
-              className={INPUT_CLASS}
-            />
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            Origem
+            Origem *
             <select name="origem" defaultValue={origemPrefill} className={INPUT_CLASS}>
-              <option value={OrigemChamadoManutencao.MANUAL}>Manual</option>
               <option value={OrigemChamadoManutencao.TEMPERATURA}>Temperatura</option>
               <option value={OrigemChamadoManutencao.LIMPEZA}>Limpeza</option>
               <option value={OrigemChamadoManutencao.OLEO}>Óleo</option>
               <option value={OrigemChamadoManutencao.RECEBIMENTO}>Recebimento</option>
-            </select>
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            Prioridade
-            <select
-              name="prioridade"
-              defaultValue={PrioridadeChamadoManutencao.MEDIA}
-              className={INPUT_CLASS}
-            >
-              <option value={PrioridadeChamadoManutencao.BAIXA}>Baixa</option>
-              <option value={PrioridadeChamadoManutencao.MEDIA}>Média</option>
-              <option value={PrioridadeChamadoManutencao.ALTA}>Alta</option>
+              <option value={OrigemChamadoManutencao.HORTIFRUTI}>Hortifruti</option>
+              <option value={OrigemChamadoManutencao.MANUAL}>Outros</option>
             </select>
           </label>
           <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
@@ -233,8 +214,9 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
 
           <ImageUploadField
             name="fotoChamado"
-            label="Foto (Opcional)"
-            helperText="Use imagem para evidenciar a ocorrência."
+            label="Foto *"
+            helperText="Anexe uma foto para abrir o chamado."
+            required
             inputClassName={INPUT_CLASS}
           />
 
@@ -264,7 +246,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
           Lista de Chamados
         </h2>
 
-        <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-4 dark:bg-slate-800">
+        <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-3 dark:bg-slate-800">
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Status
             <select name="filtroStatus" defaultValue={filtroStatus ?? ""} className={INPUT_CLASS}>
@@ -276,28 +258,23 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
             </select>
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
-            Prioridade
-            <select
-              name="filtroPrioridade"
-              defaultValue={filtroPrioridade ?? ""}
-              className={INPUT_CLASS}
-            >
+            Origem
+            <select name="filtroOrigem" defaultValue={filtroOrigem} className={INPUT_CLASS}>
               <option value="">Todas</option>
-              <option value={PrioridadeChamadoManutencao.BAIXA}>Baixa</option>
-              <option value={PrioridadeChamadoManutencao.MEDIA}>Média</option>
-              <option value={PrioridadeChamadoManutencao.ALTA}>Alta</option>
+              <option value={OrigemChamadoManutencao.TEMPERATURA}>Temperatura</option>
+              <option value={OrigemChamadoManutencao.LIMPEZA}>Limpeza</option>
+              <option value={OrigemChamadoManutencao.OLEO}>Óleo</option>
+              <option value={OrigemChamadoManutencao.RECEBIMENTO}>Recebimento</option>
+              <option value={OrigemChamadoManutencao.HORTIFRUTI}>Hortifruti</option>
+              <option value={OrigemChamadoManutencao.MANUAL}>Outros</option>
             </select>
-          </label>
-          <label className="text-sm text-slate-700 dark:text-slate-200">
-            Área / Local
-            <input type="text" name="filtroArea" defaultValue={filtroArea} className={INPUT_CLASS} />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Data
             <input type="date" name="filtroData" defaultValue={filtroData} className={INPUT_CLASS} />
           </label>
 
-          <div className="btn-group md:col-span-4">
+          <div className="btn-group md:col-span-3">
             <button type="submit" className="btn-primary">
               Aplicar Filtros
             </button>
@@ -314,10 +291,8 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
                 <th className="px-3 py-2">Data/Hora</th>
                 <th className="px-3 py-2">Título</th>
                 <th className="px-3 py-2">Origem</th>
-                <th className="px-3 py-2">Área</th>
-                <th className="px-3 py-2">Prioridade</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Criado Por</th>
+                <th className="px-3 py-2">Usuário</th>
                 <th className="px-3 py-2">Foto</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
@@ -325,7 +300,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {chamados.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-3 text-slate-500 dark:text-slate-400">
+                  <td colSpan={7} className="px-3 py-3 text-slate-500 dark:text-slate-400">
                     Nenhum chamado encontrado.
                   </td>
                 </tr>
@@ -334,9 +309,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
                   <tr key={chamado.id}>
                     <td className="px-3 py-2">{formatDateTimeDisplay(chamado.dataHoraCriacao)}</td>
                     <td className="px-3 py-2">{chamado.titulo}</td>
-                    <td className="px-3 py-2">{chamado.origem}</td>
-                    <td className="px-3 py-2">{chamado.areaLocal}</td>
-                    <td className="px-3 py-2">{getPrioridadeLabel(chamado.prioridade)}</td>
+                    <td className="px-3 py-2">{getOrigemLabel(chamado.origem)}</td>
                     <td className="px-3 py-2">
                       <span
                         className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClass(

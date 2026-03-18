@@ -292,7 +292,7 @@ export async function createRegistroAction(formData: FormData) {
       key: "fotoDesvio",
       required: isCorrectiveActionRequired(payload.status),
       requiredMessage:
-        "A foto é obrigatória quando a temperatura estiver em Alerta ou Crítico."
+        "Anexe uma foto para continuar. Ela é obrigatória quando a temperatura estiver em Alerta ou Crítico."
     });
 
     await prisma.controleTemperaturaEquipamento.create({
@@ -347,7 +347,7 @@ export async function updateRegistroAction(formData: FormData) {
 
     if (exigeFoto && !fotoDesvio && !temFotoExistente) {
       throw new Error(
-        "A foto é obrigatória quando a temperatura estiver em Alerta ou Crítico."
+        "Anexe uma foto para continuar. Ela é obrigatória quando a temperatura estiver em Alerta ou Crítico."
       );
     }
 

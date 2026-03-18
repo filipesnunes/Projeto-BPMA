@@ -537,14 +537,6 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                     query.set("editId", String(registro.id));
                     return buildPathWithParams(query);
                   })();
-                  const hrefChamado = `/chamados-manutencao?origem=OLEO&registroId=${registro.id}&area=${encodeURIComponent(
-                    "Fritadeira"
-                  )}&descricao=${encodeURIComponent(
-                    `Ocorrência no controle de óleo: status ${getStatusLabel(
-                      registro.status
-                    )}.`
-                  )}`;
-
                   return (
                     <tr key={registro.id}>
                       <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
@@ -571,9 +563,6 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                         <div className="btn-group">
                           <Link href={hrefEditar} className="btn-action">
                             Editar
-                          </Link>
-                          <Link href={hrefChamado} className="btn-secondary">
-                            Abrir Chamado
                           </Link>
                           <form action={deleteRegistroAction} className="m-0">
                             <input type="hidden" name="id" value={registro.id} />

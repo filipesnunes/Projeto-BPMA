@@ -1,5 +1,4 @@
 import {
-  PrioridadeChamadoManutencao,
   StatusChamadoManutencao
 } from "@prisma/client";
 import Link from "next/link";
@@ -75,10 +74,13 @@ function getStatusClass(status: StatusChamadoManutencao): string {
   return "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
 }
 
-function getPrioridadeLabel(prioridade: PrioridadeChamadoManutencao): string {
-  if (prioridade === PrioridadeChamadoManutencao.BAIXA) return "Baixa";
-  if (prioridade === PrioridadeChamadoManutencao.ALTA) return "Alta";
-  return "Média";
+function getOrigemLabel(origem: string): string {
+  if (origem === "TEMPERATURA") return "Temperatura";
+  if (origem === "LIMPEZA") return "Limpeza";
+  if (origem === "OLEO") return "Óleo";
+  if (origem === "RECEBIMENTO") return "Recebimento";
+  if (origem === "HORTIFRUTI") return "Hortifruti";
+  return "Outros";
 }
 
 export default async function ChamadoManutencaoDetalhePage({
@@ -141,15 +143,7 @@ export default async function ChamadoManutencaoDetalhePage({
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Origem</p>
-            <p className="text-sm font-medium">{chamado.origem}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Área / Local</p>
-            <p className="text-sm font-medium">{chamado.areaLocal}</p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Prioridade</p>
-            <p className="text-sm font-medium">{getPrioridadeLabel(chamado.prioridade)}</p>
+            <p className="text-sm font-medium">{getOrigemLabel(chamado.origem)}</p>
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</p>

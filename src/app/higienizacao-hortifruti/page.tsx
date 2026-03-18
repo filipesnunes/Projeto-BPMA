@@ -218,6 +218,9 @@ export default async function HigienizacaoHortifrutiPage({
             <Link href="/higienizacao-hortifruti/opcoes" className="btn-secondary">
               Gerenciar Opções
             </Link>
+            <Link href="/chamados-manutencao?origem=HORTIFRUTI" className="btn-secondary">
+              Abrir Chamado de Manutenção
+            </Link>
             <ThemeToggleButton />
           </div>
         </div>

@@ -41,6 +41,8 @@ function parseOrigem(value: string): OrigemChamadoManutencao {
   if (value === OrigemChamadoManutencao.OLEO) return OrigemChamadoManutencao.OLEO;
   if (value === OrigemChamadoManutencao.RECEBIMENTO) return OrigemChamadoManutencao.RECEBIMENTO;
   if (value === OrigemChamadoManutencao.HORTIFRUTI) return OrigemChamadoManutencao.HORTIFRUTI;
+  if (value === OrigemChamadoManutencao.BUFFET_AMOSTRAS)
+    return OrigemChamadoManutencao.BUFFET_AMOSTRAS;
   return OrigemChamadoManutencao.MANUAL;
 }
 

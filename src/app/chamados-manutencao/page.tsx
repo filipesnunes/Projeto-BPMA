@@ -54,6 +54,7 @@ function parseOrigem(value: string): OrigemChamadoManutencao {
   if (value === OrigemChamadoManutencao.OLEO) return OrigemChamadoManutencao.OLEO;
   if (value === OrigemChamadoManutencao.RECEBIMENTO) return OrigemChamadoManutencao.RECEBIMENTO;
   if (value === OrigemChamadoManutencao.HORTIFRUTI) return OrigemChamadoManutencao.HORTIFRUTI;
+  if (value === OrigemChamadoManutencao.BUFFET_AMOSTRAS) return OrigemChamadoManutencao.BUFFET_AMOSTRAS;
   return OrigemChamadoManutencao.MANUAL;
 }
 
@@ -84,6 +85,7 @@ function getOrigemLabel(origem: OrigemChamadoManutencao): string {
   if (origem === OrigemChamadoManutencao.OLEO) return "Óleo";
   if (origem === OrigemChamadoManutencao.RECEBIMENTO) return "Recebimento";
   if (origem === OrigemChamadoManutencao.HORTIFRUTI) return "Hortifruti";
+  if (origem === OrigemChamadoManutencao.BUFFET_AMOSTRAS) return "Buffet / Amostras";
   return "Outros";
 }
 
@@ -198,6 +200,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
               <option value={OrigemChamadoManutencao.OLEO}>Óleo</option>
               <option value={OrigemChamadoManutencao.RECEBIMENTO}>Recebimento</option>
               <option value={OrigemChamadoManutencao.HORTIFRUTI}>Hortifruti</option>
+              <option value={OrigemChamadoManutencao.BUFFET_AMOSTRAS}>Buffet / Amostras</option>
               <option value={OrigemChamadoManutencao.MANUAL}>Outros</option>
             </select>
           </label>
@@ -266,6 +269,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
               <option value={OrigemChamadoManutencao.OLEO}>Óleo</option>
               <option value={OrigemChamadoManutencao.RECEBIMENTO}>Recebimento</option>
               <option value={OrigemChamadoManutencao.HORTIFRUTI}>Hortifruti</option>
+              <option value={OrigemChamadoManutencao.BUFFET_AMOSTRAS}>Buffet / Amostras</option>
               <option value={OrigemChamadoManutencao.MANUAL}>Outros</option>
             </select>
           </label>

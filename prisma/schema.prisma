@@ -108,6 +108,29 @@ enum StatusFechamentoPlanoLimpeza {
   ASSINADO
 }
 
+enum ClassificacaoItemBuffetAmostra {
+  QUENTE
+  FRIO
+  FRIO_CRU
+}
+
+enum StatusItemBuffetAmostra {
+  PENDENTE
+  PREENCHIDO
+  ASSINADO
+}
+
+enum StatusTemperaturaBuffetAmostra {
+  CONFORME
+  ALERTA
+  CRITICO
+}
+
+enum StatusFechamentoBuffetAmostra {
+  ABERTO
+  ASSINADO
+}
+
 enum PerfilUsuario {
   DEV
   GESTOR
@@ -140,6 +163,7 @@ enum OrigemChamadoManutencao {
   OLEO
   RECEBIMENTO
   HORTIFRUTI
+  BUFFET_AMOSTRAS
   MANUAL
 }
 
@@ -157,39 +181,39 @@ enum StatusChamadoManutencao {
 }
 
 model Usuario {
-  id                  Int                              @id @default(autoincrement())
-  nomeCompleto        String
-  nomeUsuario         String                           @unique
-  senhaHash           String
-  perfil              PerfilUsuario
-  isDevDefinitivo     Boolean                          @default(false)
-  status              StatusUsuario                    @default(ATIVO)
-  dataAdmissao        DateTime?                        @db.Date
-  createdAt           DateTime                         @default(now())
-  updatedAt           DateTime                         @updatedAt
-  ultimaAlteracaoSenha DateTime?
-  obrigarTrocaSenha   Boolean                          @default(false)
-  ultimoAcesso        DateTime?
-  observacoesInternas String?
-  sessoes             UsuarioSessao[]
-  solicitacoesComoAlvo SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoUsuarioAlvo")
-  solicitacoesTratadas SolicitacaoRedefinicaoSenha[]   @relation("SolicitacaoTratadaPor")
-  logsAssinatura      LogAssinatura[]
-  chamadosManutencaoCriados ChamadoManutencao[]        @relation("ChamadoCriadoPor")
+  id                        Int                           @id @default(autoincrement())
+  nomeCompleto              String
+  nomeUsuario               String                        @unique
+  senhaHash                 String
+  perfil                    PerfilUsuario
+  isDevDefinitivo           Boolean                       @default(false)
+  status                    StatusUsuario                 @default(ATIVO)
+  dataAdmissao              DateTime?                     @db.Date
+  createdAt                 DateTime                      @default(now())
+  updatedAt                 DateTime                      @updatedAt
+  ultimaAlteracaoSenha      DateTime?
+  obrigarTrocaSenha         Boolean                       @default(false)
+  ultimoAcesso              DateTime?
+  observacoesInternas       String?
+  sessoes                   UsuarioSessao[]
+  solicitacoesComoAlvo      SolicitacaoRedefinicaoSenha[] @relation("SolicitacaoUsuarioAlvo")
+  solicitacoesTratadas      SolicitacaoRedefinicaoSenha[] @relation("SolicitacaoTratadaPor")
+  logsAssinatura            LogAssinatura[]
+  chamadosManutencaoCriados ChamadoManutencao[]           @relation("ChamadoCriadoPor")
 
   @@index([perfil, status, isDevDefinitivo])
   @@map("usuario")
 }
 
 model UsuarioSessao {
-  id          Int      @id @default(autoincrement())
-  tokenHash   String   @unique
-  usuarioId   Int
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  expiraEm    DateTime
+  id           Int       @id @default(autoincrement())
+  tokenHash    String    @unique
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiraEm     DateTime
   ultimoAcesso DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([usuarioId])
   @@index([expiraEm])
@@ -197,18 +221,18 @@ model UsuarioSessao {
 }
 
 model SolicitacaoRedefinicaoSenha {
-  id                   Int                                 @id @default(autoincrement())
-  usuarioId            Int?
-  usuario              Usuario?                            @relation("SolicitacaoUsuarioAlvo", fields: [usuarioId], references: [id], onDelete: SetNull)
-  nomeUsuarioInformado String
+  id                    Int                               @id @default(autoincrement())
+  usuarioId             Int?
+  usuario               Usuario?                          @relation("SolicitacaoUsuarioAlvo", fields: [usuarioId], references: [id], onDelete: SetNull)
+  nomeUsuarioInformado  String
   nomeCompletoInformado String
-  status               StatusSolicitacaoRedefinicaoSenha   @default(PENDENTE)
-  observacaoInterna    String?
-  tratadoPorId         Int?
-  tratadoPor           Usuario?                            @relation("SolicitacaoTratadaPor", fields: [tratadoPorId], references: [id], onDelete: SetNull)
-  tratadoEm            DateTime?
-  createdAt            DateTime                            @default(now())
-  updatedAt            DateTime                            @updatedAt
+  status                StatusSolicitacaoRedefinicaoSenha @default(PENDENTE)
+  observacaoInterna     String?
+  tratadoPorId          Int?
+  tratadoPor            Usuario?                          @relation("SolicitacaoTratadaPor", fields: [tratadoPorId], references: [id], onDelete: SetNull)
+  tratadoEm             DateTime?
+  createdAt             DateTime                          @default(now())
+  updatedAt             DateTime                          @updatedAt
 
   @@index([status])
   @@index([usuarioId])
@@ -216,9 +240,9 @@ model SolicitacaoRedefinicaoSenha {
 }
 
 model LogAssinatura {
-  id           Int                  @id @default(autoincrement())
+  id           Int                   @id @default(autoincrement())
   usuarioId    Int
-  usuario      Usuario              @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  usuario      Usuario               @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
   nomeUsuario  String
   nomeCompleto String
   perfil       PerfilUsuario
@@ -226,8 +250,8 @@ model LogAssinatura {
   modulo       String
   referenciaId String?
   observacao   String?
-  assinadoEm   DateTime             @default(now())
-  createdAt    DateTime             @default(now())
+  assinadoEm   DateTime              @default(now())
+  createdAt    DateTime              @default(now())
 
   @@index([usuarioId])
   @@index([tipo, assinadoEm])
@@ -255,14 +279,14 @@ model HigienizacaoHortifruti {
 }
 
 model HigienizacaoHortifrutiFechamento {
-  id                 Int                          @id @default(autoincrement())
+  id                 Int                        @id @default(autoincrement())
   mes                Int
   ano                Int
   responsavelTecnico String
   dataAssinatura     DateTime
-  status             StatusFechamentoHortifruti   @default(ABERTO)
-  createdAt          DateTime                     @default(now())
-  updatedAt          DateTime                     @updatedAt
+  status             StatusFechamentoHortifruti @default(ABERTO)
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
 
   @@unique([mes, ano])
   @@map("higienizacao_hortifruti_fechamento")
@@ -281,21 +305,21 @@ model HigienizacaoHortifrutiOpcao {
 }
 
 model ControleTemperaturaEquipamento {
-  id                  Int                             @id @default(autoincrement())
-  data                DateTime                        @db.Date
-  equipamento         String
+  id                   Int                             @id @default(autoincrement())
+  data                 DateTime                        @db.Date
+  equipamento          String
   categoriaEquipamento CategoriaEquipamentoTemperatura
-  turno               TurnoTemperaturaEquipamento
-  temperaturaAferida  Float
-  status              StatusTemperaturaEquipamento
-  acaoCorretiva       String?
-  fotoNome            String?
-  fotoMimeType        String?
-  fotoBase64          String?                          @db.Text
-  responsavel         String
-  observacoes         String?
-  createdAt           DateTime                        @default(now())
-  updatedAt           DateTime                        @updatedAt
+  turno                TurnoTemperaturaEquipamento
+  temperaturaAferida   Float
+  status               StatusTemperaturaEquipamento
+  acaoCorretiva        String?
+  fotoNome             String?
+  fotoMimeType         String?
+  fotoBase64           String?                         @db.Text
+  responsavel          String
+  observacoes          String?
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
 
   @@index([data])
   @@index([equipamento])
@@ -305,27 +329,27 @@ model ControleTemperaturaEquipamento {
 }
 
 model ControleTemperaturaEquipamentoFechamento {
-  id                 Int                                  @id @default(autoincrement())
+  id                 Int                                    @id @default(autoincrement())
   mes                Int
   ano                Int
   responsavelTecnico String
   dataAssinatura     DateTime
   status             StatusFechamentoTemperaturaEquipamento @default(ABERTO)
-  createdAt          DateTime                             @default(now())
-  updatedAt          DateTime                             @updatedAt
+  createdAt          DateTime                               @default(now())
+  updatedAt          DateTime                               @updatedAt
 
   @@unique([mes, ano])
   @@map("controle_temperatura_equipamentos_fechamento")
 }
 
 model ControleTemperaturaEquipamentoOpcao {
-  id                  Int                              @id @default(autoincrement())
-  tipo                TipoOpcaoTemperaturaEquipamento
-  nome                String
+  id                   Int                              @id @default(autoincrement())
+  tipo                 TipoOpcaoTemperaturaEquipamento
+  nome                 String
   categoriaEquipamento CategoriaEquipamentoTemperatura?
-  ativo               Boolean                          @default(true)
-  createdAt           DateTime                         @default(now())
-  updatedAt           DateTime                         @updatedAt
+  ativo                Boolean                          @default(true)
+  createdAt            DateTime                         @default(now())
+  updatedAt            DateTime                         @updatedAt
 
   @@unique([tipo, nome])
   @@index([tipo, ativo])
@@ -333,40 +357,40 @@ model ControleTemperaturaEquipamentoOpcao {
 }
 
 model ControleTemperaturaCategoriaParametro {
-  id                         Int                             @id @default(autoincrement())
-  categoria                  CategoriaEquipamentoTemperatura @unique
-  nome                       String
-  temperaturaIdealMin        Float?
-  temperaturaIdealMax        Float?
-  temperaturaAlertaMin       Float?
-  temperaturaAlertaMax       Float?
-  temperaturaCriticaMin      Float?
-  temperaturaCriticaMax      Float?
-  acaoIdeal                  String                          @default("")
-  acaoAlerta                 String                          @default("")
-  acaoCritica                String                          @default("")
-  orientacaoCorretivaPadrao  String
-  isActive                   Boolean                         @default(true)
-  createdAt                  DateTime                        @default(now())
-  updatedAt                  DateTime                        @updatedAt
-  regras                     ControleTemperaturaCategoriaRegra[]
+  id                        Int                                 @id @default(autoincrement())
+  categoria                 CategoriaEquipamentoTemperatura     @unique
+  nome                      String
+  temperaturaIdealMin       Float?
+  temperaturaIdealMax       Float?
+  temperaturaAlertaMin      Float?
+  temperaturaAlertaMax      Float?
+  temperaturaCriticaMin     Float?
+  temperaturaCriticaMax     Float?
+  acaoIdeal                 String                              @default("")
+  acaoAlerta                String                              @default("")
+  acaoCritica               String                              @default("")
+  orientacaoCorretivaPadrao String
+  isActive                  Boolean                             @default(true)
+  createdAt                 DateTime                            @default(now())
+  updatedAt                 DateTime                            @updatedAt
+  regras                    ControleTemperaturaCategoriaRegra[]
 
   @@index([isActive])
   @@map("controle_temperatura_categoria_parametro")
 }
 
 model ControleTemperaturaCategoriaRegra {
-  id            Int                                   @id @default(autoincrement())
-  categoriaId   Int
-  categoria     ControleTemperaturaCategoriaParametro @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  id             Int                                   @id @default(autoincrement())
+  categoriaId    Int
+  categoria      ControleTemperaturaCategoriaParametro @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
   temperaturaMin Float?
   temperaturaMax Float?
-  status        StatusTemperaturaEquipamento
-  acaoCorretiva String
-  ordem         Int
-  isActive      Boolean                               @default(true)
-  createdAt     DateTime                              @default(now())
-  updatedAt     DateTime                              @updatedAt
+  status         StatusTemperaturaEquipamento
+  acaoCorretiva  String
+  ordem          Int
+  isActive       Boolean                               @default(true)
+  createdAt      DateTime                              @default(now())
+  updatedAt      DateTime                              @updatedAt
 
   @@unique([categoriaId, ordem])
   @@index([categoriaId, isActive, ordem])
@@ -374,18 +398,18 @@ model ControleTemperaturaCategoriaRegra {
 }
 
 model ControleQualidadeOleoRegistro {
-  id                Int                @id @default(autoincrement())
-  data              DateTime           @db.Date
-  fitaOleo          String?
-  temperatura       Float?
-  status            StatusQualidadeOleo
-  orientacao        String
-  responsavel       String
-  observacao        String?
-  temperaturaCritica Boolean           @default(false)
-  semUtilizacao     Boolean            @default(false)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id                 Int                 @id @default(autoincrement())
+  data               DateTime            @db.Date
+  fitaOleo           String?
+  temperatura        Float?
+  status             StatusQualidadeOleo
+  orientacao         String
+  responsavel        String
+  observacao         String?
+  temperaturaCritica Boolean             @default(false)
+  semUtilizacao      Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@index([data])
   @@index([fitaOleo])
@@ -395,28 +419,28 @@ model ControleQualidadeOleoRegistro {
 }
 
 model ControleQualidadeOleoFechamento {
-  id                 Int                             @id @default(autoincrement())
+  id                 Int                           @id @default(autoincrement())
   mes                Int
   ano                Int
   responsavelTecnico String
   dataAssinatura     DateTime
-  status             StatusFechamentoQualidadeOleo  @default(ABERTO)
-  createdAt          DateTime                        @default(now())
-  updatedAt          DateTime                        @updatedAt
+  status             StatusFechamentoQualidadeOleo @default(ABERTO)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
 
   @@unique([mes, ano])
   @@map("controle_qualidade_oleo_fechamento")
 }
 
 model ControleQualidadeOleoOpcaoFita {
-  id             Int                @id @default(autoincrement())
-  rotulo         String
-  descricao      String
+  id              Int                 @id @default(autoincrement())
+  rotulo          String
+  descricao       String
   statusAssociado StatusQualidadeOleo
-  ordem          Int                @default(1)
-  ativo          Boolean            @default(true)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  ordem           Int                 @default(1)
+  ativo           Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   @@unique([rotulo])
   @@index([ativo, ordem])
@@ -424,13 +448,13 @@ model ControleQualidadeOleoOpcaoFita {
 }
 
 model RastreabilidadeRecebimentoCategoria {
-  id               Int                             @id @default(autoincrement())
-  nome             String
+  id                Int                                  @id @default(autoincrement())
+  nome              String
   temperaturaMaxima Float
-  ativo            Boolean                         @default(true)
-  createdAt        DateTime                        @default(now())
-  updatedAt        DateTime                        @updatedAt
-  registros        RastreabilidadeRecebimentoRegistro[]
+  ativo             Boolean                              @default(true)
+  createdAt         DateTime                             @default(now())
+  updatedAt         DateTime                             @updatedAt
+  registros         RastreabilidadeRecebimentoRegistro[]
 
   @@unique([nome])
   @@index([ativo, nome])
@@ -438,20 +462,20 @@ model RastreabilidadeRecebimentoCategoria {
 }
 
 model RastreabilidadeRecebimentoNota {
-  id               Int                             @id @default(autoincrement())
-  data             DateTime                        @db.Date
-  fornecedor       String
-  notaFiscal       String
-  chaveNfe         String?                         @unique
-  cnpjFornecedor   String?
-  serieNota        String?
-  identificadorFiscal String?                      @unique
-  statusNota       StatusNotaRecebimento           @default(PENDENTE)
-  responsavelGeral String?
-  origemXml        Boolean                         @default(false)
-  createdAt        DateTime                        @default(now())
-  updatedAt        DateTime                        @updatedAt
-  itens            RastreabilidadeRecebimentoRegistro[]
+  id                  Int                                  @id @default(autoincrement())
+  data                DateTime                             @db.Date
+  fornecedor          String
+  notaFiscal          String
+  chaveNfe            String?                              @unique
+  cnpjFornecedor      String?
+  serieNota           String?
+  identificadorFiscal String?                              @unique
+  statusNota          StatusNotaRecebimento                @default(PENDENTE)
+  responsavelGeral    String?
+  origemXml           Boolean                              @default(false)
+  createdAt           DateTime                             @default(now())
+  updatedAt           DateTime                             @updatedAt
+  itens               RastreabilidadeRecebimentoRegistro[]
 
   @@index([data])
   @@index([fornecedor])
@@ -464,31 +488,31 @@ model RastreabilidadeRecebimentoNota {
 }
 
 model RastreabilidadeRecebimentoRegistro {
-  id                    Int                        @id @default(autoincrement())
-  notaId                Int?
-  nota                  RastreabilidadeRecebimentoNota? @relation(fields: [notaId], references: [id], onDelete: Cascade)
-  data                  DateTime                   @db.Date
-  produto               String
-  fornecedor            String
-  notaFiscal            String
-  lote                  String?
-  dataFabricacao        DateTime?                  @db.Date
-  dataValidade          DateTime?                  @db.Date
-  sif                   String?
-  temperatura           Float?
-  temperaturaStatus     ConformidadeRecebimento?
-  transporteEntregador  ConformidadeRecebimento?
-  aspectoSensorial      ConformidadeRecebimento?
-  embalagem             ConformidadeRecebimento?
-  acaoCorretiva         String?
+  id                     Int                                  @id @default(autoincrement())
+  notaId                 Int?
+  nota                   RastreabilidadeRecebimentoNota?      @relation(fields: [notaId], references: [id], onDelete: Cascade)
+  data                   DateTime                             @db.Date
+  produto                String
+  fornecedor             String
+  notaFiscal             String
+  lote                   String?
+  dataFabricacao         DateTime?                            @db.Date
+  dataValidade           DateTime?                            @db.Date
+  sif                    String?
+  temperatura            Float?
+  temperaturaStatus      ConformidadeRecebimento?
+  transporteEntregador   ConformidadeRecebimento?
+  aspectoSensorial       ConformidadeRecebimento?
+  embalagem              ConformidadeRecebimento?
+  acaoCorretiva          String?
   responsavelRecebimento String?
-  observacoes           String?
-  statusGeral           StatusRecebimento          @default(PENDENTE)
-  origemXml             Boolean                    @default(false)
-  categoriaId           Int?
-  categoria             RastreabilidadeRecebimentoCategoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
-  createdAt             DateTime                   @default(now())
-  updatedAt             DateTime                   @updatedAt
+  observacoes            String?
+  statusGeral            StatusRecebimento                    @default(PENDENTE)
+  origemXml              Boolean                              @default(false)
+  categoriaId            Int?
+  categoria              RastreabilidadeRecebimentoCategoria? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  createdAt              DateTime                             @default(now())
+  updatedAt              DateTime                             @updatedAt
 
   @@index([data])
   @@index([produto])
@@ -502,32 +526,32 @@ model RastreabilidadeRecebimentoRegistro {
 }
 
 model RastreabilidadeRecebimentoFechamento {
-  id                 Int                                           @id @default(autoincrement())
+  id                 Int                                        @id @default(autoincrement())
   mes                Int
   ano                Int
   responsavelTecnico String
   dataAssinatura     DateTime
-  status             StatusFechamentoRastreabilidadeRecebimento    @default(ABERTO)
-  createdAt          DateTime                                      @default(now())
-  updatedAt          DateTime                                      @updatedAt
+  status             StatusFechamentoRastreabilidadeRecebimento @default(ABERTO)
+  createdAt          DateTime                                   @default(now())
+  updatedAt          DateTime                                   @updatedAt
 
   @@unique([mes, ano])
   @@map("rastreabilidade_recebimento_fechamento")
 }
 
 model PlanoLimpezaDiarioRegistro {
-  id                     Int              @id @default(autoincrement())
-  data                   DateTime         @db.Date
-  turno                  TurnoPlanoLimpeza
-  area                   String
-  assinaturaResponsavel  String           @default("")
-  assinaturaSupervisor   String           @default("")
-  observacao             String?
-  observacaoResponsavel  String?
-  observacaoSupervisor   String?
-  status                 StatusPlanoLimpeza @default(PENDENTE)
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  id                    Int                @id @default(autoincrement())
+  data                  DateTime           @db.Date
+  turno                 TurnoPlanoLimpeza
+  area                  String
+  assinaturaResponsavel String             @default("")
+  assinaturaSupervisor  String             @default("")
+  observacao            String?
+  observacaoResponsavel String?
+  observacaoSupervisor  String?
+  status                StatusPlanoLimpeza @default(PENDENTE)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   @@index([data])
   @@index([turno])
@@ -553,17 +577,17 @@ model PlanoLimpezaDiarioArea {
 }
 
 model PlanoLimpezaSemanalItem {
-  id                   Int                          @id @default(autoincrement())
-  area                 String
-  oQueLimpar           String
-  qualProduto          String
-  quando               String
-  quem                 String
-  ativo                Boolean                      @default(true)
-  ordem                Int                          @default(1)
-  createdAt            DateTime                     @default(now())
-  updatedAt            DateTime                     @updatedAt
-  execucoes            PlanoLimpezaSemanalExecucao[]
+  id          Int                           @id @default(autoincrement())
+  area        String
+  oQueLimpar  String
+  qualProduto String
+  quando      String
+  quem        String
+  ativo       Boolean                       @default(true)
+  ordem       Int                           @default(1)
+  createdAt   DateTime                      @default(now())
+  updatedAt   DateTime                      @updatedAt
+  execucoes   PlanoLimpezaSemanalExecucao[]
 
   @@index([area])
   @@index([ativo, area, ordem])
@@ -571,18 +595,18 @@ model PlanoLimpezaSemanalItem {
 }
 
 model PlanoLimpezaSemanalExecucao {
-  id                   Int                 @id @default(autoincrement())
-  dataExecucao         DateTime            @db.Date
-  area                 String
-  itemId               Int
-  item                 PlanoLimpezaSemanalItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  id                    Int                     @id @default(autoincrement())
+  dataExecucao          DateTime                @db.Date
+  area                  String
+  itemId                Int
+  item                  PlanoLimpezaSemanalItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
   assinaturaResponsavel String
-  assinaturaSupervisor String
+  assinaturaSupervisor  String
   observacaoResponsavel String?
-  observacaoSupervisor String?
-  status               StatusPlanoLimpeza  @default(PENDENTE)
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  observacaoSupervisor  String?
+  status                StatusPlanoLimpeza      @default(PENDENTE)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
   @@index([dataExecucao])
   @@index([area])
@@ -593,46 +617,151 @@ model PlanoLimpezaSemanalExecucao {
 }
 
 model PlanoLimpezaFechamento {
-  id                 Int                           @id @default(autoincrement())
+  id                 Int                          @id @default(autoincrement())
   tipo               TipoPlanoLimpeza
   mes                Int
   ano                Int
   responsavelTecnico String
   dataAssinatura     DateTime
-  status             StatusFechamentoPlanoLimpeza  @default(ABERTO)
-  createdAt          DateTime                      @default(now())
-  updatedAt          DateTime                      @updatedAt
+  status             StatusFechamentoPlanoLimpeza @default(ABERTO)
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
 
   @@unique([tipo, mes, ano])
   @@index([tipo, status])
   @@map("plano_limpeza_fechamento")
 }
 
+model ControleBuffetAmostraServico {
+  id        Int                                @id @default(autoincrement())
+  nome      String                             @unique
+  ativo     Boolean                            @default(true)
+  ordem     Int                                @default(1)
+  createdAt DateTime                           @default(now())
+  updatedAt DateTime                           @updatedAt
+  itens     ControleBuffetAmostraItemServico[]
+  registros ControleBuffetAmostraRegistro[]
+
+  @@index([ativo, ordem, nome])
+  @@map("controle_buffet_amostra_servico")
+}
+
+model ControleBuffetAmostraItem {
+  id            Int                                @id @default(autoincrement())
+  nome          String                             @unique
+  classificacao ClassificacaoItemBuffetAmostra
+  ativo         Boolean                            @default(true)
+  ordem         Int                                @default(1)
+  createdAt     DateTime                           @default(now())
+  updatedAt     DateTime                           @updatedAt
+  servicos      ControleBuffetAmostraItemServico[]
+  registros     ControleBuffetAmostraRegistro[]
+
+  @@index([ativo, ordem, nome])
+  @@index([classificacao, ativo])
+  @@map("controle_buffet_amostra_item")
+}
+
+model ControleBuffetAmostraItemServico {
+  id        Int                          @id @default(autoincrement())
+  servicoId Int
+  servico   ControleBuffetAmostraServico @relation(fields: [servicoId], references: [id], onDelete: Cascade)
+  itemId    Int
+  item      ControleBuffetAmostraItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt DateTime                     @default(now())
+  updatedAt DateTime                     @updatedAt
+
+  @@unique([servicoId, itemId])
+  @@index([itemId])
+  @@map("controle_buffet_amostra_item_servico")
+}
+
+model ControleBuffetAmostraAcaoCorretiva {
+  id        Int      @id @default(autoincrement())
+  nome      String   @unique
+  ativo     Boolean  @default(true)
+  ordem     Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ativo, ordem, nome])
+  @@map("controle_buffet_amostra_acao_corretiva")
+}
+
+model ControleBuffetAmostraRegistro {
+  id                   Int                             @id @default(autoincrement())
+  data                 DateTime                        @db.Date
+  servicoId            Int
+  servico              ControleBuffetAmostraServico    @relation(fields: [servicoId], references: [id], onDelete: Restrict)
+  itemId               Int
+  item                 ControleBuffetAmostraItem       @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  itemNome             String
+  classificacao        ClassificacaoItemBuffetAmostra
+  tcEquipamento        Float?
+  primeiraTc           Float?
+  segundaTc            Float?
+  statusTemperatura    StatusTemperaturaBuffetAmostra?
+  acaoCorretiva        String?
+  observacao           String?
+  responsavelUsuarioId Int
+  responsavelNome      String
+  responsavelPerfil    PerfilUsuario
+  dataHoraRegistro     DateTime
+  assinaturaUsuarioId  Int?
+  assinaturaNome       String?
+  assinaturaPerfil     PerfilUsuario?
+  assinaturaDataHora   DateTime?
+  status               StatusItemBuffetAmostra         @default(PENDENTE)
+  createdAt            DateTime                        @default(now())
+  updatedAt            DateTime                        @updatedAt
+
+  @@unique([data, servicoId, itemId])
+  @@index([data, servicoId])
+  @@index([status])
+  @@index([responsavelUsuarioId])
+  @@index([classificacao])
+  @@map("controle_buffet_amostra_registro")
+}
+
+model ControleBuffetAmostraFechamento {
+  id                 Int                           @id @default(autoincrement())
+  mes                Int
+  ano                Int
+  responsavelTecnico String
+  dataAssinatura     DateTime
+  status             StatusFechamentoBuffetAmostra @default(ABERTO)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@unique([mes, ano])
+  @@map("controle_buffet_amostra_fechamento")
+}
+
 model ChamadoManutencao {
-  id                           Int                        @id @default(autoincrement())
-  titulo                       String
-  descricao                    String
-  areaLocal                    String
-  origem                       OrigemChamadoManutencao
-  prioridade                   PrioridadeChamadoManutencao @default(MEDIA)
-  status                       StatusChamadoManutencao    @default(ABERTO)
-  contextoModulo               String?
-  contextoRegistroId           String?
-  fotoNome                     String?
-  fotoMimeType                 String?
-  fotoBase64                   String?                    @db.Text
-  criadoPorId                  Int
-  criadoPor                    Usuario                    @relation("ChamadoCriadoPor", fields: [criadoPorId], references: [id], onDelete: Restrict)
-  criadoPorNome                String
-  assinaturaAberturaUsuarioId  Int
+  id                            Int                         @id @default(autoincrement())
+  titulo                        String
+  descricao                     String
+  areaLocal                     String
+  origem                        OrigemChamadoManutencao
+  prioridade                    PrioridadeChamadoManutencao @default(MEDIA)
+  status                        StatusChamadoManutencao     @default(ABERTO)
+  contextoModulo                String?
+  contextoRegistroId            String?
+  fotoNome                      String?
+  fotoMimeType                  String?
+  fotoBase64                    String?                     @db.Text
+  criadoPorId                   Int
+  criadoPor                     Usuario                     @relation("ChamadoCriadoPor", fields: [criadoPorId], references: [id], onDelete: Restrict)
+  criadoPorNome                 String
+  assinaturaAberturaUsuarioId   Int
   assinaturaAberturaNomeUsuario String
-  assinaturaAberturaPerfil     PerfilUsuario
-  assinaturaAberturaDataHora   DateTime                   @default(now())
-  dataHoraCriacao              DateTime                   @default(now())
-  dataHoraConclusao            DateTime?
-  observacaoConclusao          String?
-  createdAt                    DateTime                   @default(now())
-  updatedAt                    DateTime                   @updatedAt
+  assinaturaAberturaPerfil      PerfilUsuario
+  assinaturaAberturaDataHora    DateTime                    @default(now())
+  dataHoraCriacao               DateTime                    @default(now())
+  dataHoraConclusao             DateTime?
+  observacaoConclusao           String?
+  createdAt                     DateTime                    @default(now())
+  updatedAt                     DateTime                    @updatedAt
 
   @@index([status, dataHoraCriacao])
   @@index([origem, status])

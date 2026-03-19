@@ -80,6 +80,7 @@ function getOrigemLabel(origem: string): string {
   if (origem === "OLEO") return "Óleo";
   if (origem === "RECEBIMENTO") return "Recebimento";
   if (origem === "HORTIFRUTI") return "Hortifruti";
+  if (origem === "BUFFET_AMOSTRAS") return "Buffet / Amostras";
   return "Outros";
 }
 

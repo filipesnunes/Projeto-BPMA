@@ -1,4 +1,5 @@
 import {
+  ClassificacaoItemBuffetAmostra,
   CategoriaEquipamentoTemperatura,
   PrismaClient,
   StatusQualidadeOleo,
@@ -246,6 +247,71 @@ const PLANO_LIMPEZA_DIARIO_AREAS = [
   "Cozinha"
 ];
 
+const BUFFET_SERVICOS = [
+  { nome: "Café da manhã", ordem: 1 },
+  { nome: "Almoço", ordem: 2 },
+  { nome: "Café da tarde", ordem: 3 },
+  { nome: "Jantar", ordem: 4 }
+];
+
+const BUFFET_ACOES_CORRETIVAS = [
+  { nome: "Alimento exposto por menos de 1 hora no buffet", ordem: 1 },
+  { nome: "Alimento exposto por menos de 2 horas no buffet", ordem: 2 },
+  { nome: "Alimento descartado", ordem: 3 },
+  { nome: "Não se aplica", ordem: 4 }
+];
+
+const BUFFET_ITENS = [
+  {
+    nome: "Ovos Mexidos",
+    classificacao: ClassificacaoItemBuffetAmostra.QUENTE,
+    servicos: ["Café da manhã"],
+    ordem: 1
+  },
+  {
+    nome: "Arroz Branco",
+    classificacao: ClassificacaoItemBuffetAmostra.QUENTE,
+    servicos: ["Almoço", "Jantar"],
+    ordem: 2
+  },
+  {
+    nome: "Feijão",
+    classificacao: ClassificacaoItemBuffetAmostra.QUENTE,
+    servicos: ["Almoço", "Jantar"],
+    ordem: 3
+  },
+  {
+    nome: "Frango Grelhado",
+    classificacao: ClassificacaoItemBuffetAmostra.QUENTE,
+    servicos: ["Almoço", "Jantar"],
+    ordem: 4
+  },
+  {
+    nome: "Salada Verde",
+    classificacao: ClassificacaoItemBuffetAmostra.FRIO,
+    servicos: ["Almoço", "Jantar"],
+    ordem: 5
+  },
+  {
+    nome: "Tomate em Fatias",
+    classificacao: ClassificacaoItemBuffetAmostra.FRIO,
+    servicos: ["Café da manhã", "Almoço", "Jantar"],
+    ordem: 6
+  },
+  {
+    nome: "Queijo Fatiado",
+    classificacao: ClassificacaoItemBuffetAmostra.FRIO,
+    servicos: ["Café da manhã", "Café da tarde"],
+    ordem: 7
+  },
+  {
+    nome: "Salmão Cru Temperado",
+    classificacao: ClassificacaoItemBuffetAmostra.FRIO_CRU,
+    servicos: ["Jantar"],
+    ordem: 8
+  }
+];
+
 async function seedHigienizacao() {
   await prisma.higienizacaoHortifrutiOpcao.createMany({
     data: [
@@ -359,12 +425,65 @@ async function seedPlanoLimpeza() {
   });
 }
 
+async function seedControleBuffetAmostras() {
+  await prisma.controleBuffetAmostraServico.createMany({
+    data: BUFFET_SERVICOS.map((servico) => ({
+      nome: servico.nome,
+      ordem: servico.ordem,
+      ativo: true
+    })),
+    skipDuplicates: true
+  });
+
+  await prisma.controleBuffetAmostraAcaoCorretiva.createMany({
+    data: BUFFET_ACOES_CORRETIVAS.map((acao) => ({
+      nome: acao.nome,
+      ordem: acao.ordem,
+      ativo: true
+    })),
+    skipDuplicates: true
+  });
+
+  const servicos = await prisma.controleBuffetAmostraServico.findMany({
+    select: { id: true, nome: true }
+  });
+  const servicoIdByName = new Map(servicos.map((servico) => [servico.nome, servico.id]));
+
+  for (const itemConfig of BUFFET_ITENS) {
+    const item = await prisma.controleBuffetAmostraItem.upsert({
+      where: { nome: itemConfig.nome },
+      create: {
+        nome: itemConfig.nome,
+        classificacao: itemConfig.classificacao,
+        ordem: itemConfig.ordem,
+        ativo: true
+      },
+      update: {}
+    });
+
+    const servicoIds = itemConfig.servicos
+      .map((servicoNome) => servicoIdByName.get(servicoNome))
+      .filter((servicoId): servicoId is number => typeof servicoId === "number");
+
+    if (servicoIds.length > 0) {
+      await prisma.controleBuffetAmostraItemServico.createMany({
+        data: servicoIds.map((servicoId) => ({
+          servicoId,
+          itemId: item.id
+        })),
+        skipDuplicates: true
+      });
+    }
+  }
+}
+
 async function main() {
   await seedHigienizacao();
   await seedControleTemperatura();
   await seedControleOleo();
   await seedRastreabilidade();
   await seedPlanoLimpeza();
+  await seedControleBuffetAmostras();
 }
 
 main()

@@ -40,7 +40,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body className="bg-[var(--app-bg)] text-[var(--app-text)]">
+      <body className="bg-[var(--background-page)] text-[var(--text-default)]">
         {!user ? (
           <main className="mx-auto min-h-screen w-full max-w-md p-4 md:p-8">{children}</main>
         ) : (

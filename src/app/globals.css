@@ -3,14 +3,40 @@
 @tailwind utilities;
 
 :root {
-  --app-bg: #f1f4f8;
+  --background-page: #f1f4f8;
+  --background-card: #ffffff;
+  --background-section: #f6f8fb;
+  --background-muted: #eef3f8;
+  --border-default: #d2dbe6;
+  --text-default: #0f172a;
+  --text-muted: #5a6b7f;
+
+  --app-bg: var(--background-page);
   --app-bg-soft: #e8edf4;
-  --app-surface: #ffffff;
-  --app-surface-soft: #f6f8fb;
-  --app-surface-muted: #eef3f8;
-  --app-border: #d2dbe6;
-  --app-text: #0f172a;
-  --app-muted: #5a6b7f;
+  --app-surface: var(--background-card);
+  --app-surface-soft: var(--background-section);
+  --app-surface-muted: var(--background-muted);
+  --app-border: var(--border-default);
+  --app-text: var(--text-default);
+  --app-muted: var(--text-muted);
+
+  --btn-primary-bg: #0f172a;
+  --btn-primary-hover-bg: #1f2937;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: #e7edf4;
+  --btn-secondary-hover-bg: #d9e2ec;
+  --btn-secondary-border: #c4d0de;
+  --btn-secondary-text: #1f2937;
+  --btn-action-bg: #0f172a;
+  --btn-action-hover-bg: #1f2937;
+  --btn-action-text: #ffffff;
+  --btn-danger-bg: #dc2626;
+  --btn-danger-hover-bg: #c81f1f;
+  --btn-danger-text: #ffffff;
+  --btn-disabled-bg: #c8d3e0;
+  --btn-disabled-border: #bcc9d8;
+  --btn-disabled-text: #5d6d80;
+
   --field-bg: #ffffff;
   --field-border: #c8d2df;
   --field-border-hover: #9dafc3;
@@ -21,14 +47,40 @@
 }
 
 html.dark {
-  --app-bg: #141a21;
+  --background-page: #141a21;
+  --background-card: #1f2935;
+  --background-section: #273342;
+  --background-muted: #2e3b4c;
+  --border-default: #3a4a5e;
+  --text-default: #e5edf6;
+  --text-muted: #b7c3d3;
+
+  --app-bg: var(--background-page);
   --app-bg-soft: #1a222c;
-  --app-surface: #1f2935;
-  --app-surface-soft: #273342;
-  --app-surface-muted: #2e3b4c;
-  --app-border: #3a4a5e;
-  --app-text: #e5edf6;
-  --app-muted: #b7c3d3;
+  --app-surface: var(--background-card);
+  --app-surface-soft: var(--background-section);
+  --app-surface-muted: var(--background-muted);
+  --app-border: var(--border-default);
+  --app-text: var(--text-default);
+  --app-muted: var(--text-muted);
+
+  --btn-primary-bg: #e3ebf4;
+  --btn-primary-hover-bg: #d2dde9;
+  --btn-primary-text: #111827;
+  --btn-secondary-bg: #2b3746;
+  --btn-secondary-hover-bg: #364457;
+  --btn-secondary-border: #4a5b71;
+  --btn-secondary-text: #e7eef7;
+  --btn-action-bg: #e3ebf4;
+  --btn-action-hover-bg: #d2dde9;
+  --btn-action-text: #111827;
+  --btn-danger-bg: #e53935;
+  --btn-danger-hover-bg: #d82f2b;
+  --btn-danger-text: #ffffff;
+  --btn-disabled-bg: #3b485b;
+  --btn-disabled-border: #4c5b71;
+  --btn-disabled-text: #97a8bd;
+
   --field-bg: #1f2935;
   --field-border: #425269;
   --field-border-hover: #58708d;
@@ -40,8 +92,8 @@ html.dark {
 
 body {
   margin: 0;
-  background-color: var(--app-bg);
-  color: var(--app-text);
+  background-color: var(--background-page);
+  color: var(--text-default);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -92,23 +144,15 @@ body {
 
 @layer utilities {
   .bg-white {
-    background-color: var(--app-surface) !important;
+    background-color: var(--background-card) !important;
   }
 
   .bg-slate-50 {
-    background-color: var(--app-surface-soft) !important;
+    background-color: var(--background-section) !important;
   }
 
   .border-slate-200 {
-    border-color: var(--app-border) !important;
-  }
-
-  .text-slate-900 {
-    color: var(--app-text) !important;
-  }
-
-  .text-slate-600 {
-    color: var(--app-muted) !important;
+    border-color: var(--border-default) !important;
   }
 
   .dark .dark\:bg-slate-900 {
@@ -124,34 +168,64 @@ body {
   }
 
   .dark .dark\:border-slate-700 {
-    border-color: var(--app-border) !important;
-  }
-
-  .dark .dark\:text-slate-100 {
-    color: var(--app-text) !important;
-  }
-
-  .dark .dark\:text-slate-300,
-  .dark .dark\:text-slate-400 {
-    color: var(--app-muted) !important;
+    border-color: var(--border-default) !important;
   }
 }
 
 @layer components {
   .btn-primary {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors;
+    background-color: var(--btn-primary-bg);
+    color: var(--btn-primary-text) !important;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--btn-primary-hover-bg);
   }
 
   .btn-secondary {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors;
+    background-color: var(--btn-secondary-bg);
+    color: var(--btn-secondary-text) !important;
+    border: 1px solid var(--btn-secondary-border);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--btn-secondary-hover-bg);
   }
 
   .btn-action {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors;
+    background-color: var(--btn-action-bg);
+    color: var(--btn-action-text) !important;
+    border: 1px solid transparent;
+  }
+
+  .btn-action:hover {
+    background-color: var(--btn-action-hover-bg);
   }
 
   .btn-danger {
-    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium transition-colors;
+    background-color: var(--btn-danger-bg);
+    color: var(--btn-danger-text) !important;
+    border: 1px solid transparent;
+  }
+
+  .btn-danger:hover {
+    background-color: var(--btn-danger-hover-bg);
+  }
+
+  .btn-primary:disabled,
+  .btn-secondary:disabled,
+  .btn-action:disabled,
+  .btn-danger:disabled {
+    background-color: var(--btn-disabled-bg) !important;
+    color: var(--btn-disabled-text) !important;
+    border-color: var(--btn-disabled-border) !important;
+    cursor: not-allowed;
+    opacity: 1;
   }
 
   .btn-group {

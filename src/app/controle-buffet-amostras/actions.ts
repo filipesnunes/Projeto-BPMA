@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -68,12 +69,17 @@ function getReturnToPath(formData: FormData, fallbackPath: string): string {
   return value;
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
+    const technicalPattern =
+      /next_redirect|invalid `prisma|prismaclient|typeerror|referenceerror|syntaxerror|p20\d{2}|stack/i;
+    if (technicalPattern.test(error.message)) {
+      return fallback;
+    }
     return error.message;
   }
 
-  return "Não foi possível processar a operação.";
+  return fallback;
 }
 
 function redirectWithFeedback(
@@ -82,11 +88,13 @@ function redirectWithFeedback(
   feedback: string
 ): never {
   const url = new URL(returnTo, "http://localhost");
-  url.searchParams.delete("new");
-  url.searchParams.delete("editServicoId");
-  url.searchParams.delete("editItemId");
-  url.searchParams.delete("editAcaoId");
-  url.searchParams.delete("signItemId");
+  if (feedbackType === "success") {
+    url.searchParams.delete("new");
+    url.searchParams.delete("editServicoId");
+    url.searchParams.delete("editItemId");
+    url.searchParams.delete("editAcaoId");
+    url.searchParams.delete("signItemId");
+  }
   url.searchParams.set("feedbackType", feedbackType);
   url.searchParams.set("feedback", feedback);
 
@@ -252,7 +260,12 @@ export async function saveRegistroItemAction(formData: FormData) {
     revalidateModulePaths(servicoId);
     redirectWithFeedback(returnTo, "success", "Registro do Item Salvo com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
+    );
   }
 }
 
@@ -309,7 +322,129 @@ export async function signRegistroItemAction(formData: FormData) {
     revalidateModulePaths(registro.servicoId);
     redirectWithFeedback(returnTo, "success", "Item Assinado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(
+        error,
+        "Não foi possível concluir a assinatura. Verifique sua senha e tente novamente."
+      )
+    );
+  }
+}
+
+export async function signServicoItensAction(formData: FormData) {
+  const returnTo = getReturnToPath(formData, MODULE_PATH);
+
+  try {
+    const actor = await getCurrentUserForAction();
+    ensureCanSignResponsible(actor.perfil);
+
+    const servicoId = parsePositiveInt(getInputValue(formData, "servicoId"));
+    const dataInput = getInputValue(formData, "data");
+    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
+
+    if (!servicoId) {
+      throw new Error("Serviço inválido para assinatura.");
+    }
+
+    const data = parseDateInput(dataInput);
+    if (!data) {
+      throw new Error("Data inválida para assinatura do serviço.");
+    }
+
+    await ensurePeriodIsOpen(data);
+    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
+
+    const servico = await prisma.controleBuffetAmostraServico.findUnique({
+      where: { id: servicoId },
+      include: {
+        itens: {
+          where: {
+            item: { ativo: true }
+          },
+          include: { item: true },
+          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }]
+        }
+      }
+    });
+
+    if (!servico) {
+      throw new Error("Serviço não encontrado.");
+    }
+
+    if (servico.itens.length === 0) {
+      throw new Error("Não há itens ativos configurados neste serviço para assinatura.");
+    }
+
+    const registros = await prisma.controleBuffetAmostraRegistro.findMany({
+      where: {
+        data,
+        servicoId
+      }
+    });
+
+    const registroPorItem = new Map<number, (typeof registros)[number]>();
+    for (const registro of registros) {
+      registroPorItem.set(registro.itemId, registro);
+    }
+
+    const itensPendentes = servico.itens.filter((vinculo) => {
+      const registro = registroPorItem.get(vinculo.itemId);
+      return !registro || registro.status === StatusItemBuffetAmostra.PENDENTE;
+    });
+
+    if (itensPendentes.length > 0) {
+      throw new Error(
+        "Ainda existem itens não preenchidos neste serviço. Preencha todos os itens antes de assinar."
+      );
+    }
+
+    const registrosParaAssinar = registros.filter(
+      (registro) => registro.status === StatusItemBuffetAmostra.PREENCHIDO
+    );
+
+    if (registrosParaAssinar.length === 0) {
+      throw new Error("Todos os itens deste serviço já estão assinados.");
+    }
+
+    const now = getCurrentSystemDateTime();
+
+    await prisma.$transaction(async (tx) => {
+      await tx.controleBuffetAmostraRegistro.updateMany({
+        where: {
+          id: { in: registrosParaAssinar.map((registro) => registro.id) }
+        },
+        data: {
+          assinaturaUsuarioId: actor.id,
+          assinaturaNome: actor.nomeCompleto,
+          assinaturaPerfil: actor.perfil,
+          assinaturaDataHora: now,
+          status: StatusItemBuffetAmostra.ASSINADO
+        }
+      });
+    });
+
+    await createSignatureLog({
+      user: actor,
+      tipo: "RESPONSAVEL",
+      modulo: "controle-buffet-amostras/servico",
+      referenciaId: `${servicoId}:${dataInput || now.toISOString()}`
+    });
+
+    revalidateModulePaths(servicoId);
+    redirectWithFeedback(returnTo, "success", "Todos os Itens do Serviço Foram Assinados com Sucesso.");
+  } catch (error) {
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(
+        error,
+        "Não foi possível concluir a assinatura. Verifique sua senha e tente novamente."
+      )
+    );
   }
 }
 
@@ -388,7 +523,12 @@ export async function closeMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Fechado com Sucesso.`
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível fechar o mês. Verifique se ainda existem pendências.")
+    );
   }
 }
 
@@ -428,7 +568,12 @@ export async function reopenMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -461,7 +606,12 @@ export async function createServicoAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Serviço Cadastrado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -508,7 +658,12 @@ export async function updateServicoAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Serviço Atualizado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -545,7 +700,12 @@ export async function toggleServicoStatusAction(formData: FormData) {
       ativo ? "Serviço Ativado com Sucesso." : "Serviço Inativado com Sucesso."
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -604,7 +764,12 @@ export async function createItemAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Cadastrado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -681,7 +846,12 @@ export async function updateItemAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Atualizado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -718,7 +888,12 @@ export async function toggleItemStatusAction(formData: FormData) {
       ativo ? "Item Ativado com Sucesso." : "Item Inativado com Sucesso."
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -751,7 +926,12 @@ export async function createAcaoCorretivaAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Ação Corretiva Cadastrada com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -807,7 +987,12 @@ export async function updateAcaoCorretivaAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Ação Corretiva Atualizada com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -846,6 +1031,13 @@ export async function toggleAcaoCorretivaStatusAction(formData: FormData) {
         : "Ação Corretiva Inativada com Sucesso."
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
+
+

@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -63,20 +64,33 @@ function getReturnToPath(formData: FormData): string {
   return value;
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
+    const technicalPattern =
+      /next_redirect|invalid `prisma|prismaclient|typeerror|referenceerror|syntaxerror|p20\d{2}|stack/i;
+    if (technicalPattern.test(error.message)) {
+      return fallback;
+    }
     return error.message;
   }
 
-  return "Não foi possível processar o chamado de manutenção.";
+  return fallback;
 }
 
 function redirectWithFeedback(
   returnTo: string,
   feedbackType: FeedbackType,
-  feedback: string
+  feedback: string,
+  extraParams?: Record<string, string>
 ): never {
   const url = new URL(returnTo, "http://localhost");
+  if (extraParams) {
+    for (const [key, value] of Object.entries(extraParams)) {
+      if (value) {
+        url.searchParams.set(key, value);
+      }
+    }
+  }
   url.searchParams.set("feedbackType", feedbackType);
   url.searchParams.set("feedback", feedback);
   redirect(`${url.pathname}?${url.searchParams.toString()}`);
@@ -96,7 +110,7 @@ export async function createChamadoAction(formData: FormData) {
     const actor = await getCurrentUserForAction();
     ensureCanOpenMaintenance(actor.perfil);
 
-    const descricao = getInputValue(formData, "descricao");
+    const descricao = getInputValue(formData, "observacao");
     const tituloInput = getInputValue(formData, "titulo");
     const origem = parseOrigem(getInputValue(formData, "origem"));
     const contextoModulo = getInputValue(formData, "contextoModulo");
@@ -104,7 +118,7 @@ export async function createChamadoAction(formData: FormData) {
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
 
     if (!descricao) {
-      throw new Error("A descrição do chamado é obrigatória.");
+      throw new Error("A observação do chamado é obrigatória.");
     }
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
@@ -123,7 +137,7 @@ export async function createChamadoAction(formData: FormData) {
       data: {
         titulo,
         descricao,
-        areaLocal: origem,
+        areaLocal: "N/A",
         origem,
         status: StatusChamadoManutencao.ABERTO,
         contextoModulo: contextoModulo || null,
@@ -155,7 +169,18 @@ export async function createChamadoAction(formData: FormData) {
       "Chamado de Manutenção Aberto com Sucesso."
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios."),
+      {
+        origem: getInputValue(formData, "origem"),
+        titulo: getInputValue(formData, "titulo"),
+        descricao: getInputValue(formData, "observacao"),
+        registroId: getInputValue(formData, "contextoRegistroId")
+      }
+    );
   }
 }
 
@@ -202,6 +227,13 @@ export async function updateChamadoStatusAction(formData: FormData) {
     revalidatePaths(chamadoId);
     redirectWithFeedback(returnTo, "success", "Status do Chamado Atualizado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar o chamado de manutenção.")
+    );
   }
 }
+
+

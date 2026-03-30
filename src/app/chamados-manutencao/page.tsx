@@ -102,6 +102,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
 
   const origemPrefill = parseOrigem(firstParam(params.origem));
   const descricaoPrefill = firstParam(params.descricao).trim();
+  const tituloPrefill = firstParam(params.titulo).trim();
   const registroIdPrefill = firstParam(params.registroId).trim();
 
   const filtroStatus = parseStatus(firstParam(params.filtroStatus));
@@ -177,7 +178,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
             <input
               type="text"
               name="titulo"
-              defaultValue={descricaoPrefill ? "Ocorrência Operacional" : ""}
+              defaultValue={tituloPrefill || (descricaoPrefill ? "Ocorrência Operacional" : "")}
               className={INPUT_CLASS}
             />
           </label>
@@ -205,9 +206,9 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
             </select>
           </label>
           <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
-            Descrição *
+            Observação *
             <textarea
-              name="descricao"
+              name="observacao"
               rows={3}
               required
               defaultValue={descricaoPrefill}

@@ -2,6 +2,7 @@
 
 import { Prisma } from "@prisma/client";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -126,6 +127,7 @@ export async function createUserAction(formData: FormData) {
 
     redirectWithFeedback(USERS_PATH, "success", "Usuário criado com sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message ? error.message : "Não foi possível criar o usuário.";
     redirectWithFeedback(USERS_PATH, "error", message);
@@ -197,6 +199,7 @@ export async function updateUserAction(formData: FormData) {
 
     redirectWithFeedback(USERS_PATH, "success", "Usuário atualizado com sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -240,6 +243,7 @@ export async function toggleUserStatusAction(formData: FormData) {
       status === "ATIVO" ? "Usuário ativado com sucesso." : "Usuário inativado com sucesso."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message ? error.message : "Não foi possível alterar o status.";
     redirectWithFeedback(USERS_PATH, "error", message);
@@ -287,6 +291,7 @@ export async function resetUserPasswordAction(formData: FormData) {
       `Senha temporária de ${target.nomeCompleto}: ${senhaTemporaria}`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -324,6 +329,7 @@ export async function deleteUserAction(formData: FormData) {
 
     redirectWithFeedback(USERS_PATH, "success", "Usuário removido com sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
       redirectWithFeedback(
         USERS_PATH,
@@ -420,6 +426,7 @@ export async function handleResetRequestAction(formData: FormData) {
       `Solicitação atendida. Senha temporária: ${senhaTemporaria}`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -427,3 +434,5 @@ export async function handleResetRequestAction(formData: FormData) {
     redirectWithFeedback(REQUESTS_PATH, "error", message);
   }
 }
+
+

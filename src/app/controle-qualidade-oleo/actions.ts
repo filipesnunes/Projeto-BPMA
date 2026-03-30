@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -56,12 +57,17 @@ function getReturnToPath(formData: FormData): string {
   return value;
 }
 
-function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
+    const technicalPattern =
+      /next_redirect|invalid `prisma|prismaclient|typeerror|referenceerror|syntaxerror|p20\d{2}|stack/i;
+    if (technicalPattern.test(error.message)) {
+      return fallback;
+    }
     return error.message;
   }
 
-  return "Não foi possível processar a operação.";
+  return fallback;
 }
 
 function redirectWithFeedback(
@@ -70,9 +76,11 @@ function redirectWithFeedback(
   feedback: string
 ): never {
   const url = new URL(returnTo, "http://localhost");
-  url.searchParams.delete("new");
-  url.searchParams.delete("editId");
-  url.searchParams.delete("editOptionId");
+  if (feedbackType === "success") {
+    url.searchParams.delete("new");
+    url.searchParams.delete("editId");
+    url.searchParams.delete("editOptionId");
+  }
   url.searchParams.set("feedbackType", feedbackType);
   url.searchParams.set("feedback", feedback);
 
@@ -170,7 +178,12 @@ export async function createRegistroAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Registro Criado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
+    );
   }
 }
 
@@ -208,7 +221,12 @@ export async function updateRegistroAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Registro Atualizado com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
+    );
   }
 }
 
@@ -241,7 +259,12 @@ export async function deleteRegistroAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Registro Excluído com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -310,7 +333,12 @@ export async function closeMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Fechado com Sucesso.`
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível fechar o mês. Verifique se ainda existem pendências.")
+    );
   }
 }
 
@@ -350,7 +378,12 @@ export async function reopenMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -387,7 +420,12 @@ export async function createFitaOptionAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Opção Cadastrada com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -446,7 +484,12 @@ export async function updateFitaOptionAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Opção Atualizada com Sucesso.");
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
 
@@ -484,6 +527,13 @@ export async function toggleFitaOptionStatusAction(formData: FormData) {
       nextStatus ? "Opção Ativada com Sucesso." : "Opção Inativada com Sucesso."
     );
   } catch (error) {
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(
+      returnTo,
+      "error",
+      getErrorMessage(error, "Não foi possível processar a operação.")
+    );
   }
 }
+
+

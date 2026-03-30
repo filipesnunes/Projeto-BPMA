@@ -188,6 +188,15 @@ export default async function HigienizacaoHortifrutiPage({
     query.set("new", "1");
     return buildPathWithParams(query);
   })();
+  const formReturnTo = (() => {
+    const query = new URLSearchParams(parametrosRetorno);
+    if (registroEmEdicao) {
+      query.set("editId", String(registroEmEdicao.id));
+    } else {
+      query.set("new", "1");
+    }
+    return buildPathWithParams(query);
+  })();
   const hrefCancelarFormulario = buildPathWithParams(parametrosRetorno);
   const mostrarFormulario = novoRegistroSelecionado || Boolean(registroEmEdicao);
 
@@ -268,7 +277,7 @@ export default async function HigienizacaoHortifrutiPage({
           </p>
         ) : (
           <form action={registroEmEdicao ? updateRegistroAction : createRegistroAction} className="grid gap-4 md:grid-cols-2">
-            <input type="hidden" name="returnTo" value={returnTo} />
+            <input type="hidden" name="returnTo" value={formReturnTo} />
             {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">

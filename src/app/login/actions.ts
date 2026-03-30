@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { createSessionForUser, getCurrentUserForAction } from "@/lib/auth-session";
 import { hashPassword, validatePasswordRules, verifyPassword } from "@/lib/password";
@@ -40,7 +41,7 @@ export async function loginAction(formData: FormData) {
   });
 
   if (!usuario || !verifyPassword(senha, usuario.senhaHash)) {
-    redirectWithFeedback("/login", "error", "Login inválido. Verifique usuário e senha.");
+    redirectWithFeedback("/login", "error", "Usuário ou senha inválidos.");
   }
 
   if (usuario.status !== "ATIVO") {
@@ -98,6 +99,7 @@ export async function requestPasswordResetAction(formData: FormData) {
       "Solicitação registrada com sucesso. Aguarde contato do gestor/supervisor."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -151,6 +153,7 @@ export async function changeOwnPasswordAction(formData: FormData) {
     await createSessionForUser(usuarioAtual.id);
     redirect("/");
   } catch (error) {
+    rethrowIfRedirectError(error);
     const message =
       error instanceof Error && error.message
         ? error.message
@@ -158,3 +161,5 @@ export async function changeOwnPasswordAction(formData: FormData) {
     redirectWithFeedback("/trocar-senha", "error", message);
   }
 }
+
+

@@ -3,21 +3,39 @@
 @tailwind utilities;
 
 :root {
-  --app-bg: #eef3f8;
+  --app-bg: #f1f4f8;
+  --app-bg-soft: #e8edf4;
   --app-surface: #ffffff;
-  --app-surface-soft: #f7f9fc;
-  --app-border: #d8e0ea;
+  --app-surface-soft: #f6f8fb;
+  --app-surface-muted: #eef3f8;
+  --app-border: #d2dbe6;
   --app-text: #0f172a;
-  --app-muted: #516377;
+  --app-muted: #5a6b7f;
+  --field-bg: #ffffff;
+  --field-border: #c8d2df;
+  --field-border-hover: #9dafc3;
+  --field-border-focus: #334155;
+  --field-focus-ring: rgba(51, 65, 85, 0.16);
+  --field-disabled-bg: #e9eef5;
+  --field-disabled-text: #6a7b8f;
 }
 
 html.dark {
-  --app-bg: #171c23;
-  --app-surface: #1f2731;
-  --app-surface-soft: #2a3441;
-  --app-border: #3a4759;
+  --app-bg: #141a21;
+  --app-bg-soft: #1a222c;
+  --app-surface: #1f2935;
+  --app-surface-soft: #273342;
+  --app-surface-muted: #2e3b4c;
+  --app-border: #3a4a5e;
   --app-text: #e5edf6;
   --app-muted: #b7c3d3;
+  --field-bg: #1f2935;
+  --field-border: #425269;
+  --field-border-hover: #58708d;
+  --field-border-focus: #93a9bf;
+  --field-focus-ring: rgba(147, 169, 191, 0.22);
+  --field-disabled-bg: #2b3746;
+  --field-disabled-text: #9caec3;
 }
 
 body {
@@ -25,6 +43,95 @@ body {
   background-color: var(--app-bg);
   color: var(--app-text);
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]),
+  select,
+  textarea {
+    background-color: var(--field-bg) !important;
+    border-color: var(--field-border) !important;
+    color: var(--app-text) !important;
+    transition:
+      border-color 0.2s ease,
+      background-color 0.2s ease,
+      color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):hover,
+  select:hover,
+  textarea:hover {
+    border-color: var(--field-border-hover) !important;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--field-border-focus) !important;
+    box-shadow: 0 0 0 3px var(--field-focus-ring);
+    outline: none;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"]):disabled,
+  select:disabled,
+  textarea:disabled {
+    background-color: var(--field-disabled-bg) !important;
+    color: var(--field-disabled-text) !important;
+    cursor: not-allowed;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="file"])::placeholder,
+  textarea::placeholder {
+    color: var(--app-muted);
+  }
+}
+
+@layer utilities {
+  .bg-white {
+    background-color: var(--app-surface) !important;
+  }
+
+  .bg-slate-50 {
+    background-color: var(--app-surface-soft) !important;
+  }
+
+  .border-slate-200 {
+    border-color: var(--app-border) !important;
+  }
+
+  .text-slate-900 {
+    color: var(--app-text) !important;
+  }
+
+  .text-slate-600 {
+    color: var(--app-muted) !important;
+  }
+
+  .dark .dark\:bg-slate-900 {
+    background-color: var(--app-surface) !important;
+  }
+
+  .dark .dark\:bg-slate-800 {
+    background-color: var(--app-surface-soft) !important;
+  }
+
+  .dark .dark\:bg-slate-700 {
+    background-color: var(--app-surface-muted) !important;
+  }
+
+  .dark .dark\:border-slate-700 {
+    border-color: var(--app-border) !important;
+  }
+
+  .dark .dark\:text-slate-100 {
+    color: var(--app-text) !important;
+  }
+
+  .dark .dark\:text-slate-300,
+  .dark .dark\:text-slate-400 {
+    color: var(--app-muted) !important;
+  }
 }
 
 @layer components {

@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -115,6 +116,11 @@ function getReturnToPath(formData: FormData): string {
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
+    const technicalPattern =
+      /next_redirect|invalid `prisma|prismaclient|typeerror|referenceerror|syntaxerror|p20\d{2}|stack/i;
+    if (technicalPattern.test(error.message)) {
+      return "Não foi possível processar a operação.";
+    }
     return error.message;
   }
 
@@ -151,9 +157,11 @@ function redirectWithFeedback(
   feedback: string
 ): never {
   const url = new URL(returnTo, "http://localhost");
-  url.searchParams.delete("new");
-  url.searchParams.delete("editId");
-  url.searchParams.delete("editCategoriaId");
+  if (feedbackType === "success") {
+    url.searchParams.delete("new");
+    url.searchParams.delete("editId");
+    url.searchParams.delete("editCategoriaId");
+  }
   url.searchParams.set("feedbackType", feedbackType);
   url.searchParams.set("feedback", feedback);
 
@@ -486,6 +494,7 @@ export async function importXmlAction(formData: FormData) {
       `${parsed.items.length} Item(ns) Importado(s). Complete a conferência e finalize a nota.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     if (isUniqueViolation(error)) {
       redirectWithFeedback(returnTo, "error", DUPLICATE_NFE_MESSAGE);
     }
@@ -559,6 +568,7 @@ export async function createManualNoteAction(formData: FormData) {
     revalidateModulePaths();
     redirectToNoteWithFeedback(note.id, "success", "Nota Criada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -660,6 +670,7 @@ export async function saveNotaItemsAction(formData: FormData) {
     revalidateModulePaths();
     redirectToNoteWithFeedback(note.id, "success", "Itens da Nota Atualizados com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -745,6 +756,7 @@ export async function finalizeNotaAction(formData: FormData) {
       `Nota ${note.notaFiscal} Finalizada com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -792,6 +804,7 @@ export async function deleteItemAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Excluído com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -835,6 +848,7 @@ export async function deleteNoteAction(formData: FormData) {
       `Nota ${note.notaFiscal} Excluída com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -917,6 +931,7 @@ export async function closeMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Fechado com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -960,6 +975,7 @@ export async function reopenMonthAction(formData: FormData) {
       `Mês ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -993,6 +1009,7 @@ export async function createCategoryAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Categoria Cadastrada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -1041,6 +1058,7 @@ export async function updateCategoryAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Categoria Atualizada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -1079,6 +1097,9 @@ export async function toggleCategoryStatusAction(formData: FormData) {
       ativo ? "Categoria Ativada com Sucesso." : "Categoria Inativada com Sucesso."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
+
+

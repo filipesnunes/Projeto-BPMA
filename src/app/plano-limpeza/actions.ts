@@ -8,6 +8,7 @@ import {
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
@@ -66,6 +67,11 @@ function getReturnToPath(formData: FormData, fallbackPath: string): string {
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
+    const technicalPattern =
+      /next_redirect|invalid `prisma|prismaclient|typeerror|referenceerror|syntaxerror|p20\d{2}|stack/i;
+    if (technicalPattern.test(error.message)) {
+      return "Não foi possível processar a operação.";
+    }
     return error.message;
   }
 
@@ -78,9 +84,11 @@ function redirectWithFeedback(
   feedback: string
 ): never {
   const url = new URL(returnTo, "http://localhost");
-  url.searchParams.delete("new");
-  url.searchParams.delete("editId");
-  url.searchParams.delete("editItemId");
+  if (feedbackType === "success") {
+    url.searchParams.delete("new");
+    url.searchParams.delete("editId");
+    url.searchParams.delete("editItemId");
+  }
   url.searchParams.set("feedbackType", feedbackType);
   url.searchParams.set("feedback", feedback);
 
@@ -201,6 +209,7 @@ export async function updateDailyRecordAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Checklist Diário Assinado com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -233,6 +242,7 @@ export async function createDailyAreaConfigAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Área do Plano Diário Criada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -280,6 +290,7 @@ export async function updateDailyAreaConfigAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Área do Plano Diário Atualizada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -318,6 +329,7 @@ export async function toggleDailyAreaConfigStatusAction(formData: FormData) {
       ativo ? "Área Ativada com Sucesso." : "Área Inativada com Sucesso."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -459,6 +471,7 @@ export async function bulkSignDailyByDateAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Assinatura Retroativa do Dia Aplicada com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -549,6 +562,7 @@ export async function updateWeeklyRecordAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Checklist Semanal Assinado com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -625,6 +639,7 @@ export async function createWeeklyConfigItemAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item do Plano Semanal Criado com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -683,6 +698,7 @@ export async function updateWeeklyConfigItemAction(formData: FormData) {
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item do Plano Semanal Atualizado com Sucesso.");
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -721,6 +737,7 @@ export async function toggleWeeklyConfigItemStatusAction(formData: FormData) {
       ativo ? "Item Ativado com Sucesso." : "Item Inativado com Sucesso."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -791,6 +808,7 @@ export async function moveWeeklyConfigItemAction(formData: FormData) {
         : "O Item Já Está no Limite da Reordenação."
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -860,6 +878,7 @@ async function closeMonthByType(params: {
       `${params.successLabel} ${String(mes).padStart(2, "0")}/${ano} Fechado com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -905,6 +924,7 @@ async function reopenMonthByType(params: {
       `${params.successLabel} ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`
     );
   } catch (error) {
+    rethrowIfRedirectError(error);
     redirectWithFeedback(returnTo, "error", getErrorMessage(error));
   }
 }
@@ -964,3 +984,5 @@ export async function reopenWeeklyMonthAction(formData: FormData) {
     successLabel: "Plano Semanal"
   });
 }
+
+

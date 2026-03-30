@@ -53,7 +53,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
               canViewResetRequests={canViewResetRequests(user.perfil)}
               onLogout={logoutAction}
             />
-            <main className="flex-1 p-4 md:p-8">
+            <main className="flex-1 p-3 sm:p-4 md:p-8">
               <div className="mx-auto w-full max-w-7xl">{children}</div>
             </main>
           </div>

@@ -51,6 +51,18 @@ export function SearchableOptionField({
     onSelectedValueChange?.(selectedValue);
   }, [onSelectedValueChange, selectedValue]);
 
+  useEffect(() => {
+    if (
+      selectedValue &&
+      !options.some(
+        (option) => normalizeOption(option) === normalizeOption(selectedValue)
+      )
+    ) {
+      setInputValue("");
+      setSelectedValue("");
+    }
+  }, [options, selectedValue]);
+
   return (
     <div className="relative mt-1">
       <input type="hidden" name={name} value={selectedValue} readOnly required={required} />
@@ -110,7 +122,9 @@ export function SearchableOptionField({
           showValidationHint ? "text-red-600" : "text-slate-500 dark:text-slate-400"
         }`}
       >
-        {showValidationHint
+        {options.length === 0
+          ? "Não há equipamentos pendentes para este turno nesta data."
+          : showValidationHint
           ? "Selecione uma opção existente da lista."
           : "Abra a lista para visualizar todas as opções ou digite para filtrar."}
       </span>

@@ -109,13 +109,15 @@ export function AutomaticCorrectiveActionFields({
     return map;
   }, [equipamentosTurnos]);
 
-  const turnosDisponiveis = useMemo(() => {
-    const configuredShifts = turnosPorEquipamento.get(equipamentoSelecionado);
+  const equipamentoOptionsDisponiveis = useMemo(() => {
+    if (!allowTurnoSelection) {
+      return equipamentoOptions;
+    }
 
-    return configuredShifts && configuredShifts.length > 0
-      ? configuredShifts
-      : SHIFT_OPTIONS.map((option) => option.value);
-  }, [equipamentoSelecionado, turnosPorEquipamento]);
+    return equipamentoOptions.filter((equipamento) =>
+      turnosPorEquipamento.get(equipamento)?.includes(turnoSelecionado)
+    );
+  }, [allowTurnoSelection, equipamentoOptions, turnoSelecionado, turnosPorEquipamento]);
 
   const regrasPorCategoria = useMemo(() => {
     const map = new Map<CategoriaTemperatura, RegraCategoriaComTipo[]>();
@@ -132,13 +134,8 @@ export function AutomaticCorrectiveActionFields({
   useEffect(() => {
     if (!allowTurnoSelection) {
       setTurnoSelecionado(defaultTurno);
-      return;
     }
-
-    if (!turnosDisponiveis.includes(turnoSelecionado)) {
-      setTurnoSelecionado(turnosDisponiveis[0] ?? "MANHA");
-    }
-  }, [allowTurnoSelection, defaultTurno, turnoSelecionado, turnosDisponiveis]);
+  }, [allowTurnoSelection, defaultTurno]);
 
   const avaliacao = useMemo(() => {
     if (!equipamentoEmOperacao) {
@@ -271,18 +268,6 @@ export function AutomaticCorrectiveActionFields({
 
   return (
     <>
-      <label className="text-sm text-slate-700 dark:text-slate-200">
-        Equipamento *
-        <SearchableOptionField
-          name="equipamento"
-          options={equipamentoOptions}
-          defaultValue={defaultEquipamento}
-          placeholder="Digite para buscar..."
-          required
-          onSelectedValueChange={setEquipamentoSelecionado}
-        />
-      </label>
-
       {allowTurnoSelection ? (
         <label className="text-sm text-slate-700 dark:text-slate-200">
           Turno *
@@ -295,18 +280,14 @@ export function AutomaticCorrectiveActionFields({
               setTurnoSelecionado(event.target.value as TurnoTemperatura);
             }}
           >
-            {SHIFT_OPTIONS.filter((option) => turnosDisponiveis.includes(option.value)).map(
-              (option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              )
-            )}
+            {SHIFT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
           <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
-            {equipamentoSelecionado && turnosDisponiveis.length === 1
-              ? `Este equipamento gera pendência apenas no turno ${getShiftLabel(turnosDisponiveis[0] ?? "MANHA")}.`
-              : "Selecione um turno configurado para este equipamento."}
+            A lista exibe somente os equipamentos pendentes neste turno e nesta data.
           </span>
         </label>
       ) : (
@@ -320,6 +301,18 @@ export function AutomaticCorrectiveActionFields({
           </p>
         </div>
       )}
+
+      <label className="text-sm text-slate-700 dark:text-slate-200">
+        Equipamento *
+        <SearchableOptionField
+          name="equipamento"
+          options={equipamentoOptionsDisponiveis}
+          defaultValue={defaultEquipamento}
+          placeholder="Digite para buscar..."
+          required
+          onSelectedValueChange={setEquipamentoSelecionado}
+        />
+      </label>
 
       <label className="text-sm text-slate-700 dark:text-slate-200">
         Status do equipamento *

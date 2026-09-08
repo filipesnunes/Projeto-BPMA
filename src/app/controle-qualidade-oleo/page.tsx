@@ -116,23 +116,13 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const currentPeriod = getMonthYear(getTodaySystemDate());
   const todayInput = formatDateInput(now);
 
-  const filtroDataRaw = firstParam(params.filtroData).trim();
+  const filtroData = firstParam(params.filtroData).trim();
   const filtroMesRaw = firstParam(params.filtroMes).trim();
   const filtroAnoRaw = firstParam(params.filtroAno).trim();
   const filtroFita = firstParam(params.filtroFita).trim();
   const filtroStatusRaw = firstParam(params.filtroStatus).trim();
   const filtroResponsavel = firstParam(params.filtroResponsavel).trim();
 
-  const hasManualFilters = Boolean(
-    filtroDataRaw ||
-      filtroMesRaw ||
-      filtroAnoRaw ||
-      filtroFita ||
-      filtroStatusRaw ||
-      filtroResponsavel
-  );
-
-  const filtroData = hasManualFilters ? filtroDataRaw : todayInput;
   const filtroMes = parseFilterMonth(filtroMesRaw);
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
@@ -551,12 +541,12 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
         </form>
         ) : (
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Exibindo os registros operacionais de hoje.
+            Exibindo os registros operacionais.
           </p>
         )}
 
         <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          A listagem principal mostra os registros da data atual automaticamente.
+          A listagem principal inicia sem filtro de data.
           {podeVerGestao ? " Use os filtros para ampliar a consulta." : null}
         </p>
 

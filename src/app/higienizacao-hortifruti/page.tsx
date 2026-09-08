@@ -85,7 +85,7 @@ export default async function HigienizacaoHortifrutiPage({
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
   const todayInput = formatDateInput(getTodaySystemDate());
-  const filtroData = firstParam(params.filtroData).trim() || (isColaborador ? todayInput : "");
+  const filtroData = firstParam(params.filtroData).trim();
   const filtroMes = parseFilterMonth(firstParam(params.filtroMes));
   const filtroAno = parseFilterYear(firstParam(params.filtroAno));
   const filtroHortifruti = firstParam(params.filtroHortifruti).trim();
@@ -382,7 +382,7 @@ export default async function HigienizacaoHortifrutiPage({
           </form>
         ) : (
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Exibindo apenas os registros operacionais de hoje.
+            Exibindo os registros operacionais.
           </p>
         )}
 

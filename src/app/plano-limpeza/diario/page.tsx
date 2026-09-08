@@ -95,7 +95,7 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
   const todayDbDate = getTodaySystemDate();
 
   const todayInput = formatDateInput(todayDbDate);
-  const filtroDataRaw = firstParam(params.filtroData).trim();
+  const filtroData = firstParam(params.filtroData).trim();
   const filtroMesRaw = firstParam(params.filtroMes).trim();
   const filtroAnoRaw = firstParam(params.filtroAno).trim();
   const filtroArea = firstParam(params.filtroArea).trim();
@@ -104,25 +104,23 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
   const openArea = firstParam(params.openArea).trim();
   const openData = parseDateInput(firstParam(params.openData).trim());
 
-  const hasManualFilters =
-    !isColaborador &&
-    Boolean(
-      filtroDataRaw ||
-        filtroMesRaw ||
-        filtroAnoRaw ||
-        filtroArea ||
-        filtroStatusRaw ||
-        filtroResponsavel
-    );
+  const hasManualFilters = Boolean(
+    filtroData ||
+      filtroMesRaw ||
+      filtroAnoRaw ||
+      filtroArea ||
+      filtroStatusRaw ||
+      filtroResponsavel
+  );
 
-  const filtroData = hasManualFilters ? filtroDataRaw : todayInput;
   const filtroMes = parseFilterMonth(filtroMesRaw);
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseDailyStatus(filtroStatusRaw);
 
   const where: Prisma.PlanoLimpezaDiarioRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
-  const syncDate = dataFiltro ? formatDateInput(dataFiltro) : null;
+  // Keep today's checklist creation independent from the optional list filter.
+  const syncDate = dataFiltro ? formatDateInput(dataFiltro) : !hasManualFilters ? todayInput : null;
   if (dataFiltro) {
     where.data = dataFiltro;
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
@@ -513,7 +511,7 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
 
         {isColaborador ? (
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-            Exibindo apenas tarefas e pendências do dia.
+            Exibindo tarefas e pendências registradas.
           </p>
         ) : (
           <form method="get" className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-5 dark:bg-slate-800">

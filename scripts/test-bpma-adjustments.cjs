@@ -72,6 +72,8 @@ const adapter = new Proxy({}, { get(_target, model) {
       if (model === 'higienizacaoHortifruti') return fixtures.filter((row) => matches(row, args.where));
       if (model === 'controleTemperaturaCategoriaRegra') return [{ id: 1, categoria: { categoria: 'REFRIGERACAO' }, ordem: 1, temperaturaMin: -100, temperaturaMax: 100, status: classification, acaoCorretiva: 'Verificar equipamento', isActive: true }];
       if (model === 'controleTemperaturaEquipamentoOpcao') return [{ id: 1, nome: 'Geladeira', tipo: 'EQUIPAMENTO', categoriaEquipamento: 'REFRIGERACAO', ativo: true, turnoManha: true, turnoTarde: true }];
+      if (model === 'higienizacaoHortifrutiOpcao') return [{ tipo: 'HORTIFRUTI', nome: 'Alface' }, { tipo: 'PRODUTO_UTILIZADO', nome: 'Sanitizante' }];
+      if (model === 'controleQualidadeOleoOpcaoFita') return [{ id: 1, nome: 'Fita teste', ativo: true }];
       return [];
     },
     async findFirst() { return null; },
@@ -172,6 +174,69 @@ async function main() {
   }
   interceptModel = null;
   console.log('PASS: month-only query execution across all 12 affected pages.');
+  const allFilterPages = [['higienizacao-hortifruti/historico', 'higienizacaoHortifruti'], ...pages];
+  const changedPages = new Set(['higienizacao-hortifruti', 'controle-temperatura-equipamentos', 'controle-qualidade-oleo', 'plano-limpeza/diario']);
+  for (const [pagePath, model] of allFilterPages) {
+    const renderPage = load(`src/app/${pagePath}/page.tsx`).default;
+    const render = (params) => renderPage({ searchParams: Promise.resolve(params) });
+    const field = (tree, name) => findElement(tree, node => node.props?.name === name);
+    const assertEmpty = (tree) => {
+      for (const name of ['filtroData', 'filtroMes', 'filtroAno']) assert.equal(field(tree, name)?.props.defaultValue, '', `${pagePath}: ${name} must start empty`);
+    };
+    assertEmpty(await render({}));
+    assertEmpty(await render({})); // Refresh without query parameters.
+    for (const [params, expected] of [
+      [{ filtroMes: '7' }, [1, 2, 3]],
+      [{ filtroAno: '2026' }, [2, 3, 4]],
+      [{ filtroMes: '7', filtroAno: '2026' }, [2, 3]],
+      [{ filtroData: '2026-07-31' }, pagePath.includes('/semanal') ? [2, 4] : [2]]
+    ]) {
+      calls = [];
+      const tree = await render(params);
+      assert.equal(field(tree, 'filtroData').props.defaultValue, params.filtroData ?? '', `${pagePath}: month/year must not populate Data`);
+      const query = calls.find(call => call.model === model);
+      assert.deepEqual(fixtures.filter(row => matches(row, query.args.where)).map(row => row.id), expected, `${pagePath}: ${JSON.stringify(params)}`);
+      const clear = findElement(tree, node => node.props?.href && node.props.children === 'Limpar');
+      assert(clear, `${pagePath}: clear link`);
+      const cleanUrl = new URL(clear.props.href, 'http://localhost');
+      for (const name of ['filtroData', 'filtroMes', 'filtroAno']) assert.equal(cleanUrl.searchParams.has(name), false);
+      assertEmpty(await render(Object.fromEntries(cleanUrl.searchParams)));
+    }
+    if (changedPages.has(pagePath)) {
+      calls = [];
+      await render({});
+      const query = calls.find(call => call.model === model);
+      assert.deepEqual(fixtures.filter(row => matches(row, query.args.where)).map(row => row.id), [1, 2, 3, 4, 5], `${pagePath}: no automatic date restriction`);
+      calls = [];
+      await render({ filtroData: '2026-07-31', filtroResponsavel: 'Ana' });
+      const combined = calls.find(call => call.model === model).args.where;
+      assert.equal(combined.data.toISOString(), '2026-07-31T00:00:00.000Z');
+      assert.equal(combined[pagePath === 'plano-limpeza/diario' ? 'assinaturaResponsavel' : 'responsavel'].contains, 'Ana');
+      actor.perfil = 'COLABORADOR';
+      calls = [];
+      await render({});
+      assert.equal(calls.find(call => call.model === model).args.where.data, undefined, `${pagePath}: collaborator must not inject today's date`);
+      actor.perfil = 'ADMIN';
+    }
+  }
+  const dates = load('src/lib/date-time.ts');
+  const todayInput = dates.formatAppDateInput(dates.getAppDate());
+  const hortifrutiNew = await load('src/app/higienizacao-hortifruti/page.tsx').default({ searchParams: Promise.resolve({ new: '1', filtroMes: '7' }) });
+  assert.equal(findElement(hortifrutiNew, node => node.props?.name === 'data').props.defaultValue, todayInput);
+  const daily = await load('src/app/plano-limpeza/diario/page.tsx').default({ searchParams: Promise.resolve({}) });
+  const sync = findElement(daily, node => node.type?.name === 'DailyChecklistSync');
+  assert.equal(sync.props.date, todayInput, 'Today checklist creation remains separate from list filters');
+  for (const module of ['controle-temperatura-equipamentos', 'controle-qualidade-oleo']) {
+    const moduleActions = load(`src/app/${module}/actions.ts`);
+    const tree = await load(`src/app/${module}/page.tsx`).default({ searchParams: Promise.resolve({ new: '1', filtroMes: '7' }) });
+    const form = findElement(tree, node => node.type === 'form' && node.props.action === moduleActions.createRegistroAction);
+    assert(form, `${module}: new record form must be available`);
+    assert(findElement(form, node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.startsWith(dates.formatAppDate(dates.getAppDate()))), `${module}: new record displays today despite month filter`);
+    const returnTo = findElement(form, node => node.props?.name === 'returnTo').props.value;
+    assert.equal(new URL(returnTo, 'http://localhost').searchParams.has('filtroData'), false, `${module}: return URL must not reintroduce today`);
+  }
+  console.log('PASS: new Temperature/Oil forms keep today and their return URLs do not inject a date filter.');
+  console.log('PASS: all 12 pages start/refresh/clear with empty Data, month and year; explicit dates and combinations work; new Hortifruti date and daily checklist remain today.');
   const actions = load('src/app/controle-temperatura-equipamentos/actions.ts');
   const settings = load('src/app/controle-temperatura-equipamentos/settings.ts');
   assert.equal(await settings.getExigirFotoEmAlertaCritico(), true);
@@ -194,6 +259,7 @@ async function main() {
           assert.equal(row.acaoCorretiva, 'Verificar equipamento');
           assert.equal(row.turno, 'MANHA');
           assert.equal(row.responsavel, 'Teste');
+          assert.equal(dates.formatAppDateInput(row.data), todayInput, 'New temperature record keeps today');
         }
       }
     }

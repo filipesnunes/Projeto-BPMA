@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
@@ -173,8 +174,8 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
     );
 
   const filtroData = hasManualFilters ? filtroDataRaw : "";
-  const filtroMes = parsePositiveInt(filtroMesRaw);
-  const filtroAno = parsePositiveInt(filtroAnoRaw);
+  const filtroMes = parseFilterMonth(filtroMesRaw);
+  const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseWeeklyStatus(filtroStatusRaw);
 
   const where: Prisma.PlanoLimpezaSemanalExecucaoWhereInput = {};
@@ -188,6 +189,13 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
   } else if (filtroAno) {
     const range = getYearDateRange(filtroAno);
     where.dataExecucao = { gte: range.start, lte: range.end };
+  } else if (filtroMes) {
+    const bounds = await prisma.planoLimpezaSemanalExecucao.aggregate({
+      _min: { dataExecucao: true },
+      _max: { dataExecucao: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.dataExecucao, bounds._max.dataExecucao)
+      .map(({ start, end }) => ({ dataExecucao: { gte: start, lte: end } }));
   } else if (!hasManualFilters) {
     const weekRange = getCurrentWeekDateRange(now);
     where.dataExecucao = { gte: weekRange.start, lte: weekRange.end };

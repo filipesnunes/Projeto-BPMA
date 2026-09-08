@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
@@ -115,8 +116,8 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
     );
 
   const filtroData = hasManualFilters ? filtroDataRaw : todayInput;
-  const filtroMes = parsePositiveInt(filtroMesRaw);
-  const filtroAno = parsePositiveInt(filtroAnoRaw);
+  const filtroMes = parseFilterMonth(filtroMesRaw);
+  const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseDailyStatus(filtroStatusRaw);
 
   const where: Prisma.PlanoLimpezaDiarioRegistroWhereInput = {};
@@ -130,6 +131,13 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
   } else if (filtroAno) {
     const range = getYearDateRange(filtroAno);
     where.data = { gte: range.start, lte: range.end };
+  } else if (filtroMes) {
+    const bounds = await prisma.planoLimpezaDiarioRegistro.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroArea) {

@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/image-upload-rules";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
   createRegistroAction,
@@ -144,6 +146,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     : false;
 
   const params = await searchParams;
+  const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
@@ -165,8 +168,8 @@ export default async function ControleTemperaturaEquipamentosPage({
       filtroResponsavel
   );
   const filtroData = hasManualFilters ? filtroDataRaw : todayDateInput;
-  const filtroMes = parsePositiveInt(filtroMesRaw);
-  const filtroAno = parsePositiveInt(filtroAnoRaw);
+  const filtroMes = parseFilterMonth(filtroMesRaw);
+  const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
   const where: Prisma.ControleTemperaturaEquipamentoWhereInput = {};
@@ -180,6 +183,13 @@ export default async function ControleTemperaturaEquipamentosPage({
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
     where.data = { gte: start, lte: end };
+  } else if (filtroMes) {
+    const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroEquipamento) {
@@ -563,13 +573,13 @@ export default async function ControleTemperaturaEquipamentosPage({
               label="Anexar foto da evidência"
               existingImageDataUrl={fotoRegistroEmEdicao}
               existingFileName={registroEmEdicao?.fotoNome ?? null}
-              helperText="Obrigatória em Alerta/Crítico. A imagem será otimizada para até 1280 px e deve ficar com no máximo 1 MB."
+              helperText={`${exigirFotoEmAlertaCritico ? "Obrigatória em Alerta/Crítico." : "Foto opcional."} A imagem será otimizada para até 1280 px e deve ficar com no máximo 1 MB.`}
               maxBytes={TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES}
               compressBeforeUpload
               compressionTargetBytes={TEMPERATURE_EVIDENCE_IMAGE_TARGET_BYTES}
               compressionMaxWidth={TEMPERATURE_EVIDENCE_IMAGE_MAX_WIDTH}
               requiredStatusFieldName="statusCalculado"
-              requiredStatusValues={["ALERTA", "CRITICO"]}
+              requiredStatusValues={exigirFotoEmAlertaCritico ? ["ALERTA", "CRITICO"] : []}
               requiredMessage="Anexe uma foto da evidência para salvar este registro."
               disabledStatusFieldName="statusOperacionalEquipamento"
               disabledStatusValues={[

@@ -10,6 +10,7 @@ import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, ge
 import { canSignModuleDay, canSignModuleMonthlyClosure } from "@/lib/module-signatures";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { getRoleLabel } from "@/lib/rbac";
 
 import { signDailyAreaPendingItemsAction } from "../../actions";
@@ -27,7 +28,6 @@ import {
   getYearDateRange,
   parseDailyStatus,
   parseDateInput,
-  parsePositiveInt,
   parseTurno
 } from "../../utils";
 
@@ -70,8 +70,8 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
 
   const params = await searchParams;
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes).trim());
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno).trim());
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes).trim());
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno).trim());
   const filtroArea = firstParam(params.filtroArea).trim();
   const filtroTurno = parseTurno(firstParam(params.filtroTurno).trim());
   const filtroStatus = parseDailyStatus(firstParam(params.filtroStatus).trim());
@@ -88,27 +88,36 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
   const dataFiltro = parseDateInput(filtroData);
 
-  const rawHistoryRange = (() => {
+  const rawHistoryRanges = await (async () => {
     if (dataFiltro) {
-      return { start: dataFiltro, end: dataFiltro };
+      return [{ start: dataFiltro, end: dataFiltro }];
     }
 
     if (filtroMes && filtroAno && filtroMes <= 12) {
-      return getMonthDateRange(filtroMes, filtroAno);
+      return [getMonthDateRange(filtroMes, filtroAno)];
     }
 
     if (filtroAno) {
-      return getYearDateRange(filtroAno);
+      return [getYearDateRange(filtroAno)];
     }
 
-    return selectedMonthRange;
+    if (filtroMes) {
+      const [records, areas] = await Promise.all([
+        prisma.planoLimpezaDiarioRegistro.aggregate({ _min: { data: true } }),
+        prisma.planoLimpezaDiarioArea.aggregate({ _min: { createdAt: true } })
+      ]);
+      // This history also includes expected tasks since areas were configured.
+      const starts = [records._min.data, areas._min.createdAt]
+        .filter((date): date is Date => date !== null);
+      const first = starts.length ? new Date(Math.min(...starts.map((date) => date.getTime()))) : null;
+      return getMonthRangesForBounds(filtroMes, first, today);
+    }
+
+    return [selectedMonthRange];
   })();
-  const historyEnd =
-    rawHistoryRange.end.getTime() > today.getTime() ? today : rawHistoryRange.end;
-  const historyRange =
-    rawHistoryRange.start.getTime() <= historyEnd.getTime()
-      ? { start: rawHistoryRange.start, end: historyEnd }
-      : null;
+  const historyRanges = rawHistoryRanges
+    .map(({ start, end }) => ({ start, end: end > today ? today : end }))
+    .filter(({ start, end }) => start <= end);
   const selectedMonthEnd =
     selectedMonthRange.end.getTime() > today.getTime() ? today : selectedMonthRange.end;
   const selectedMonthHistoryRange =
@@ -116,9 +125,9 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
       ? { start: selectedMonthRange.start, end: selectedMonthEnd }
       : null;
 
-  const registrosWhere: Prisma.PlanoLimpezaDiarioRegistroWhereInput = historyRange
-    ? { data: { gte: historyRange.start, lte: historyRange.end } }
-    : { id: -1 };
+  const registrosWhere: Prisma.PlanoLimpezaDiarioRegistroWhereInput = {
+    OR: historyRanges.map(({ start, end }) => ({ data: { gte: start, lte: end } }))
+  };
   const registrosMensaisWhere: Prisma.PlanoLimpezaDiarioRegistroWhereInput =
     selectedMonthHistoryRange
       ? {
@@ -402,14 +411,14 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
       .sort((first, second) => second.data.getTime() - first.data.getTime());
   }
 
-  const expectedTasks = historyRange
-    ? getExpectedDailyCleaningTasksForDateRange({
-        start: historyRange.start,
-        end: historyRange.end,
+  const expectedTasks = historyRanges.flatMap(({ start, end }) =>
+    getExpectedDailyCleaningTasksForDateRange({
+        start,
+        end,
         today,
         areaConfigs
       })
-    : [];
+  );
   const expectedMonthlyTasks = selectedMonthHistoryRange
     ? getExpectedDailyCleaningTasksForDateRange({
         start: selectedMonthHistoryRange.start,

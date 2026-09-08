@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma, StatusQualidadeOleo } from "@prisma/client";
 import Link from "next/link";
 
@@ -14,8 +15,7 @@ import {
   formatTemperatureDisplay,
   getMonthDateRange,
   getYearDateRange,
-  parseDateInput,
-  parsePositiveInt
+  parseDateInput
 } from "../utils";
 
 const PAGE_PATH = "/controle-qualidade-oleo/historico";
@@ -79,8 +79,8 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes));
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno));
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes));
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno));
   const filtroFita = firstParam(params.filtroFita).trim();
   const filtroStatus = parseStatusFilter(firstParam(params.filtroStatus).trim());
   const filtroResponsavel = firstParam(params.filtroResponsavel).trim();
@@ -102,6 +102,13 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
     where.data = { gte: start, lte: end };
+  } else if (filtroMes) {
+    const bounds = await prisma.controleQualidadeOleoRegistro.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroFita) {

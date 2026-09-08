@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  ModuloDocumento,
   StatusFechamentoTemperaturaEquipamento,
   StatusOperacionalEquipamento,
   StatusTemperaturaEquipamento,
@@ -25,6 +26,7 @@ import {
 import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
 import { saveTemperatureEquipmentEvidenceImage } from "@/lib/local-image-storage";
 import { prisma } from "@/lib/prisma";
+import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
   findCatalogOptionByName,
@@ -456,13 +458,14 @@ export async function createRegistroAction(formData: FormData) {
       turno
     });
 
+    const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
     const fotoDesvio =
       payload.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO
         ? await parseImageUploadFromFormData({
             formData,
             key: "fotoDesvio",
             maxBytes: TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES,
-            required: isCorrectiveActionRequired(payload.status),
+            required: exigirFotoEmAlertaCritico && isCorrectiveActionRequired(payload.status),
             requiredMessage:
               "Anexe uma foto da evidência para salvar este registro."
           })
@@ -548,7 +551,8 @@ export async function updateRegistroAction(formData: FormData) {
           maxBytes: TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES
         })
       : null;
-    const exigeFoto = registroEmOperacao && isCorrectiveActionRequired(payload.status);
+    const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
+    const exigeFoto = exigirFotoEmAlertaCritico && registroEmOperacao && isCorrectiveActionRequired(payload.status);
     const temFotoExistente =
       registroEmOperacao &&
       hasStoredImage({
@@ -604,6 +608,33 @@ export async function updateRegistroAction(formData: FormData) {
       "error",
       getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
     );
+  }
+}
+
+export async function updatePhotoRequirementAction(formData: FormData) {
+  try {
+    const actor = await getCurrentUserForAction();
+    ensurePermission(actor, "modulo.temperatura.gerenciar_cadastros", "Você não tem permissão para gerenciar cadastros de temperatura.");
+    const value = getInputValue(formData, "exigirFotoEmAlertaCritico");
+    if (value !== "true" && value !== "false") {
+      throw new Error("Selecione Habilitado ou Desabilitado para a exigência de foto.");
+    }
+    const exigirFotoEmAlertaCritico = value === "true";
+    await prisma.moduloConfiguracao.upsert({
+      where: { modulo: ModuloDocumento.CONTROLE_TEMPERATURA },
+      create: {
+        modulo: ModuloDocumento.CONTROLE_TEMPERATURA,
+        exigirFotoEmAlertaCritico,
+        atualizadoPorUsuarioId: actor.id
+      },
+      update: { exigirFotoEmAlertaCritico, atualizadoPorUsuarioId: actor.id }
+    });
+    revalidatePath(MODULE_PATH);
+    revalidatePath(OPTIONS_PATH);
+    redirectWithFeedback(OPTIONS_PATH, "success", "Configuração de foto salva com sucesso.");
+  } catch (error) {
+    rethrowIfRedirectError(error);
+    redirectWithFeedback(OPTIONS_PATH, "error", getErrorMessage(error, "Não foi possível salvar a configuração de foto."));
   }
 }
 

@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
 
@@ -22,8 +23,7 @@ import {
   formatDateDisplay,
   getMonthDateRange,
   getYearDateRange,
-  parseDateInput,
-  parsePositiveInt
+  parseDateInput
 } from "../utils";
 
 const PAGE_PATH = "/higienizacao-hortifruti/historico";
@@ -72,8 +72,8 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes));
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno));
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes));
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno));
   const filtroHortifruti = firstParam(params.filtroHortifruti).trim();
   const filtroResponsavel = firstParam(params.filtroResponsavel).trim();
   const diaAberto = firstParam(params.dia).trim();
@@ -94,6 +94,13 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
     where.data = { gte: start, lte: end };
+  } else if (filtroMes) {
+    const bounds = await prisma.higienizacaoHortifruti.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroHortifruti) {

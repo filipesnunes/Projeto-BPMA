@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ClassificacaoItemBuffetAmostra,
   Prisma,
@@ -130,8 +131,8 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes).trim());
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno).trim());
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes).trim());
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno).trim());
   const filtroServicoId = parsePositiveInt(firstParam(params.filtroServicoId).trim());
   const filtroItemId = parsePositiveInt(firstParam(params.filtroItemId).trim());
   const filtroClassificacao = parseClassificacao(firstParam(params.filtroClassificacao).trim());
@@ -174,6 +175,13 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   } else if (filtroAno) {
     const range = getYearDateRange(filtroAno);
     where.data = { gte: range.start, lte: range.end };
+  } else if (filtroMes) {
+    const bounds = await prisma.controleBuffetAmostraRegistro.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
   if (filtroServicoId) where.servicoId = filtroServicoId;
   if (filtroItemId) where.itemId = filtroItemId;

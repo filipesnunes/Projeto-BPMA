@@ -18,6 +18,7 @@ import {
   toggleCatalogOptionStatusAction,
   toggleCategoryRuleStatusAction,
   updateCatalogOptionAction,
+  updatePhotoRequirementAction,
   updateCategoryRuleAction
 } from "../actions";
 import {
@@ -26,6 +27,7 @@ import {
   getStatusLabel,
   parsePositiveInt
 } from "../utils";
+import { getExigirFotoEmAlertaCritico } from "../settings";
 
 const PAGE_PATH = "/controle-temperatura-equipamentos/opcoes";
 const CARD_CLASS =
@@ -70,6 +72,7 @@ export default async function ControleTemperaturaOpcoesPage({
   searchParams
 }: PageProps) {
   const params = await searchParams;
+  const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const editEquipamentoId = parsePositiveInt(firstParam(params.editEquipamentoId));
@@ -145,6 +148,24 @@ export default async function ControleTemperaturaOpcoesPage({
         modulo={ModuloDocumento.CONTROLE_TEMPERATURA}
         returnTo={PAGE_PATH}
       />
+
+      <section className={CARD_CLASS}>
+        <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Foto nos registros de temperatura</h2>
+        <form action={updatePhotoRequirementAction} className="mt-3 grid gap-3">
+          <label className="text-sm text-slate-700 dark:text-slate-200">
+            Exigir foto nos registros de temperatura
+            <select name="exigirFotoEmAlertaCritico" defaultValue={String(exigirFotoEmAlertaCritico)} className={INPUT_CLASS}>
+              <option value="true">Habilitado</option>
+              <option value="false">Desabilitado</option>
+            </select>
+          </label>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Quando habilitado, a foto é obrigatória em Alerta/Crítico para equipamentos em operação.
+            Quando desabilitado, o anexo é opcional. Fotos já salvas permanecem no histórico.
+          </p>
+          <div><button type="submit" className="btn-primary">Salvar configuração</button></div>
+        </form>
+      </section>
 
       <section className={CARD_CLASS}>
         <div className="grid gap-4 lg:grid-cols-2">

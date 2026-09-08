@@ -366,7 +366,28 @@ function renderStyles(): string {
         width: 22%;
       }
 
+      .screen-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+
+      .screen-actions button {
+        border: 1px solid #111827;
+        border-radius: 6px;
+        background: #111827;
+        color: #ffffff;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 7px 10px;
+      }
+
       @media print {
+        .screen-actions {
+          display: none;
+        }
+
         body {
           padding: 0;
         }
@@ -399,6 +420,9 @@ export function renderMonthlySanitaryReportDocument(
   </head>
   <body>
     <main class="report-page">
+      <div class="screen-actions">
+        <button type="button" onclick="window.print()">Imprimir / Salvar PDF</button>
+      </div>
       ${renderHeader(report)}
       ${renderSummaryTable(report.summaryItems)}
       ${renderDataTable(report)}

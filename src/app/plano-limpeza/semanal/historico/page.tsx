@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
@@ -32,7 +33,6 @@ import {
   getMonthDateRange,
   getYearDateRange,
   parseDateInput,
-  parsePositiveInt,
   parseWeeklyStatus
 } from "../../utils";
 import {
@@ -88,8 +88,8 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes).trim());
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno).trim());
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes).trim());
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno).trim());
   const filtroArea = firstParam(params.filtroArea).trim();
   const filtroStatus = parseWeeklyStatus(firstParam(params.filtroStatus).trim());
   const filtroItem = firstParam(params.filtroItem).trim();
@@ -119,6 +119,13 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
   } else if (filtroAno) {
     const range = getYearDateRange(filtroAno);
     where.dataExecucao = { gte: range.start, lte: range.end };
+  } else if (filtroMes) {
+    const bounds = await prisma.planoLimpezaSemanalExecucao.aggregate({
+      _min: { dataExecucao: true },
+      _max: { dataExecucao: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.dataExecucao, bounds._max.dataExecucao)
+      .map(({ start, end }) => ({ dataExecucao: { gte: start, lte: end } }));
   }
 
   let syncRange: { start: Date; end: Date } | null = null;

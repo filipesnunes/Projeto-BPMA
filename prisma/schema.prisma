@@ -1080,6 +1080,7 @@ model ModuloConfiguracao {
   id                     Int             @id @default(autoincrement())
   modulo                 ModuloDocumento @unique
   textoCabecalho         String?         @db.Text
+  exigirFotoEmAlertaCritico Boolean       @default(true)
   atualizadoPorUsuarioId Int?
   atualizadoPor          Usuario?        @relation("ModuloConfiguracaoAtualizadoPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
   criadoEm               DateTime        @default(now())

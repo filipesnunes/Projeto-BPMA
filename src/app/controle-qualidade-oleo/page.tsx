@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
@@ -132,8 +133,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   );
 
   const filtroData = hasManualFilters ? filtroDataRaw : todayInput;
-  const filtroMes = parsePositiveInt(filtroMesRaw);
-  const filtroAno = parsePositiveInt(filtroAnoRaw);
+  const filtroMes = parseFilterMonth(filtroMesRaw);
+  const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
   const where: Prisma.ControleQualidadeOleoRegistroWhereInput = {};
@@ -147,6 +148,13 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
     where.data = { gte: start, lte: end };
+  } else if (filtroMes) {
+    const bounds = await prisma.controleQualidadeOleoRegistro.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroFita) {

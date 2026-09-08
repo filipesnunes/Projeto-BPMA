@@ -1,3 +1,4 @@
+import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   Prisma,
   StatusOperacionalEquipamento,
@@ -96,8 +97,8 @@ export default async function ControleTemperaturaHistoricoPage({
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
-  const filtroMes = parsePositiveInt(firstParam(params.filtroMes));
-  const filtroAno = parsePositiveInt(firstParam(params.filtroAno));
+  const filtroMes = parseFilterMonth(firstParam(params.filtroMes));
+  const filtroAno = parseFilterYear(firstParam(params.filtroAno));
   const filtroEquipamento = firstParam(params.filtroEquipamento).trim();
   const filtroStatus = parseStatusFilter(firstParam(params.filtroStatus).trim());
   const filtroResponsavel = firstParam(params.filtroResponsavel).trim();
@@ -120,6 +121,13 @@ export default async function ControleTemperaturaHistoricoPage({
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
     where.data = { gte: start, lte: end };
+  } else if (filtroMes) {
+    const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
+      _min: { data: true },
+      _max: { data: true }
+    });
+    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
+      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
   }
 
   if (filtroEquipamento) {

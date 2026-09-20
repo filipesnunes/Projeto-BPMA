@@ -10,6 +10,7 @@ import {
 import { APP_NAME } from "@/lib/app-branding";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
+  APP_TIME_ZONE,
   formatAppDateInput,
   formatAppDateTime,
   getAppDate,
@@ -37,6 +38,7 @@ type EquipmentOption = Awaited<ReturnType<typeof getTemperatureEquipmentOptions>
 
 type ShiftCell = {
   temperature: string;
+  measurementTime: string;
   correctiveAction: string;
   responsible: string;
   supervisor: string;
@@ -253,6 +255,9 @@ function buildEquipmentReports(params: {
         const inOperation =
           record.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
         cellsByDayShift.set(getCellKey(turno, day), {
+          measurementTime: inOperation && record.createdAt && Number.isFinite(record.createdAt.getTime()) && getAppDate(record.createdAt).getTime() === record.data.getTime()
+            ? new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt)
+            : "-",
           temperature: inOperation ? formatTemperature(record.temperaturaAferida) : "",
           correctiveAction: inOperation
             ? valueOrEmpty(record.acaoCorretiva)
@@ -417,16 +422,18 @@ function renderStyles(): string {
       }
 
       .temperature-column {
-        width: 8%;
+        width: 6%;
       }
 
+      .time-column { width: 5%; }
+
       .action-column {
-        width: 16%;
+        width: 15%;
       }
 
       .responsible-column,
       .supervisor-column {
-        width: 10%;
+        width: 11%;
       }
 
       .day-row td {
@@ -559,6 +566,7 @@ function renderEquipmentInfo(equipment: EquipmentReport, report: MonthlyTemperat
 function renderShiftHeader(): string {
   return `
     <th class="temperature-column">Temperatura</th>
+    <th class="time-column">Horário</th>
     <th class="action-column">Ação corretiva</th>
     <th class="responsible-column">Responsável</th>
     <th class="supervisor-column">Supervisor</th>`;
@@ -569,6 +577,7 @@ function renderShiftCells(equipment: EquipmentReport, day: number, turno: TurnoT
 
   return `
     <td>${escapeHtml(cell?.temperature ?? "")}</td>
+    <td>${escapeHtml(cell?.measurementTime ?? "")}</td>
     <td>${escapeHtml(cell?.correctiveAction ?? "")}</td>
     <td>${escapeHtml(cell?.responsible ?? "")}</td>
     <td>${escapeHtml(cell?.supervisor ?? "")}</td>`;
@@ -591,8 +600,8 @@ function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTempera
       <thead>
         <tr>
           <th class="day-column" rowspan="2">Dia</th>
-          <th colspan="4">${escapeHtml(labelTurno(TurnoTemperaturaEquipamento.MANHA))}</th>
-          <th colspan="4">${escapeHtml(labelTurno(TurnoTemperaturaEquipamento.TARDE))}</th>
+          <th colspan="5">${escapeHtml(labelTurno(TurnoTemperaturaEquipamento.MANHA))}</th>
+          <th colspan="5">${escapeHtml(labelTurno(TurnoTemperaturaEquipamento.TARDE))}</th>
         </tr>
         <tr>
           ${renderShiftHeader()}

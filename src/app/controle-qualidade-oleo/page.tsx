@@ -29,6 +29,7 @@ import {
   getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
+  getNextOilStripDate,
   getTodaySystemDate,
   getYearDateRange,
   parseDateInput,
@@ -159,18 +160,22 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, fitaOptions] = await Promise.all([
+  const [registros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
     prisma.controleQualidadeOleoRegistro.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
     }),
     prisma.controleQualidadeOleoOpcaoFita.findMany({
       orderBy: [{ ativo: "desc" }, { ordem: "asc" }, { rotulo: "asc" }]
+    }),
+    prisma.controleQualidadeOleoRegistro.findFirst({
+      where: { semUtilizacao: false, fitaOleo: { not: null }, NOT: { fitaOleo: "" }, data: { lte: getTodaySystemDate() } },
+      select: { data: true },
+      orderBy: [{ data: "desc" }, { createdAt: "desc" }]
     })
   ]);
 
   const fitaOptionsAtivas = fitaOptions.filter((option) => option.ativo);
-  const configuracaoDisponivel = fitaOptionsAtivas.length > 0;
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const deleteId = parsePositiveInt(firstParam(params.deleteId));
@@ -191,7 +196,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
 
     if (optionInAll) {
       fitaFormOptions = [optionInAll, ...fitaOptionsAtivas];
-    } else {
+    } else if (registroEmEdicao.status !== null) {
       fitaFormOptions = [
         {
           id: -1,
@@ -372,18 +377,6 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               Clique em <strong>Novo Registro</strong> para abrir o formulário. A ação de edição
               abre em modal sobreposto a partir da lista.
             </p>
-          ) : !configuracaoDisponivel ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-              Nenhuma opção de fita do óleo está cadastrada.
-              {podeGerenciarOpcoes ? (
-                <>
-                  {" "}
-                  Use <strong>Gerenciar Opções</strong> para iniciar o módulo.
-                </>
-              ) : (
-                " Solicite à gestão a configuração inicial do módulo."
-              )}
-            </p>
           ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
               Este registro pertence a um mês fechado e não pode ser alterado.
@@ -406,6 +399,9 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
             </div>
 
             <OilRegisterFields
+              previsaoFita={ultimaAfericaoFita
+                ? `Última aferição da fita: ${formatDateDisplay(ultimaAfericaoFita.data)}. Próxima prevista: ${formatDateDisplay(getNextOilStripDate(ultimaAfericaoFita.data))}.`
+                : "Nenhuma aferição anterior da fita registrada."}
               options={fitaFormOptions.map((item) => ({
                 rotulo: item.rotulo,
                 descricao: item.descricao,
@@ -452,11 +448,9 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
       <section className={CARD_CLASS}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Registros do Dia</h2>
-          {configuracaoDisponivel ? (
-            <Link href={hrefNovoRegistro} className="btn-primary">
-              Novo Registro
-            </Link>
-          ) : null}
+          <Link href={hrefNovoRegistro} className="btn-primary">
+            Novo Registro
+          </Link>
         </div>
 
         {podeVerGestao ? (

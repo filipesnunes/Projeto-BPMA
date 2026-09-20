@@ -6,6 +6,7 @@ import {
   TipoOpcaoHigienizacao
 } from "@prisma/client";
 import Link from "next/link";
+import { ProcessTimeFields } from "./process-time-fields";
 
 import { DocumentosModuleHeader } from "@/components/documentos/documentos-module-header";
 import { ActionModal, ModalActions } from "@/components/ui/action-modal";
@@ -125,6 +126,7 @@ export default async function HigienizacaoHortifrutiPage({
       orderBy: [{ data: "desc" }, { inicioProcesso: "asc" }]
     }),
     prisma.higienizacaoHortifrutiOpcao.findMany({
+      where: { ativo: true },
       orderBy: [{ tipo: "asc" }, { nome: "asc" }]
     })
   ]);
@@ -275,7 +277,7 @@ export default async function HigienizacaoHortifrutiPage({
               Clique em <strong>Novo Registro</strong> para abrir o formulário. A ação de edição
               abre em modal sobreposto a partir da lista.
             </p>
-          ) : !catalogoDisponivel ? (
+          ) : !catalogoDisponivel && !registroEmEdicao ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
               Nenhuma opção de hortifruti ou produto foi cadastrada ainda.
               {podeGerenciarOpcoes ? (
@@ -322,11 +324,11 @@ export default async function HigienizacaoHortifrutiPage({
 
             <label className="text-sm text-slate-700 dark:text-slate-200">
               Hortifruti *
-              <SearchableOptionField name="hortifruti" options={hortifrutiOptions} defaultValue={registroEmEdicao?.hortifruti ?? ""} placeholder="Digite para buscar..." />
+              <SearchableOptionField name="hortifruti" options={Array.from(new Set([...hortifrutiOptions, ...(registroEmEdicao ? [registroEmEdicao.hortifruti] : [])]))} defaultValue={registroEmEdicao?.hortifruti ?? ""} placeholder="Digite para buscar..." />
             </label>
             <label className="text-sm text-slate-700 dark:text-slate-200">
               Produto Utilizado *
-              <SearchableOptionField name="produtoUtilizado" options={produtoUtilizadoOptions} defaultValue={registroEmEdicao?.produtoUtilizado ?? ""} placeholder="Digite para buscar..." />
+              <SearchableOptionField name="produtoUtilizado" options={Array.from(new Set([...produtoUtilizadoOptions, ...(registroEmEdicao ? [registroEmEdicao.produtoUtilizado] : [])]))} defaultValue={registroEmEdicao?.produtoUtilizado ?? ""} placeholder="Digite para buscar..." />
             </label>
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -339,14 +341,9 @@ export default async function HigienizacaoHortifrutiPage({
                 Preenchido automaticamente pelo usuário logado.
               </p>
             </div>
-            <label className="text-sm text-slate-700 dark:text-slate-200">
-              Início do Processo *
-              <input type="time" name="inicioProcesso" required defaultValue={registroEmEdicao?.inicioProcesso ?? ""} className={INPUT_CLASS} />
-            </label>
-            <label className="text-sm text-slate-700 dark:text-slate-200">
-              Término do Processo *
-              <input type="time" name="terminoProcesso" required defaultValue={registroEmEdicao?.terminoProcesso ?? ""} className={INPUT_CLASS} />
-            </label>
+            <ProcessTimeFields key={registroEmEdicao?.id ?? "new"}
+              defaultInicio={registroEmEdicao?.inicioProcesso}
+              defaultTermino={registroEmEdicao?.terminoProcesso} inputClassName={INPUT_CLASS} />
             <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
               Observações (Opcional)
               <textarea name="observacoes" rows={3} defaultValue={registroEmEdicao?.observacoes ?? ""} className={INPUT_CLASS} />

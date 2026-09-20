@@ -455,6 +455,7 @@ model HigienizacaoHortifrutiOpcao {
   id        Int                   @id @default(autoincrement())
   tipo      TipoOpcaoHigienizacao
   nome      String
+  ativo     Boolean               @default(true)
   createdAt DateTime              @default(now())
   updatedAt DateTime              @updatedAt
 
@@ -575,7 +576,7 @@ model ControleQualidadeOleoRegistro {
   data                          DateTime            @db.Date
   fitaOleo                      String?
   temperatura                   Float?
-  status                        StatusQualidadeOleo
+  status                        StatusQualidadeOleo?
   orientacao                    String
   responsavel                   String
   observacao                    String?

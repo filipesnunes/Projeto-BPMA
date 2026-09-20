@@ -110,15 +110,16 @@ export default async function HigienizacaoHortifrutiOpcoesPage({
                     key={option.id}
                     className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
                   >
-                    <span>{option.nome}</span>
+                    <span>{option.nome}{!option.ativo ? " (Inativo)" : ""}</span>
                     <form action={deleteCatalogOptionAction}>
                       <input type="hidden" name="optionId" value={option.id} />
                       <input type="hidden" name="returnTo" value={PAGE_PATH} />
                       <button
                         type="submit"
                         className="btn-danger"
+                        disabled={!option.ativo}
                       >
-                        Excluir
+                        {option.ativo ? "Retirar da opera??o" : "Inativo"}
                       </button>
                     </form>
                   </li>
@@ -160,15 +161,16 @@ export default async function HigienizacaoHortifrutiOpcoesPage({
                     key={option.id}
                     className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-700"
                   >
-                    <span>{option.nome}</span>
+                    <span>{option.nome}{!option.ativo ? " (Inativo)" : ""}</span>
                     <form action={deleteCatalogOptionAction}>
                       <input type="hidden" name="optionId" value={option.id} />
                       <input type="hidden" name="returnTo" value={PAGE_PATH} />
                       <button
                         type="submit"
                         className="btn-danger"
+                        disabled={!option.ativo}
                       >
-                        Excluir
+                        {option.ativo ? "Retirar da opera??o" : "Inativo"}
                       </button>
                     </form>
                   </li>

@@ -100,7 +100,7 @@ function formatOilStrip(value: string | null | undefined): string {
     return "-";
   }
 
-  return normalized.includes("%") ? normalized : `${normalized}%`;
+  return /^\d+(?:[.,]\d+)?$/.test(normalized) ? `${normalized}%` : normalized;
 }
 
 function formatTemperature(value: number | null | undefined): string {

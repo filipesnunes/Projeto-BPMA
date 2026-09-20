@@ -12,6 +12,13 @@ import {
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+export function calculateProcessEnd(start: string): string {
+  const minutes = parseTimeToMinutes(start);
+  if (minutes === null) return "";
+  const end = (minutes + 2) % (24 * 60);
+  return `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`;
+}
+
 export function parseDateInput(value: string): Date | null {
   return parseAppDateInput(value);
 }

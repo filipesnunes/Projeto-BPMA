@@ -347,6 +347,13 @@ export default async function ControleTemperaturaEquipamentosPage({
   const modalError = feedback && feedbackType === "error" ? feedback : "";
   const dataFormulario =
     registroEmEdicao?.data ?? parseDateInput(todayDateInput) ?? getTodaySystemDate();
+  const previousDay = new Date(dataFormulario);
+  previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+  const registrosPersistencia = mostrarFormulario ? await prisma.controleTemperaturaEquipamento.findMany({
+    where: { data: { gte: previousDay, lte: dataFormulario } },
+    select: { equipamento: true, categoriaEquipamento: true, data: true, turno: true, statusOperacionalEquipamento: true, temperaturaAferida: true, status: true },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }]
+  }) : [];
   const turnoFormulario =
     registroEmEdicao?.turno ??
     (getCurrentShift(now) === "MANHA"
@@ -529,6 +536,9 @@ export default async function ControleTemperaturaEquipamentosPage({
               equipamentosCategoria={equipamentosCategoria}
               equipamentosTurnos={equipamentosTurnosFormulario}
               regrasCategoria={regrasCategoriaForm}
+              dataReferencia={formatDateInput(dataFormulario)}
+              turnosPrevistos={equipamentosTurnos}
+              registrosAnteriores={registrosPersistencia.map((registro) => ({ ...registro, data: formatDateInput(registro.data) }))}
               registrosDuplicidade={registrosDuplicidadeForm}
               defaultEquipamento={registroEmEdicao?.equipamento ?? ""}
               defaultTurno={turnoFormulario}

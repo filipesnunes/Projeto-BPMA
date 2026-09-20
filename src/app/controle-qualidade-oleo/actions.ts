@@ -155,30 +155,30 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
     };
   }
 
-  if (!fitaInput || !temperaturaInput) {
+  if (!temperaturaInput) {
     throw new Error("Preencha todos os campos obrigatórios do registro.");
   }
 
-  const fitaOption = await findOilOptionByLabel(fitaInput, true);
-  if (!fitaOption) {
+  const fitaOption = fitaInput ? await findOilOptionByLabel(fitaInput, true) : null;
+  if (fitaInput && !fitaOption) {
     throw new Error("Selecione uma opção válida no campo % da Fita do Óleo.");
   }
 
-  const canonicalRule = findCanonicalOilStripRuleByLabel(fitaOption.rotulo);
+  const canonicalRule = fitaOption ? findCanonicalOilStripRuleByLabel(fitaOption.rotulo) : null;
 
   const temperatura = parseTemperatureInput(temperaturaInput);
   if (temperatura === null) {
     throw new Error("Informe uma temperatura válida.");
   }
-  if (isTemperatureBelowOilStripMinimum(temperatura)) {
+  if (fitaOption && isTemperatureBelowOilStripMinimum(temperatura)) {
     throw new Error(OIL_STRIP_TEMPERATURE_SAVE_MESSAGE);
   }
 
   return {
-    fitaOleo: fitaOption.rotulo,
+    fitaOleo: fitaOption?.rotulo ?? null,
     temperatura,
-    status: canonicalRule?.statusAssociado ?? fitaOption.statusAssociado,
-    orientacao: canonicalRule?.descricao ?? fitaOption.descricao,
+    status: canonicalRule?.statusAssociado ?? fitaOption?.statusAssociado ?? null,
+    orientacao: canonicalRule?.descricao ?? fitaOption?.descricao ?? "",
     temperaturaCritica: isTemperatureCritical(temperatura),
     semUtilizacao: false,
     responsavel: responsavelLogado.trim(),

@@ -80,6 +80,12 @@ export function getTodaySystemDate(): Date {
   return getAppDate();
 }
 
+export function getNextOilStripDate(lastMeasurement: Date): Date {
+  const next = new Date(lastMeasurement);
+  next.setUTCDate(next.getUTCDate() + 3);
+  return next;
+}
+
 export function getCurrentSystemDateTime(): Date {
   return getAppNow();
 }
@@ -103,7 +109,8 @@ export function periodKey(mes: number, ano: number): string {
   return `${ano}-${String(mes).padStart(2, "0")}`;
 }
 
-export function getStatusLabel(status: StatusOleo): string {
+export function getStatusLabel(status: StatusOleo | null): string {
+  if (status === null) return "Sem aferição da fita";
   if (status === "ADEQUADO") {
     return "Adequado";
   }

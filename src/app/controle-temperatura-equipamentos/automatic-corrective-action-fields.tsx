@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { correctiveActionWithPersistence, previousScheduledShift, type PreviousTemperatureRecord } from "./persistence";
 import { SearchableOptionField } from "./searchable-option-field";
 import { normalizeOption } from "./options";
 import {
@@ -39,6 +40,9 @@ type EquipamentoTurnos = {
 };
 
 type AutomaticCorrectiveActionFieldsProps = {
+  dataReferencia: string;
+  turnosPrevistos: EquipamentoTurnos[];
+  registrosAnteriores: PreviousTemperatureRecord[];
   equipamentoOptions: string[];
   equipamentosCategoria: EquipamentoCategoria[];
   equipamentosTurnos: EquipamentoTurnos[];
@@ -68,6 +72,9 @@ const SHIFT_OPTIONS: Array<{ value: TurnoTemperatura; label: string }> = [
 ];
 
 export function AutomaticCorrectiveActionFields({
+  dataReferencia,
+  turnosPrevistos,
+  registrosAnteriores,
   equipamentoOptions,
   equipamentosCategoria,
   equipamentosTurnos,
@@ -168,12 +175,19 @@ export function AutomaticCorrectiveActionFields({
       };
     }
 
+    const shifts = turnosPrevistos.find((item) => item.nome === equipamentoSelecionado)?.turnos ?? [];
+    const expected = previousScheduledShift(dataReferencia, turnoSelecionado, shifts);
+    const previous = registrosAnteriores.find((registro) => registro.equipamento === equipamentoSelecionado && registro.data === expected.data && registro.turno === expected.turno) ?? null;
     return {
       statusValue: regraCorrespondente.status,
       statusLabel: getStatusLabel(regraCorrespondente.status),
-      acaoCorretiva: regraCorrespondente.acaoCorretiva
+      acaoCorretiva: correctiveActionWithPersistence({ equipamento: equipamentoSelecionado, categoria, data: dataReferencia, turno: turnoSelecionado, shifts, rule: regraCorrespondente, rules: regras, previous })
     };
   }, [
+    dataReferencia,
+    turnosPrevistos,
+    registrosAnteriores,
+    turnoSelecionado,
     categoriaPorEquipamento,
     defaultAcaoCorretiva,
     equipamentoEmOperacao,

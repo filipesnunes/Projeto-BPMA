@@ -23,6 +23,7 @@ type OilStripOptionPreview = {
 };
 
 type OilRegisterFieldsProps = {
+  previsaoFita?: string;
   options: OilStripOptionPreview[];
   defaultFita?: string;
   defaultTemperatura?: string;
@@ -31,6 +32,7 @@ type OilRegisterFieldsProps = {
 };
 
 export function OilRegisterFields({
+  previsaoFita,
   options,
   defaultFita = "",
   defaultTemperatura = "",
@@ -64,7 +66,7 @@ export function OilRegisterFields({
 
   const temperatura = semUtilizacao ? null : parseTemperatureInput(temperaturaInput);
   const temperaturaAbaixoMinima =
-    temperatura !== null && isTemperatureBelowOilStripMinimum(temperatura);
+    Boolean(optionSelecionada) && temperatura !== null && isTemperatureBelowOilStripMinimum(temperatura);
   const temperaturaCritica = temperatura !== null && isTemperatureCritical(temperatura);
 
   useEffect(() => {
@@ -105,7 +107,10 @@ export function OilRegisterFields({
       </div>
 
       <fieldset className="md:col-span-2">
-        <legend className="text-sm text-slate-700 dark:text-slate-200">% da Fita do Óleo *</legend>
+        <legend className="text-sm text-slate-700 dark:text-slate-200">% da Fita do Óleo (opcional)</legend>
+        <p className="mt-1 text-xs text-slate-500">Teste da fita previsto a cada 3 dias. A temperatura pode ser registrada diariamente sem fita.</p>
+        {previsaoFita ? <p className="mt-1 text-xs text-slate-500">{previsaoFita}</p> : null}
+        <button type="button" disabled={semUtilizacao} className="btn-secondary mt-2" onClick={() => setFitaSelecionada("")}>Sem aferição da fita</button>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {options.map((option) => {
             const isSelected = fitaSelecionada === option.rotulo;
@@ -122,7 +127,6 @@ export function OilRegisterFields({
                 <input
                   type="radio"
                   name="fitaOleo"
-                  required={!semUtilizacao}
                   value={option.rotulo}
                   disabled={semUtilizacao}
                   checked={isSelected}
@@ -204,7 +208,7 @@ export function OilRegisterFields({
           Status Automático
         </p>
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-          {statusAutomatico || "Selecione a fita do óleo"}
+          {statusAutomatico || "Sem aferição da fita"}
         </p>
       </div>
 
@@ -231,7 +235,7 @@ export function OilRegisterFields({
           </div>
         ) : (
           <p className="text-sm text-slate-800 dark:text-slate-100">
-            Selecione a fita do óleo para visualizar.
+            Sem aferição da fita neste registro.
           </p>
         )}
       </div>
@@ -241,7 +245,7 @@ export function OilRegisterFields({
           Orientação Automática
         </p>
         <p className="text-sm text-slate-800 dark:text-slate-100">
-          {orientacaoAutomatica || "Selecione a fita para visualizar a orientação."}
+          {orientacaoAutomatica || "-"}
         </p>
       </div>
     </>

@@ -1,5 +1,8 @@
 "use server";
 
+import { correctiveActionWithPersistence, previousScheduledShift } from "./persistence";
+import { formatAppDateInput, parseAppDateInput } from "@/lib/date-time";
+
 import {
   ModuloDocumento,
   StatusFechamentoTemperaturaEquipamento,
@@ -210,7 +213,7 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return fechamento?.status === StatusFechamentoTemperaturaEquipamento.ASSINADO;
 }
 
-async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
+async function getRegistroPayload(formData: FormData, responsavelLogado: string, context: { data: Date; turno: TurnoTemperaturaEquipamento }) {
   const equipamentoInput = getInputValue(formData, "equipamento");
   const temperaturaAferidaInput = getInputValue(formData, "temperaturaAferida");
   const observacaoInput =
@@ -307,9 +310,22 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
   }
 
   const status = regraCorrespondente.status;
-  const acaoCorretiva =
+  let acaoCorretiva =
     regraCorrespondente.acaoCorretiva.trim() ||
     getAutomaticCorrectiveAction(status, categoriaParametro);
+
+  if (status === "ALERTA" && /persistir\s+no\s+turno\s+seguinte/i.test(acaoCorretiva)) {
+    const previousShift = previousScheduledShift(formatAppDateInput(context.data), context.turno, turnosConferencia);
+    const previous = await prisma.controleTemperaturaEquipamento.findFirst({
+      where: { equipamento: equipamentoOption.nome, data: parseAppDateInput(previousShift.data)!, turno: previousShift.turno },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { equipamento: true, categoriaEquipamento: true, data: true, turno: true, statusOperacionalEquipamento: true, temperaturaAferida: true, status: true }
+    });
+    acaoCorretiva = correctiveActionWithPersistence({ equipamento: equipamentoOption.nome,
+      categoria: equipamentoOption.categoriaEquipamento, data: formatAppDateInput(context.data), turno: context.turno,
+      shifts: turnosConferencia, rule: { ...regraCorrespondente, acaoCorretiva }, rules: regrasAtivas,
+      previous: previous ? { ...previous, data: formatAppDateInput(previous.data) } : null });
+  }
 
   if (isCorrectiveActionRequired(status) && !acaoCorretiva) {
     throw new Error(
@@ -428,7 +444,10 @@ export async function createRegistroAction(formData: FormData) {
     );
 
     const data = getTodaySystemDate();
-    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto);
+    const turnoInput = getInputValue(formData, "turno");
+    const turno = turnoInput ? parseShiftValue(turnoInput) : getCurrentShift();
+    if (!turno) throw new Error("Selecione um turno de conferência válido.");
+    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data, turno });
     const { turnosConferencia, ...payload } = registroPayload;
     const { mes, ano } = getMonthYear(data);
 
@@ -436,18 +455,6 @@ export async function createRegistroAction(formData: FormData) {
       throw new Error(
         `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado e não aceita novos registros.`
       );
-    }
-
-    const turnoInput = getInputValue(formData, "turno");
-    const turno =
-      turnoInput.length > 0
-        ? parseShiftValue(turnoInput)
-        : getCurrentShift() === "MANHA"
-        ? TurnoTemperaturaEquipamento.MANHA
-        : TurnoTemperaturaEquipamento.TARDE;
-
-    if (!turno) {
-      throw new Error("Selecione um turno de conferência válido.");
     }
 
     ensureEquipmentSupportsShift(turnosConferencia, turno);
@@ -528,7 +535,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("Seu perfil não pode editar este registro de temperatura.");
     }
 
-    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto);
+    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data: existing.data, turno: existing.turno });
     const { turnosConferencia, ...payload } = registroPayload;
 
     if (payload.equipamento !== existing.equipamento) {

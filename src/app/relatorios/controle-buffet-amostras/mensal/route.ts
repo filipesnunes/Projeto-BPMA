@@ -147,9 +147,11 @@ function formatRecordTemperature(
     : formatTemperature(record.primeiraTc);
 }
 
-function getProductLabel(record: Pick<BuffetRecord, "itemNome" | "itemExtra">): string {
+function getProductLabel(record: Pick<BuffetRecord, "itemNome" | "itemExtra" | "observacao">): string {
   const productName = valueOrDash(record.itemNome);
-  return record.itemExtra && productName !== "-" ? `${productName} (extra)` : productName;
+  const cakeName = /^bolo\s*\d+$/i.test(productName) ? record.observacao?.trim() : "";
+  const label = cakeName ? `${productName} - ${cakeName}` : productName;
+  return record.itemExtra && productName !== "-" ? `${label} (extra)` : label;
 }
 
 function compareBuffetRecords(first: BuffetRecord, second: BuffetRecord): number {
@@ -186,6 +188,7 @@ function buildServiceTables(
   >();
 
   for (const record of records) {
+    if (record.status === StatusItemBuffetAmostra.NAO_SERVIDO) continue;
     const dataInput = formatAppDateInput(record.data);
     const key = `${dataInput}:${record.servicoId}`;
     const group = groupsByKey.get(key) ?? {
@@ -627,6 +630,7 @@ async function getMonthlyBuffetRecords(month: number, year: number) {
       data: true,
       servicoId: true,
       itemNome: true,
+      observacao: true,
       itemExtra: true,
       tcEquipamento: true,
       primeiraTc: true,

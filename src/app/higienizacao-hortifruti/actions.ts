@@ -24,7 +24,7 @@ import {
 } from "./catalog";
 import {
   getCurrentSystemDateTime,
-  getDurationInMinutes,
+  calculateProcessEnd,
   getMonthDateRange,
   getMonthYear,
   parseDateInput,
@@ -88,11 +88,14 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return fechamento?.status === StatusFechamentoHortifruti.ASSINADO;
 }
 
-async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
+async function getRegistroPayload(formData: FormData, responsavelLogado: string, existing?: {
+  hortifruti: string; produtoUtilizado: string; inicioProcesso: string; terminoProcesso: string; duracaoMinutos: number;
+}) {
   const hortifrutiInput = getInputValue(formData, "hortifruti");
   const produtoInput = getInputValue(formData, "produtoUtilizado");
   const inicioProcesso = getInputValue(formData, "inicioProcesso");
-  const terminoProcesso = getInputValue(formData, "terminoProcesso");
+  const preserveTimes = existing?.inicioProcesso === inicioProcesso;
+  const terminoProcesso = preserveTimes ? existing.terminoProcesso : calculateProcessEnd(inicioProcesso);
   const observacoes = getInputValue(formData, "observacoes");
 
   if (!hortifrutiInput || !produtoInput) {
@@ -103,7 +106,7 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
     throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
   }
 
-  const hortifruti = await findCatalogOptionByName(
+  const hortifruti = existing?.hortifruti === hortifrutiInput ? existing.hortifruti : await findCatalogOptionByName(
     TipoOpcaoHigienizacao.HORTIFRUTI,
     hortifrutiInput
   );
@@ -111,7 +114,7 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
     throw new Error("Selecione uma opção válida no campo Hortifruti.");
   }
 
-  const produtoUtilizado = await findCatalogOptionByName(
+  const produtoUtilizado = existing?.produtoUtilizado === produtoInput ? existing.produtoUtilizado : await findCatalogOptionByName(
     TipoOpcaoHigienizacao.PRODUTO_UTILIZADO,
     produtoInput
   );
@@ -119,8 +122,8 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string)
     throw new Error("Selecione uma opção válida no campo Produto Utilizado.");
   }
 
-  const duracaoMinutos = getDurationInMinutes(inicioProcesso, terminoProcesso);
-  if (duracaoMinutos === null) {
+  const duracaoMinutos = preserveTimes ? existing.duracaoMinutos : 2;
+  if (!calculateProcessEnd(inicioProcesso)) {
     throw new Error("Informe horários válidos no formato HH:MM.");
   }
 
@@ -211,7 +214,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
     }
 
-    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
+    const payload = await getRegistroPayload(formData, actor.nomeCompleto, existing);
 
     await prisma.higienizacaoHortifruti.update({
       where: { id },
@@ -452,32 +455,22 @@ export async function deleteCatalogOptionAction(formData: FormData) {
       throw new Error("Opção não encontrada.");
     }
 
-    if (option.tipo === TipoOpcaoHigienizacao.HORTIFRUTI) {
-      const usageCount = await prisma.higienizacaoHortifruti.count({
-        where: { hortifruti: option.nome }
-      });
-
-      if (usageCount > 0) {
-        throw new Error(
-          "Não é possível excluir esta opção de Hortifruti porque ela já está em uso nos registros."
-        );
-      }
+    const usageCount = await prisma.higienizacaoHortifruti.count({
+      where: option.tipo === TipoOpcaoHigienizacao.HORTIFRUTI
+        ? { hortifruti: { equals: option.nome, mode: "insensitive" } }
+        : { produtoUtilizado: { equals: option.nome, mode: "insensitive" } }
+    });
+    if (usageCount > 0) {
+      await prisma.higienizacaoHortifrutiOpcao.update({ where: { id: optionId }, data: { ativo: false } });
     } else {
-      const usageCount = await prisma.higienizacaoHortifruti.count({
-        where: { produtoUtilizado: option.nome }
-      });
-
-      if (usageCount > 0) {
-        throw new Error(
-          "Não é possível excluir esta opção de Produto Utilizado porque ela já está em uso nos registros."
-        );
-      }
+      await prisma.higienizacaoHortifrutiOpcao.delete({ where: { id: optionId } });
     }
 
-    await prisma.higienizacaoHortifrutiOpcao.delete({ where: { id: optionId } });
-
     revalidatePath(MODULE_PATH);
-    redirectWithFeedback(returnTo, "success", "Opção Excluída com Sucesso.");
+    revalidatePath(`${MODULE_PATH}/opcoes`);
+    redirectWithFeedback(returnTo, "success", usageCount > 0
+      ? "Opção inativada. Os registros históricos foram preservados."
+      : "Opção Excluída com Sucesso.");
   } catch (error) {
     rethrowIfRedirectError(error);
     redirectWithFeedback(

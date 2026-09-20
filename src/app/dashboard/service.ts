@@ -646,7 +646,7 @@ function isOperationalTemperatureRecord(record: {
   return record.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
 }
 
-function oilStatusLabel(status: StatusQualidadeOleo): DashboardNormalizedStatus {
+function oilStatusLabel(status: StatusQualidadeOleo | null): DashboardNormalizedStatus {
   if (
     status === StatusQualidadeOleo.DESCARTAR ||
     status === StatusQualidadeOleo.ULTIMA_UTILIZACAO

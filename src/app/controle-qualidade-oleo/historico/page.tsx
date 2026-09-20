@@ -61,7 +61,7 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
   return null;
 }
 
-function isOilAlert(registro: { status: StatusQualidadeOleo; temperaturaCritica: boolean }): boolean {
+function isOilAlert(registro: { status: StatusQualidadeOleo | null; temperaturaCritica: boolean }): boolean {
   return (
     registro.temperaturaCritica ||
     registro.status === StatusQualidadeOleo.ATENCAO ||

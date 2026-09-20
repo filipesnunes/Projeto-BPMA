@@ -20,10 +20,11 @@ export function parseOptionType(value: string): TipoOpcaoHigienizacao | null {
 }
 
 export async function getCatalogOptionNames(
-  tipo: TipoOpcaoHigienizacao
+  tipo: TipoOpcaoHigienizacao,
+  onlyActive = true
 ): Promise<string[]> {
   const options = await prisma.higienizacaoHortifrutiOpcao.findMany({
-    where: { tipo },
+    where: { tipo, ...(onlyActive ? { ativo: true } : {}) },
     orderBy: { nome: "asc" },
     select: { nome: true }
   });
@@ -54,7 +55,7 @@ export async function hasCatalogOptionWithSameName(
   inputName: string
 ): Promise<boolean> {
   const normalizedInputName = normalizeOption(inputName);
-  const options = await getCatalogOptionNames(tipo);
+  const options = await getCatalogOptionNames(tipo, false);
 
   return options.some((option) => normalizeOption(option) === normalizedInputName);
 }

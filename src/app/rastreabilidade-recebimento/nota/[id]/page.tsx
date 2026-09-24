@@ -225,6 +225,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
     unidadeMedidaCompra: item.unidadeMedidaCompra ?? "",
     lote: item.lote ?? "",
     dataFabricacao: item.dataFabricacao ? formatDateInput(item.dataFabricacao) : "",
+    semDataFabricacao: item.semDataFabricacao,
     dataValidade: item.dataValidade ? formatDateInput(item.dataValidade) : "",
     validadeNaoAplicavel: item.validadeNaoAplicavel,
     sif: formatSifDisplayValue(item.sif, ""),

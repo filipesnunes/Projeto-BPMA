@@ -60,6 +60,7 @@ export function ManualNoteForm({
 }: ManualNoteFormProps) {
   const [state, formAction] = useActionState(createManualNoteStateAction, INITIAL_STATE);
   const [validadeNaoAplicavel, setValidadeNaoAplicavel] = useState(false);
+  const [semDataFabricacao, setSemDataFabricacao] = useState(false);
   const [dataFabricacao, setDataFabricacao] = useState("");
   const [dataValidade, setDataValidade] = useState("");
   const [temperaturaTipo, setTemperaturaTipo] = useState<TemperaturaTipo>("NUMERICA");
@@ -93,20 +94,35 @@ export function ManualNoteForm({
         Lote *
         <input type="text" name="lote" required className={inputClassName} />
       </label>
-      <label className="text-sm text-slate-700 dark:text-slate-200">
-        Data de Fabricação *
+      <div className="text-sm text-slate-700 dark:text-slate-200">
+        <p>Data de Fabricação *</p>
         <input
           type="date"
           name="dataFabricacao"
-          value={dataFabricacao}
+          value={semDataFabricacao ? "" : dataFabricacao}
           onChange={(event) => {
             const value = event.currentTarget.value;
             setDataFabricacao(value);
           }}
-          required
+          required={!semDataFabricacao}
+          disabled={semDataFabricacao}
           className={state.invalidField === "dataFabricacao" ? errorInputClass : inputClassName}
         />
-      </label>
+        <label className="mt-2 flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <input
+            type="checkbox"
+            name="semDataFabricacao"
+            value="true"
+            checked={semDataFabricacao}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              setSemDataFabricacao(checked);
+              if (checked) setDataFabricacao("");
+            }}
+          />
+          Produto sem data de fabricação
+        </label>
+      </div>
       <div className="text-sm text-slate-700 dark:text-slate-200">
         <p>Validade *</p>
         <input

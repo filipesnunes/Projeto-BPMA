@@ -22,6 +22,7 @@ import { RECEBIMENTO_ORIENTACOES } from "./options";
 import { XmlImportForm } from "./xml-import-form";
 import {
   formatDateDisplay,
+  formatManufacturingDateDisplay,
   formatDateInput,
   getCurrentSystemDateTime,
   getMonthYear,
@@ -761,7 +762,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                       <td className="px-3 py-2">{item.nota?.notaFiscal ?? item.notaFiscal}</td>
                       <td className="px-3 py-2">{item.lote || "-"}</td>
                       <td className="px-3 py-2">
-                        {item.dataFabricacao ? formatDateDisplay(item.dataFabricacao) : "-"}
+                        {formatManufacturingDateDisplay(item.dataFabricacao, item.semDataFabricacao)}
                       </td>
                       <td className="px-3 py-2">
                         {item.validadeNaoAplicavel

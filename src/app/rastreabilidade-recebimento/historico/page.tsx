@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 
 import {
   formatDateDisplay,
+  formatManufacturingDateDisplay,
   formatTemperatureDisplay,
   getMonthDateRange,
   getYearDateRange,
@@ -451,7 +452,7 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
                           <td className="px-3 py-2">{item.produto}</td>
                           <td className="px-3 py-2">{item.lote ?? "-"}</td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {item.dataFabricacao ? formatDateDisplay(item.dataFabricacao) : "-"}
+                            {formatManufacturingDateDisplay(item.dataFabricacao, item.semDataFabricacao)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             {item.dataValidade ? formatDateDisplay(item.dataValidade) : "-"}

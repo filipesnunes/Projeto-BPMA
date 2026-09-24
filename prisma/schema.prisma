@@ -686,6 +686,7 @@ model RastreabilidadeRecebimentoRegistro {
   notaFiscal              String
   lote                    String?
   dataFabricacao          DateTime?                            @db.Date
+  semDataFabricacao        Boolean                              @default(false)
   dataValidade            DateTime?                            @db.Date
   validadeNaoAplicavel    Boolean                              @default(false)
   sif                     String?

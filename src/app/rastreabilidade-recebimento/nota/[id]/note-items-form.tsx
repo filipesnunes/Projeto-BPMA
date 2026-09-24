@@ -30,6 +30,7 @@ export type NoteItemFormRow = {
   unidadeMedidaCompra: string;
   lote: string;
   dataFabricacao: string;
+  semDataFabricacao: boolean;
   dataValidade: string;
   validadeNaoAplicavel: boolean;
   sif: string;
@@ -186,6 +187,9 @@ export function NoteItemsForm({
       rows.map((item) => [`item-${item.id}`, normalizeDateInputValue(item.dataFabricacao)])
     )
   );
+  const [semDataFabricacaoRows, setSemDataFabricacaoRows] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(rows.map((item) => [`item-${item.id}`, item.semDataFabricacao ?? false]))
+  );
   const [temperaturaTipoValues, setTemperaturaTipoValues] = useState<
     Record<string, TemperaturaTipo>
   >(() =>
@@ -260,6 +264,8 @@ export function NoteItemsForm({
                   dataValidadeValues[rowKey] ?? normalizeDateInputValue(item.dataValidade);
                 const dataFabricacaoValue =
                   dataFabricacaoValues[rowKey] ?? normalizeDateInputValue(item.dataFabricacao);
+                const semDataFabricacao =
+                  semDataFabricacaoRows[rowKey] ?? item.semDataFabricacao ?? false;
                 const temperaturaTipo =
                   temperaturaTipoValues[rowKey] ?? item.temperaturaTipo;
                 const temperaturaValue = temperaturaValues[rowKey] ?? String(item.temperatura ?? "");
@@ -342,7 +348,7 @@ export function NoteItemsForm({
                       <input
                         type="date"
                         name={`${rowKey}-dataFabricacao`}
-                        value={dataFabricacaoValue}
+                        value={semDataFabricacao ? "" : dataFabricacaoValue}
                         onChange={(event) => {
                           const value = event.currentTarget.value;
                           setDataFabricacaoValues((current) => ({
@@ -350,12 +356,29 @@ export function NoteItemsForm({
                             [rowKey]: normalizeDateInputValue(value)
                           }));
                         }}
-                        required
-                        disabled={readOnlyMode}
+                        required={!semDataFabricacao}
+                        disabled={readOnlyMode || semDataFabricacao}
                         className={`${inputClassName} ${DATE_INPUT_CLASS} ${
                           invalidDataFabricacao ? FIELD_ERROR_CLASS : ""
                         }`}
                       />
+                      <label className="mt-2 flex items-start gap-2 text-[11px] leading-4 text-slate-600 dark:text-slate-300">
+                        <input
+                          type="checkbox"
+                          name={`${rowKey}-semDataFabricacao`}
+                          value="true"
+                          checked={semDataFabricacao}
+                          disabled={readOnlyMode}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked;
+                            setSemDataFabricacaoRows((current) => ({ ...current, [rowKey]: checked }));
+                            if (checked) {
+                              setDataFabricacaoValues((current) => ({ ...current, [rowKey]: "" }));
+                            }
+                          }}
+                        />
+                        {readOnlyMode && semDataFabricacao ? "Sem data de fabricação" : "Produto sem data de fabricação"}
+                      </label>
                     </td>
                     <td className={DATE_TABLE_CELL_CLASS}>
                       <span className={MOBILE_FIELD_LABEL_CLASS}>Validade *</span>

@@ -161,7 +161,8 @@ function formatTemperature(
 
 function formatLoteFabricacao(
   lote: string | null,
-  dataFabricacao: Date | null
+  dataFabricacao: Date | null,
+  semDataFabricacao = false
 ): string {
   const parts: string[] = [];
   const normalizedLote = lote?.trim();
@@ -170,7 +171,9 @@ function formatLoteFabricacao(
     parts.push(`Lote: ${normalizedLote}`);
   }
 
-  if (dataFabricacao) {
+  if (semDataFabricacao) {
+    parts.push("Sem data de fabricação");
+  } else if (dataFabricacao) {
     parts.push(`Fab.: ${formatAppDate(dataFabricacao)}`);
   }
 
@@ -665,6 +668,7 @@ export async function GET(request: NextRequest) {
         notaFiscal: true,
         lote: true,
         dataFabricacao: true,
+        semDataFabricacao: true,
         sif: true,
         dataValidade: true,
         validadeNaoAplicavel: true,
@@ -744,7 +748,7 @@ export async function GET(request: NextRequest) {
         data: formatAppDate(record.data),
         produto: valueOrDash(record.produto),
         nf: valueOrDash(record.notaFiscal || record.nota?.notaFiscal),
-        loteFabricacao: formatLoteFabricacao(record.lote, record.dataFabricacao),
+        loteFabricacao: formatLoteFabricacao(record.lote, record.dataFabricacao, record.semDataFabricacao),
         sif: formatSifDisplayValue(record.sif),
         validade: formatValidity(record.dataValidade, record.validadeNaoAplicavel),
         quantidade: formatQuantity(record),

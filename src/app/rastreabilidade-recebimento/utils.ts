@@ -114,6 +114,14 @@ export function formatOptionalDateDisplay(date: Date | null): string {
   return date ? formatDateDisplay(date) : "-";
 }
 
+export function formatManufacturingDateDisplay(
+  date: Date | null | undefined,
+  semDataFabricacao = false
+): string {
+  if (semDataFabricacao) return "Sem data de fabricação";
+  return date ? formatDateDisplay(date) : "-";
+}
+
 export function formatDateTimeDisplay(date: Date | null | undefined): string {
   if (!isValidDateValue(date)) {
     return "Data inválida";

@@ -137,6 +137,7 @@ type ItemInputValues = {
   produto: string;
   lote: string;
   dataFabricacao: string;
+  semDataFabricacao: boolean;
   dataValidade: string;
   validadeNaoAplicavel: boolean;
   sif: string;
@@ -152,7 +153,8 @@ type ItemInputValues = {
 type ValidatedItemPayload = {
   produto: string;
   lote: string;
-  dataFabricacao: Date;
+  dataFabricacao: Date | null;
+  semDataFabricacao: boolean;
   dataValidade: Date | null;
   validadeNaoAplicavel: boolean;
   sif: string;
@@ -472,7 +474,9 @@ function validateAndBuildItemPayload(
     throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
   }
 
-  const dataFabricacao = parseRequiredDate(input.dataFabricacao, "Data de Fabricação");
+  const dataFabricacao = input.semDataFabricacao
+    ? null
+    : parseRequiredDate(input.dataFabricacao, "Data de Fabricação");
   const dataValidade = input.validadeNaoAplicavel
     ? null
     : parseRequiredDate(input.dataValidade, "Validade");
@@ -531,6 +535,7 @@ function validateAndBuildItemPayload(
     produto: input.produto,
     lote: input.lote,
     dataFabricacao,
+    semDataFabricacao: input.semDataFabricacao,
     dataValidade,
     validadeNaoAplicavel: input.validadeNaoAplicavel,
     sif: sifValue,
@@ -730,6 +735,7 @@ async function createManualNoteFromForm(formData: FormData): Promise<number> {
       produto: getInputValue(formData, "produto"),
       lote: getInputValue(formData, "lote"),
       dataFabricacao: getInputValue(formData, "dataFabricacao"),
+      semDataFabricacao: getBooleanInput(formData, "semDataFabricacao"),
       dataValidade: getInputValue(formData, "dataValidade"),
       validadeNaoAplicavel: getBooleanInput(formData, "validadeNaoAplicavel"),
       sif: getInputValue(formData, "sif"),
@@ -843,6 +849,7 @@ export async function saveNotaItemsAction(formData: FormData) {
           produto: produtoInput,
           lote: getItemInputValue(formData, item.id, "lote"),
           dataFabricacao: getItemInputValue(formData, item.id, "dataFabricacao"),
+          semDataFabricacao: getItemBooleanInput(formData, item.id, "semDataFabricacao"),
           dataValidade: getItemInputValue(formData, item.id, "dataValidade"),
           validadeNaoAplicavel: getItemBooleanInput(formData, item.id, "validadeNaoAplicavel"),
           sif: getItemInputValue(formData, item.id, "sif"),
@@ -949,6 +956,7 @@ export async function saveNotaItemsStateAction(
             produto: produtoInput,
             lote: getItemInputValue(formData, item.id, "lote"),
             dataFabricacao: getItemInputValue(formData, item.id, "dataFabricacao"),
+            semDataFabricacao: getItemBooleanInput(formData, item.id, "semDataFabricacao"),
             dataValidade: getItemInputValue(formData, item.id, "dataValidade"),
             validadeNaoAplicavel: getItemBooleanInput(formData, item.id, "validadeNaoAplicavel"),
             sif: getItemInputValue(formData, item.id, "sif"),
@@ -1066,6 +1074,7 @@ export async function finalizeNotaAction(formData: FormData) {
           produto: item.produto,
           lote: item.lote ?? "",
           dataFabricacao: item.dataFabricacao ? formatDateInput(item.dataFabricacao) : "",
+          semDataFabricacao: item.semDataFabricacao,
           dataValidade: item.dataValidade ? formatDateInput(item.dataValidade) : "",
           validadeNaoAplicavel: item.validadeNaoAplicavel,
           sif: item.sif ?? "",

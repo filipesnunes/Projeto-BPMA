@@ -1,3 +1,5 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import type { OperationalSignatureModuleCode } from "@/lib/module-signatures";
 import {
   ConformidadeRecebimento,
   OrigemChamadoManutencao,
@@ -1602,7 +1604,7 @@ async function buildWeeklyCleaningStats(
   return stats;
 }
 
-async function buildMonthlyClosingCard(params: {
+export async function buildMonthlyClosingCard(params: {
   range: DateOnlyRange;
 }): Promise<DashboardSummaryCard> {
   const completedDetails: DashboardDetailItem[] = [];
@@ -1737,7 +1739,10 @@ async function buildMonthlyClosingCard(params: {
       }
     ];
 
-    for (const item of closureModules) {
+    const moduleCodes: OperationalSignatureModuleCode[] = ["hortifruti", "temperatura", "oleo", "rastreabilidade", "limpeza_diaria", "limpeza_semanal", "amostras"];
+    const monthStates = await Promise.all(moduleCodes.map(code => isOperationalMonthClosed(code, month.mes, month.ano)));
+    for (const [index, item] of closureModules.entries()) {
+      item.status = monthStates[index] ? "ASSINADO" : "ABERTO";
       totalClosures += 1;
       const detail: DashboardDetailItem = {
         id: `${item.id}:${monthLabel}`,

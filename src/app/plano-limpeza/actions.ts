@@ -1,8 +1,9 @@
 "use server";
 
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
 import {
   Prisma,
-  StatusFechamentoPlanoLimpeza,
   StatusPlanoLimpeza,
   TipoPlanoLimpeza
 } from "@prisma/client";
@@ -21,7 +22,7 @@ import {
 } from "@/lib/authz";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
   consolidateWeeklyExecutionsByAreaWeek,
@@ -227,11 +228,7 @@ function revalidateModulePaths() {
 }
 
 async function isMonthSigned(tipo: TipoPlanoLimpeza, mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.planoLimpezaFechamento.findUnique({
-    where: { tipo_mes_ano: { tipo, mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoPlanoLimpeza.ASSINADO;
+  return isOperationalMonthClosed(tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano);
 }
 
 function ensureNonEmpty(value: string, label: string) {
@@ -2190,11 +2187,12 @@ async function closeMonthByType(params: {
     const mes = parsePositiveInt(getInputValue(params.formData, "mes"));
     const ano = parsePositiveInt(getInputValue(params.formData, "ano"));
     const senhaConfirmacao = getInputValue(params.formData, "senhaConfirmacao");
-    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
+
+    await assertNotReopenedMonth(params.tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano);
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
@@ -2208,29 +2206,7 @@ async function closeMonthByType(params: {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await prisma.planoLimpezaFechamento.upsert({
-      where: { tipo_mes_ano: { tipo: params.tipo, mes, ano } },
-      create: {
-        tipo: params.tipo,
-        mes,
-        ano,
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoPlanoLimpeza.ASSINADO
-      },
-      update: {
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoPlanoLimpeza.ASSINADO
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: params.tipo === TipoPlanoLimpeza.DIARIO ? "plano-limpeza/diario" : "plano-limpeza/semanal",
-      referenciaId: `${params.tipo}-${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: params.tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

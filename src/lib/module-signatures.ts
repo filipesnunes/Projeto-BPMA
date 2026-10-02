@@ -50,7 +50,7 @@ export type OperationalSignatureModuleCode = keyof typeof OPERATIONAL_SIGNATURE_
 export function isOperationalSignatureModuleCode(
   value: string
 ): value is OperationalSignatureModuleCode {
-  return value in OPERATIONAL_SIGNATURE_MODULES;
+  return Object.hasOwn(OPERATIONAL_SIGNATURE_MODULES, value);
 }
 
 export function getOperationalSignatureModule(code: string) {

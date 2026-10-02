@@ -41,12 +41,13 @@ function matches(row, where = {}) {
     if (key === 'OR') return value.some((clause) => matches(row, clause));
     if (key === 'AND') return (Array.isArray(value) ? value : [value]).every((clause) => matches(row, clause));
     if (key === 'NOT') return !matches(row, value);
-    if (key === 'mes_ano') return row.mes === value.mes && row.ano === value.ano;
+    if (['mes_ano','tipo_mes_ano','moduloCodigo_ano_mes'].includes(key)) return matches(row,value);
     if (value instanceof Date) return +row[key] === +value;
     if (value && typeof value === 'object') {
       if ('not' in value && row[key] === value.not) return false;
       if ('gte' in value && row[key] < value.gte) return false;
       if ('lte' in value && row[key] > value.lte) return false;
+      if ('lt' in value && row[key] >= value.lt) return false;
       if ('equals' in value && String(row[key]).toLowerCase() !== String(value.equals).toLowerCase()) return false;
       if ('in' in value && !value.in.includes(row[key])) return false;
       if ('contains' in value && !String(row[key]).toLowerCase().includes(value.contains.toLowerCase())) return false;
@@ -61,6 +62,8 @@ function selected(row, select) {
     value === true ? row[key] : selected(row[key], value.select)]));
 }
 const prisma = new Proxy({}, { get(_target, model) {
+  if(model === '$executeRaw') return async()=>[];
+  if(model === '$transaction') return async(callback)=>callback(prisma);
   const rows = tables[model] ??= [];
   const find = (args = {}) => {
     queries.push({ model, ...args });
@@ -250,6 +253,7 @@ async function main() {
   await action(oil.closeMonthAction,{mes:period.mes,ano:period.ano,senhaConfirmacao:'test'});
   await action(oil.createRegistroAction,{temperatura:170},'error');
   tables.controleQualidadeOleoFechamento = [];
+  tables.fechamentoMensalModulo = []; // Reset the active generic closure only in this isolated fixture.
   for (const rule of oilRules) {
     await action(oil.createRegistroAction,{temperatura:170,fitaOleo:rule.rotulo});
     assert.equal(tables.controleQualidadeOleoRegistro.at(-1).status,rule.statusAssociado);

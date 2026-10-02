@@ -407,11 +407,15 @@ model FechamentoMensalModulo {
   mes                   Int
   usuarioId             Int?
   usuarioNomeSnapshot   String
-  usuarioPerfilSnapshot PerfilUsuario
+  usuarioPerfilSnapshot PerfilUsuario?
   assinadoEm            DateTime      @default(now())
   indicadoresSnapshot   Json?
   observacao            String?       @db.Text
   criadoEm              DateTime      @default(now())
+  status                String        @default("FECHADO")
+  reabertoEm            DateTime?
+  reabertoPorUsuarioId  Int?
+  reabertoPorNome       String?
 
   @@unique([moduloCodigo, ano, mes])
   @@index([moduloCodigo, ano, mes])

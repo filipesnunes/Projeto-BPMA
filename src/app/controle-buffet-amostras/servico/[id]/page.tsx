@@ -1,6 +1,6 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import {
   ClassificacaoItemBuffetAmostra,
-  StatusFechamentoBuffetAmostra,
   StatusItemBuffetAmostra
 } from "@prisma/client";
 import Link from "next/link";
@@ -135,10 +135,7 @@ export default async function ExecucaoServicoBuffetPage({
   const servicoPrevistoNaData = isServicoDisponivelNaData(servico, dataReferencia);
 
   const period = getMonthYear(dataReferencia);
-  const fechamento = await prisma.controleBuffetAmostraFechamento.findUnique({
-    where: { mes_ano: { mes: period.mes, ano: period.ano } }
-  });
-  const fechamentoAssinado = fechamento?.status === StatusFechamentoBuffetAmostra.ASSINADO;
+  const fechamentoAssinado = await isOperationalMonthClosed("amostras", period.mes, period.ano);
 
   const registrosByItemId = new Map<number, (typeof registros)[number]>();
   const registrosExtras = registros.filter((registro) => registro.itemExtra);

@@ -153,7 +153,7 @@ export default async function ControleTemperaturaHistoricoPage({
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: selectedYear,

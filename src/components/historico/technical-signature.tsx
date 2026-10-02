@@ -1,7 +1,9 @@
 import { formatAppDateTime } from "@/lib/date-time";
 import { getCurrentUser } from "@/lib/auth-session";
 import { findLegacyMonthlyClosure } from "@/lib/monthly-reopening";
-import { ReopenMonthForm } from "./reopen-month-form";
+import Link from "next/link";
+import { prisma } from "@/lib/prisma";
+import { canViewMonthlyPeriods, monthlyPeriodsPath } from "@/lib/monthly-period-permissions";
 import type { OperationalSignatureModuleCode } from "@/lib/module-signatures";
 import { getRoleLabel, type UserRole } from "@/lib/rbac";
 
@@ -12,7 +14,7 @@ import {
 
 type SignatureInfo = {
   usuarioNomeSnapshot: string;
-  usuarioPerfilSnapshot: UserRole;
+  usuarioPerfilSnapshot: UserRole | null;
   assinadoEm: Date;
   observacao?: string | null;
 } | null;
@@ -37,7 +39,7 @@ export function SupervisorSignatureStatus({
       </span>
       <p>{signature.usuarioNomeSnapshot}</p>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        {getRoleLabel(signature.usuarioPerfilSnapshot)} em {formatAppDateTime(signature.assinadoEm)}
+        {signature.usuarioPerfilSnapshot ? getRoleLabel(signature.usuarioPerfilSnapshot) : "Perfil não informado"} em {formatAppDateTime(signature.assinadoEm)}
       </p>
     </div>
   );
@@ -115,6 +117,8 @@ export async function MonthlyClosureSection({
   const user = await getCurrentUser();
   const legacy = !signedClosure ? await findLegacyMonthlyClosure(moduleCode, month, year) : null;
   const isClosed = Boolean(signedClosure) || legacy?.status === "ASSINADO";
+  const state = await prisma.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes: month, ano: year } } });
+  const reopened = state?.status === "REABERTO";
 
   return (
     <section id="fechamento-mensal" className="bpma-card">
@@ -130,12 +134,12 @@ export async function MonthlyClosureSection({
         <SupervisorSignatureStatus signature={signedClosure} />
       </div>
 
-      <p className="mt-3 text-sm font-medium">{isClosed ? "Período fechado" : "Período aberto"}</p>
+      <p className="mt-3 text-sm font-medium">{reopened ? "Período reaberto" : isClosed ? "Período fechado" : "Período aberto normalmente"}</p>
       {!signedClosure && legacy?.status === "ASSINADO" ? (
         <p className="text-sm">Fechamento assinado por {legacy.responsavelTecnico} em {formatAppDateTime(legacy.dataAssinatura)}.</p>
       ) : null}
-      {isClosed && user?.perfil === "DEV" ? (
-        <div className="mt-3"><ReopenMonthForm moduleCode={moduleCode} month={month} year={year} returnTo={returnTo} /></div>
+      {user && canViewMonthlyPeriods(user, moduleCode) ? (
+        <div className="mt-3"><Link href={monthlyPeriodsPath(moduleCode)} className="btn-secondary">Gerenciar Períodos</Link></div>
       ) : null}
 
       <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -149,7 +153,7 @@ export async function MonthlyClosureSection({
         ))}
       </dl>
 
-      {!isClosed && canSign ? (
+      {!isClosed && !reopened && canSign ? (
         <form action={signModuleMonthlyClosureAction} className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
           <input type="hidden" name="moduloCodigo" value={moduleCode} />
           <input type="hidden" name="mes" value={month} />

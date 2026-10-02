@@ -1,4 +1,5 @@
-import { StatusFechamentoPlanoLimpeza, StatusPlanoLimpeza, TipoPlanoLimpeza } from "@prisma/client";
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import { StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
 import { SignatureContextCard } from "@/components/auth/signature-context-card";
@@ -92,15 +93,7 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
       },
       orderBy: [{ turno: "asc" }, { area: "asc" }]
     }),
-    prisma.planoLimpezaFechamento.findUnique({
-      where: {
-        tipo_mes_ano: {
-          tipo: TipoPlanoLimpeza.DIARIO,
-          mes: getMonthYear(dateDb).mes,
-          ano: getMonthYear(dateDb).ano
-        }
-      }
-    }),
+    isOperationalMonthClosed("limpeza_diaria", getMonthYear(dateDb).mes, getMonthYear(dateDb).ano),
     prisma.planoLimpezaDiarioArea.findMany({
       select: {
         nome: true,
@@ -112,7 +105,7 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
     areaConfigs.map((item) => [item.nome, item.detalhamentoLimpeza])
   );
 
-  const periodClosed = fechamento?.status === StatusFechamentoPlanoLimpeza.ASSINADO;
+  const periodClosed = fechamento;
   const summary = consolidateDailyRecordsByDay(registros, formatDateInput)[0];
   const normalizedDate = formatDateInput(dateDb);
   const returnTo = `/plano-limpeza/diario/historico/dia/${encodeURIComponent(normalizedDate)}`;

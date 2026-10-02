@@ -1,9 +1,10 @@
 "use server";
 
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
 import {
   StatusQualidadeOleo,
-  StatusFechamentoQualidadeOleo
-} from "@prisma/client";
+  } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
@@ -16,7 +17,7 @@ import {
 } from "@/lib/authz";
 import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
   findOilOptionByLabel,
@@ -126,11 +127,7 @@ function revalidateModulePaths() {
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.controleQualidadeOleoFechamento.findUnique({
-    where: { mes_ano: { mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoQualidadeOleo.ASSINADO;
+  return isOperationalMonthClosed("oleo", mes, ano);
 }
 
 async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
@@ -392,11 +389,12 @@ export async function closeMonthAction(formData: FormData) {
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
+
+    await assertNotReopenedMonth("oleo", mes, ano);
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
@@ -418,27 +416,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await prisma.controleQualidadeOleoFechamento.upsert({
-      where: { mes_ano: { mes, ano } },
-      create: {
-        mes,
-        ano,
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoQualidadeOleo.ASSINADO
-      },
-      update: {
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoQualidadeOleo.ASSINADO
-      }
-    });
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: "controle-qualidade-oleo",
-      referenciaId: `${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

@@ -1,4 +1,5 @@
-import { ModuloDocumento, StatusFechamentoBuffetAmostra, StatusItemBuffetAmostra } from "@prisma/client";
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import { ModuloDocumento,  StatusItemBuffetAmostra } from "@prisma/client";
 import Link from "next/link";
 
 import { DocumentosModuleHeader } from "@/components/documentos/documentos-module-header";
@@ -76,9 +77,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
         status: true
       }
     }),
-    prisma.controleBuffetAmostraFechamento.findUnique({
-      where: { mes_ano: { mes: currentPeriod.mes, ano: currentPeriod.ano } }
-    })
+    isOperationalMonthClosed("amostras", currentPeriod.mes, currentPeriod.ano)
   ]);
 
   const registrosPorServico = new Map<number, typeof registrosDia>();
@@ -129,8 +128,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
     };
   });
 
-  const fechamentoDiaAssinado =
-    fechamentoDiaAtual?.status === StatusFechamentoBuffetAmostra.ASSINADO;
+  const fechamentoDiaAssinado = fechamentoDiaAtual;
   return (
     <div className="space-y-6 dark:text-slate-100">
       <DocumentosModuleHeader

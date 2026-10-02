@@ -121,7 +121,7 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
       orderBy: [{ data: "desc" }, { inicioProcesso: "asc" }]
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: selectedYear,

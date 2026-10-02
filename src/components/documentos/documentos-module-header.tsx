@@ -12,6 +12,9 @@ import {
 } from "@/lib/documentos-tecnicos";
 import { formatAppDate } from "@/lib/date-time";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth-session";
+import { OPERATIONAL_SIGNATURE_MODULES } from "@/lib/module-signatures";
+import { canViewMonthlyPeriods, monthlyPeriodsPath } from "@/lib/monthly-period-permissions";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -116,6 +119,8 @@ export async function DocumentosModuleHeader({
   const modalAberto = firstParam(searchParams.documentos) === "1";
   const anexosHref = buildHeaderHref(modulePath, searchParams, true);
   const fecharHref = buildHeaderHref(modulePath, searchParams, false);
+  const periodModule = Object.values(OPERATIONAL_SIGNATURE_MODULES).find(config => config.historyPath.replace(/\/historico$/, "") === modulePath);
+  const periodUser = periodModule ? await getCurrentUser() : null;
 
   const [documentos, configuracao] = await Promise.all([
     prisma.documentoTecnicoAnexo.findMany({
@@ -168,6 +173,9 @@ export async function DocumentosModuleHeader({
           Ações do módulo
         </h2>
         <div className="btn-group">
+          {periodModule && periodUser && canViewMonthlyPeriods(periodUser, periodModule.codigo) ? (
+            <Link href={monthlyPeriodsPath(periodModule.codigo)} className="btn-secondary">Gerenciar Períodos</Link>
+          ) : null}
           {managementHref ? (
             <Link href={managementHref} className="btn-secondary">
               {managementLabel}

@@ -129,7 +129,7 @@ async function main() {
   tables.planoLimpezaSemanalItem=[{id:1,area:'Cozinha sintética',oQueLimpar:'Bancada',ordem:1,ativo:true,excluidoEm:null}];
   tables.planoLimpezaSemanalExecucao=[{id:1,dataExecucao:day,area:'Cozinha sintética',itemId:1,itemDescricao:'Bancada',item:{oQueLimpar:'Bancada',ordem:1},status:'CONCLUIDO',assinaturaResponsavel:'Responsável sintético',assinaturaResponsavelNomeUsuario:'usuario-teste',assinaturaResponsavelDataHora:day,assinaturaSupervisor:'Supervisor sintético',assinaturaSupervisorNomeUsuario:'supervisor-teste',assinaturaSupervisorDataHora:day}];
   const moduleCodes=['limpeza_semanal','limpeza_diaria','temperatura','amostras','hortifruti','oleo','rastreabilidade'];
-  tables.fechamentoMensalModulo=moduleCodes.map((moduloCodigo,i)=>({id:i+1,moduloCodigo,mes:9,ano:2026,usuarioNomeSnapshot:'Supervisor sintético',assinadoEm:day}));
+  tables.fechamentoMensalModulo=moduleCodes.map((moduloCodigo,i)=>({id:i+1,moduloCodigo,mes:9,ano:2026,status:'FECHADO',usuarioNomeSnapshot:'Supervisor sintético',assinadoEm:day}));
   tables.assinaturaDiariaModulo=moduleCodes.map((moduloCodigo,i)=>({id:i+1,moduloCodigo,dataReferencia:day,usuarioNomeSnapshot:'Supervisor sintético'}));
   const logos = {};
   for(const [kind,width,height] of [['horizontal',800,160],['square',240,240],['vertical',100,600],['transparent',300,160]]) {
@@ -174,6 +174,12 @@ async function main() {
     }
   }
   assert.equal(JSON.stringify(Object.fromEntries(Object.entries(tables).filter(([name])=>name!=='personalizacaoVisual'))),operationalSnapshot,'Operational records and signatures unchanged');
+  for (const closure of tables.fechamentoMensalModulo) closure.status='REABERTO';
+  for (const module of reportModules) {
+    const html=await report(module);assert(html.includes('Reaberto'));
+    fs.writeFileSync(path.join(outputDir,`identity-${module}-reopened.html`),html);
+  }
+  for (const closure of tables.fechamentoMensalModulo) closure.status='FECHADO';
   for (const [module,reportId] of [['chamados-manutencao','chamados-periodo'],['geral','resumo-geral']]) {
     const tree=await load('src/app/relatorios/page.tsx').default({searchParams:Promise.resolve({module,report:reportId,generated:'1',mes:'9',ano:'2026'})});
     const result=elements(tree,node=>node.type?.name==='ReportResult')[0];assert(result);

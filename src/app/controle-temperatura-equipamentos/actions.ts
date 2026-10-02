@@ -1,11 +1,12 @@
 "use server";
 
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
 import { correctiveActionWithPersistence, previousScheduledShift } from "./persistence";
 import { formatAppDateInput, parseAppDateInput } from "@/lib/date-time";
 
 import {
   ModuloDocumento,
-  StatusFechamentoTemperaturaEquipamento,
   StatusOperacionalEquipamento,
   StatusTemperaturaEquipamento,
   TipoOpcaoTemperaturaEquipamento,
@@ -29,7 +30,7 @@ import {
 import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
 import { saveTemperatureEquipmentEvidenceImage } from "@/lib/local-image-storage";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
@@ -207,11 +208,7 @@ function ensureEquipmentSupportsShift(
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.controleTemperaturaEquipamentoFechamento.findUnique({
-    where: { mes_ano: { mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoTemperaturaEquipamento.ASSINADO;
+  return isOperationalMonthClosed("temperatura", mes, ano);
 }
 
 async function getRegistroPayload(formData: FormData, responsavelLogado: string, context: { data: Date; turno: TurnoTemperaturaEquipamento }) {
@@ -703,15 +700,15 @@ export async function closeMonthAction(formData: FormData) {
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
+    await assertNotReopenedMonth("temperatura", mes, ano);
+
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-    const dataAssinatura = getCurrentSystemDateTime();
 
     const signed = await isMonthSigned(mes, ano);
     if (signed) {
@@ -732,27 +729,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await prisma.controleTemperaturaEquipamentoFechamento.upsert({
-      where: { mes_ano: { mes, ano } },
-      create: {
-        mes,
-        ano,
-        responsavelTecnico,
-        dataAssinatura,
-        status: StatusFechamentoTemperaturaEquipamento.ASSINADO
-      },
-      update: {
-        responsavelTecnico,
-        dataAssinatura,
-        status: StatusFechamentoTemperaturaEquipamento.ASSINADO
-      }
-    });
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: "controle-temperatura-equipamentos",
-      referenciaId: `${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: "temperatura", mes, ano }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

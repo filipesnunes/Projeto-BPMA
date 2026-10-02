@@ -1,20 +1,21 @@
 "use server";
 
-import { StatusFechamentoHortifruti, TipoOpcaoHigienizacao } from "@prisma/client";
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
+import { TipoOpcaoHigienizacao } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
-  createSignatureLog,
   ensureCanCloseMonth,
   ensureCanDeleteOperationalRecords,
   ensureCanManageOptions,
   validateSignaturePassword
 } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
   findCatalogOptionByName,
@@ -23,7 +24,6 @@ import {
   sanitizeCatalogName
 } from "./catalog";
 import {
-  getCurrentSystemDateTime,
   calculateProcessEnd,
   getMonthDateRange,
   getMonthYear,
@@ -81,11 +81,7 @@ function redirectWithFeedback(
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.higienizacaoHortifrutiFechamento.findUnique({
-    where: { mes_ano: { mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoHortifruti.ASSINADO;
+  return isOperationalMonthClosed("hortifruti", mes, ano);
 }
 
 async function getRegistroPayload(formData: FormData, responsavelLogado: string, existing?: {
@@ -284,15 +280,15 @@ export async function closeMonthAction(formData: FormData) {
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
+    await assertNotReopenedMonth("hortifruti", mes, ano);
+
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-    const dataAssinatura = getCurrentSystemDateTime();
 
     const signed = await isMonthSigned(mes, ano);
     if (signed) {
@@ -313,27 +309,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await prisma.higienizacaoHortifrutiFechamento.upsert({
-      where: { mes_ano: { mes, ano } },
-      create: {
-        mes,
-        ano,
-        responsavelTecnico,
-        dataAssinatura,
-        status: StatusFechamentoHortifruti.ASSINADO
-      },
-      update: {
-        responsavelTecnico,
-        dataAssinatura,
-        status: StatusFechamentoHortifruti.ASSINADO
-      }
-    });
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: "higienizacao-hortifruti",
-      referenciaId: `${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: "hortifruti", mes, ano }, "legacy");
 
     revalidatePath(MODULE_PATH);
     redirectWithFeedback(
@@ -466,5 +442,4 @@ export async function deleteCatalogOptionAction(formData: FormData) {
     );
   }
 }
-
 

@@ -45,7 +45,7 @@ async function main() {
   try {
     for(const module of manifest.modules) {
       let baselinePages;
-      for(const kind of manifest.kinds) {
+      for(const kind of [...manifest.kinds, 'reopened']) {
         const name=`identity-${module}-${kind}`;
         await send('Emulation.setEmulatedMedia',{media:'screen'});
         await navigate(name+'.html');
@@ -73,7 +73,7 @@ async function main() {
         }
         results.push({module,kind,pages,logoEmbedded:kind!=='default'});
       }
-      console.log('PASS: '+module+' fallback + four logos, proportional/centered, PDF images/alpha, no overflow, unchanged pages.');
+      console.log('PASS: '+module+' fallback + four logos + reopened state, proportional/centered, PDF images/alpha, no overflow, unchanged pages.');
     }
     await navigate('identity-plano-limpeza-semanal-horizontal.html');
     const calls=await evaluate(`(async()=>{let calls=0;window.print=()=>calls++;document.querySelector('button').click();await new Promise(resolve=>setTimeout(resolve,100));return calls;})()`);

@@ -136,7 +136,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
       orderBy: [{ ativo: "desc" }, { ordem: "asc" }, { rotulo: "asc" }]
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: selectedYear,

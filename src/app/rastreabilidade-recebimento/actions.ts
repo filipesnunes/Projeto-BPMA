@@ -1,9 +1,10 @@
 "use server";
 
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
 import {
   Prisma,
   ConformidadeRecebimento,
-  StatusFechamentoRastreabilidadeRecebimento,
   StatusNotaRecebimento,
   StatusRecebimento,
   TipoTemperaturaRecebimento
@@ -14,7 +15,6 @@ import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction, type AuthenticatedUser } from "@/lib/auth-session";
 import {
-  createSignatureLog,
   ensureCanCloseMonth,
   ensureCanManageOptions,
   ensurePermission,
@@ -22,7 +22,7 @@ import {
 } from "@/lib/authz";
 import { canEditRecordDate, hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 import type { UserRole } from "@/lib/rbac";
 
 import {
@@ -35,7 +35,6 @@ import {
   calculateOverallStatus,
   calculateTemperatureStatus,
   formatDateInput,
-  getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
   getTodaySystemDate,
@@ -310,11 +309,7 @@ function revalidateModulePaths() {
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.rastreabilidadeRecebimentoFechamento.findUnique({
-    where: { mes_ano: { mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoRastreabilidadeRecebimento.ASSINADO;
+  return isOperationalMonthClosed("rastreabilidade", mes, ano);
 }
 
 function normalizeText(value: string): string {
@@ -1218,7 +1213,7 @@ export async function deleteNoteAction(formData: FormData) {
     const [legacyMonthSigned, monthlyClosure, dailySignature] = await Promise.all([
       isMonthSigned(period.mes, period.ano),
       prisma.fechamentoMensalModulo.findUnique({
-        where: {
+      where: { status: "FECHADO",
           moduloCodigo_ano_mes: {
             moduloCodigo: MODULE_CODE,
             ano: period.ano,
@@ -1276,11 +1271,12 @@ export async function closeMonthAction(formData: FormData) {
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const responsavelTecnico = actor.nomeCompleto;
 
     if (!mes || mes < 1 || mes > 12 || !ano) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
+
+    await assertNotReopenedMonth("rastreabilidade", mes, ano);
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
@@ -1315,27 +1311,7 @@ export async function closeMonthAction(formData: FormData) {
       );
     }
 
-    await prisma.rastreabilidadeRecebimentoFechamento.upsert({
-      where: { mes_ano: { mes, ano } },
-      create: {
-        mes,
-        ano,
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoRastreabilidadeRecebimento.ASSINADO
-      },
-      update: {
-        responsavelTecnico,
-        dataAssinatura: getCurrentSystemDateTime(),
-        status: StatusFechamentoRastreabilidadeRecebimento.ASSINADO
-      }
-    });
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: "rastreabilidade-recebimento",
-      referenciaId: `${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: "rastreabilidade", mes, ano }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

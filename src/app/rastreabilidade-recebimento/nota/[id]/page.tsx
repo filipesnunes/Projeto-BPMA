@@ -152,7 +152,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
       where: { mes_ano: { mes: period.mes, ano: period.ano } }
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: "rastreabilidade",
           ano: period.ano,

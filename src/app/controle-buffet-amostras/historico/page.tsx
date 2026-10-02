@@ -222,7 +222,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
       ]
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: selectedYear,
@@ -278,7 +278,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
             }
           }),
           prisma.fechamentoMensalModulo.findUnique({
-            where: {
+      where: { status: "FECHADO",
               moduloCodigo_ano_mes: {
                 moduloCodigo: MODULE_CODE,
                 ano: periodoRegistroParaEditar.ano,

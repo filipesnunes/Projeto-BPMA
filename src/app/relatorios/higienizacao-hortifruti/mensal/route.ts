@@ -1,3 +1,4 @@
+import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { APP_NAME } from "@/lib/app-branding";
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: year,
@@ -119,6 +120,7 @@ export async function GET(request: NextRequest) {
   ).length;
   const referenceMonthYear = formatMonthYear(month, year);
 
+  const reopenedLabel = await reopenedMonthlyReportLabel("hortifruti", month, year);
   const identity = await getReportIdentity();
   const report: MonthlySanitaryReport = {
     title: REPORT_TITLE,
@@ -147,7 +149,7 @@ export async function GET(request: NextRequest) {
       { label: "Total de dias pendentes de assinatura", value: pendingDailySignatures },
       {
         label: "Status do fechamento mensal",
-        value: monthlyClosure ? "Assinado digitalmente" : "Pendente de assinatura digital"
+        value: reopenedLabel ?? (monthlyClosure ? "Assinado digitalmente" : "Pendente de assinatura digital")
       },
       {
         label: "Responsável técnico no sistema",

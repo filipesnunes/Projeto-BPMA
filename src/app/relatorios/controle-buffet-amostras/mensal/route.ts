@@ -1,3 +1,4 @@
+import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
 import {
@@ -689,7 +690,7 @@ export async function GET(request: NextRequest) {
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: year,
@@ -721,6 +722,7 @@ export async function GET(request: NextRequest) {
     ])
   );
 
+  const reopenedLabel = await reopenedMonthlyReportLabel("amostras", month, year);
   const identity = await getReportIdentity();
   const report: MonthlyBuffetReport = {
     monthYearLabel: formatMonthYear(month, year),
@@ -730,7 +732,7 @@ export async function GET(request: NextRequest) {
     services: buildServiceTables(records, supervisorByDate),
     closureResponsible,
     closureDate,
-    closureStatus: closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura"
+    closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
   return new NextResponse(renderReportDocument(report), {

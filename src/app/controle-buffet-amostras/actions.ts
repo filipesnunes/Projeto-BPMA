@@ -1,5 +1,7 @@
 "use server";
 
+import { closeOperationalMonth } from "@/lib/monthly-periods";
+
 import {
   ClassificacaoItemBuffetAmostra,
   StatusFechamentoBuffetAmostra,
@@ -18,7 +20,7 @@ import {
 } from "@/lib/authz";
 import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
   findAcaoCorretivaByName,
@@ -174,11 +176,7 @@ function revalidateModulePaths(servicoId?: number) {
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
-  const fechamento = await prisma.controleBuffetAmostraFechamento.findUnique({
-    where: { mes_ano: { mes, ano } }
-  });
-
-  return fechamento?.status === StatusFechamentoBuffetAmostra.ASSINADO;
+  return isOperationalMonthClosed("amostras", mes, ano);
 }
 
 async function ensurePeriodIsOpen(date: Date) {
@@ -531,7 +529,7 @@ async function isHistoricalBuffetMonthClosed(date: Date): Promise<boolean> {
       where: { mes_ano: { mes: period.mes, ano: period.ano } }
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: "amostras",
           ano: period.ano,
@@ -1420,6 +1418,8 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para fechamento.");
     }
 
+    await assertNotReopenedMonth("amostras", mes, ano);
+
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     if (await isMonthSigned(mes, ano)) {
@@ -1453,30 +1453,8 @@ export async function closeMonthAction(formData: FormData) {
       );
     }
 
-    const dataAssinatura = getCurrentSystemDateTime();
 
-    await prisma.controleBuffetAmostraFechamento.upsert({
-      where: { mes_ano: { mes, ano } },
-      create: {
-        mes,
-        ano,
-        responsavelTecnico: actor.nomeCompleto,
-        dataAssinatura,
-        status: StatusFechamentoBuffetAmostra.ASSINADO
-      },
-      update: {
-        responsavelTecnico: actor.nomeCompleto,
-        dataAssinatura,
-        status: StatusFechamentoBuffetAmostra.ASSINADO
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: "controle-buffet-amostras",
-      referenciaId: `${mes}-${ano}`
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: "amostras", mes, ano }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

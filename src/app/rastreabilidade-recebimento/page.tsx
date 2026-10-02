@@ -245,7 +245,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
             select: { mes: true, ano: true }
           }),
           prisma.fechamentoMensalModulo.findMany({
-            where: {
+      where: { status: "FECHADO",
               moduloCodigo: "rastreabilidade",
               OR: notaPeriodos.map((period) => ({ mes: period.mes, ano: period.ano }))
             },
@@ -592,6 +592,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                   const exclusaoBloqueadaPorAssinatura =
                     mesesBloqueadosParaExclusao.has(`${notePeriod.mes}-${notePeriod.ano}`) ||
                     diasBloqueadosParaExclusao.has(formatDateInput(nota.data));
+                  const periodoFechado = mesesBloqueadosParaExclusao.has(`${notePeriod.mes}-${notePeriod.ano}`);
                   const podeExcluirNota =
                     podeExcluirNotas &&
                     !exclusaoBloqueadaPorAssinatura &&
@@ -629,7 +630,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                             href={`/rastreabilidade-recebimento/nota/${nota.id}`}
                             className="btn-action"
                           >
-                            {actionLabel}
+                            {periodoFechado ? "Consultar nota" : actionLabel}
                           </Link>
                           {podeExcluirNota ? (
                             <DeleteNoteModal formId={`delete-note-day-${nota.id}`} />

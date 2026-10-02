@@ -1,6 +1,5 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -14,6 +13,7 @@ import {
 } from "@/lib/module-signatures";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth } from "@/lib/monthly-reopening";
+import { closeOperationalMonth } from "@/lib/monthly-periods";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 type FeedbackType = "success" | "error";
@@ -69,22 +69,6 @@ function parseYear(value: string): number | null {
   return Number.isFinite(parsed) && parsed >= 2020 && parsed <= 2100 ? parsed : null;
 }
 
-function parseIndicatorsSnapshot(value: string): Prisma.InputJsonValue | null {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(value);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-
-    return parsed as Prisma.InputJsonValue;
-  } catch {
-    return null;
-  }
-}
 
 export async function reopenModuleMonthlyClosureAction(formData: FormData) {
   let returnTo = "/";
@@ -183,9 +167,6 @@ export async function signModuleMonthlyClosureAction(formData: FormData) {
     const ano = parseYear(getInputValue(formData, "ano"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
     const observacao = getInputValue(formData, "observacao");
-    const indicadoresSnapshot = parseIndicatorsSnapshot(
-      getInputValue(formData, "indicadoresSnapshot")
-    );
 
     if (!mes || !ano) {
       throw new Error("Informe mês e ano válidos para assinatura do fechamento.");
@@ -193,42 +174,7 @@ export async function signModuleMonthlyClosureAction(formData: FormData) {
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-    const existing = await prisma.fechamentoMensalModulo.findUnique({
-      where: {
-          moduloCodigo_ano_mes: {
-          moduloCodigo: moduleConfig.codigo,
-          ano,
-          mes
-        }
-      }
-    });
-
-    if (existing) {
-      throw new Error("Este fechamento mensal já foi assinado.");
-    }
-
-    const signedAt = getAppNow();
-    await prisma.fechamentoMensalModulo.create({
-      data: {
-        moduloCodigo: moduleConfig.codigo,
-        ano,
-        mes,
-        usuarioId: actor.id,
-        usuarioNomeSnapshot: actor.nomeCompleto,
-        usuarioPerfilSnapshot: actor.perfil,
-        assinadoEm: signedAt,
-        ...(indicadoresSnapshot ? { indicadoresSnapshot } : {}),
-        observacao: observacao || null
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "FECHAMENTO_MENSAL",
-      modulo: moduleConfig.codigo,
-      referenciaId: `${String(mes).padStart(2, "0")}/${ano}`,
-      observacao: observacao || "Fechamento mensal assinado pelo responsável técnico."
-    });
+    await closeOperationalMonth({ user: actor, moduleCode: moduleConfig.codigo, mes, ano, observacao });
 
     revalidatePath(moduleConfig.historyPath);
     revalidatePath(new URL(returnTo, "http://localhost").pathname);

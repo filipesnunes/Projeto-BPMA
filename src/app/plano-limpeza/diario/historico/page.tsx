@@ -162,7 +162,7 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
       orderBy: { area: "asc" }
     }),
     prisma.fechamentoMensalModulo.findUnique({
-      where: {
+      where: { status: "FECHADO",
         moduloCodigo_ano_mes: {
           moduloCodigo: MODULE_CODE,
           ano: selectedYear,

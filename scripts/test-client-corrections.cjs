@@ -132,7 +132,7 @@ async function main() {
   const rules = tables.controleTemperaturaCategoriaRegra = [
     {id:1,categoriaId:1,ordem:1,temperaturaMin:null,temperaturaMax:4,status:'CONFORME',acaoCorretiva:'Nenhuma ação necessária.',isActive:true},
     {id:2,categoriaId:1,ordem:2,temperaturaMin:5,temperaturaMax:8,status:'ALERTA',acaoCorretiva:warning,isActive:true},
-    {id:3,categoriaId:1,ordem:3,temperaturaMin:8.1,temperaturaMax:null,status:'CRITICO',acaoCorretiva:persistence.PERSISTENT_TEMPERATURE_ACTION,isActive:true}
+    {id:3,categoriaId:1,ordem:3,temperaturaMin:8.1,temperaturaMax:null,status:'CRITICO',acaoCorretiva:"Transferir insumos para outro equipamento e acionar manutenção.",isActive:true}
   ];
   tables.controleTemperaturaCategoriaParametro = [{id:1,categoria:'REFRIGERACAO',isActive:true}];
   tables.controleTemperaturaEquipamentoOpcao = ['A','B'].map((nome,i) => ({id:i+1,nome,tipo:'EQUIPAMENTO',categoriaEquipamento:'REFRIGERACAO',ativo:true,turnoManha:true,turnoTarde:true}));
@@ -148,7 +148,13 @@ async function main() {
   await action(tempActions.createRegistroAction,tempValues('A','TARDE',7));
   assert.equal(tables.controleTemperaturaEquipamento[0].acaoCorretiva,warning);
   assert.equal(tables.controleTemperaturaEquipamento[2].acaoCorretiva,persistence.PERSISTENT_TEMPERATURE_ACTION);
+  assert.equal(tables.controleTemperaturaEquipamento[2].status,'ALERTA');
+  assert(!/transferir insumos/i.test(tables.controleTemperaturaEquipamento[2].acaoCorretiva));
+  await action(tempActions.updateRegistroAction,{...tempValues('A','TARDE',9),id:3});
+  assert.equal(tables.controleTemperaturaEquipamento[2].status,'CRITICO');
+  assert.equal(tables.controleTemperaturaEquipamento[2].acaoCorretiva,rules[2].acaoCorretiva);
   await action(tempActions.updateRegistroAction,{...tempValues('A','TARDE',4),id:3});
+  assert.equal(tables.controleTemperaturaEquipamento[2].status,'CONFORME');
   assert.equal(tables.controleTemperaturaEquipamento[2].acaoCorretiva,'Nenhuma ação necessária.');
   await action(tempActions.updateRegistroAction,{...tempValues('A','TARDE',6),id:3});
   assert.equal(tables.controleTemperaturaEquipamento[2].acaoCorretiva,persistence.PERSISTENT_TEMPERATURE_ACTION);
@@ -160,20 +166,37 @@ async function main() {
   assert.equal(evaluate({shifts:['MANHA']},{turno:'MANHA'}),persistence.PERSISTENT_TEMPERATURE_ACTION);
   assert.equal(evaluate({shifts:['TARDE'],turno:'TARDE'}),persistence.PERSISTENT_TEMPERATURE_ACTION);
   assert.equal(evaluate({rule:rules[0]}),'Nenhuma ação necessária.');
+  assert.equal(evaluate({rule:rules[2]}),rules[2].acaoCorretiva);
   assert.equal(evaluate({rule:{...rules[1],acaoCorretiva:'Ajustar termostato.'}}),'Ajustar termostato.');
   tables.controleTemperaturaEquipamento = [
     {id:1,data:date('2026-09-01'),createdAt:new Date('2026-09-01T11:17:00Z'),turno:'MANHA',temperaturaAferida:6,acaoCorretiva:warning},
     {id:2,data:date('2026-09-01'),createdAt:new Date('2026-09-01T18:42:00Z'),turno:'TARDE',temperaturaAferida:7,acaoCorretiva:persistence.PERSISTENT_TEMPERATURE_ACTION},
     {id:3,data:date('2026-09-02'),createdAt:null,turno:'MANHA',temperaturaAferida:4},
     {id:4,data:date('2026-09-03'),createdAt:new Date('2026-09-10T12:00:00Z'),turno:'MANHA',temperaturaAferida:4},
-    {id:5,data:date('2026-09-04'),createdAt:new Date('2026-09-04T12:00:00Z'),turno:'MANHA',temperaturaAferida:null,statusOperacionalEquipamento:'MANUTENCAO'}
-  ].map(row=>({equipamento:'A',responsavel:'Responsável',statusOperacionalEquipamento:'EM_OPERACAO',...row}));
+    {id:5,data:date('2026-09-04'),createdAt:new Date('2026-09-04T12:00:00Z'),turno:'MANHA',temperaturaAferida:null,statusOperacionalEquipamento:'MANUTENCAO'},
+    {id:6,data:date('2026-09-05'),createdAt:new Date('2026-09-05T12:07:00Z'),turno:'MANHA',temperaturaAferida:9,status:'CRITICO',acaoCorretiva:rules[2].acaoCorretiva}
+  ].map(row=>({equipamento:'A',responsavel:'Responsável',statusOperacionalEquipamento:'EM_OPERACAO',
+    status:row.temperaturaAferida > 8 ? 'CRITICO' : row.temperaturaAferida > 4 ? 'ALERTA' : 'CONFORME',...row}));
   tables.assinaturaDiariaModulo = [{dataReferencia:date('2026-09-01'),moduloCodigo:'temperatura',usuarioNomeSnapshot:'Supervisor'}];
   const temperatureHtml = await report('controle-temperatura-equipamentos');
+  assert(temperatureHtml.includes(warning));
+  assert(temperatureHtml.includes(persistence.PERSISTENT_TEMPERATURE_ACTION));
+  assert(temperatureHtml.includes(rules[2].acaoCorretiva));
   assert(temperatureHtml.includes('08:17')); assert(temperatureHtml.includes('15:42')); assert(temperatureHtml.includes('Horário'));
   assert(temperatureHtml.includes('Em manutenção')); assert(!temperatureHtml.includes('<td>09:00</td>'));
   assert.match(temperatureHtml,/<td>4 °C<\/td>\s*<td>-<\/td>/);
   fs.writeFileSync(path.join(outputDir,'temperature-client.html'),temperatureHtml);
+  const temperatureHistory = await load('src/app/controle-temperatura-equipamentos/historico/page.tsx').default({
+    searchParams:Promise.resolve({dia:'2026-09-01',filtroMes:'9',filtroAno:'2026'})
+  });
+  assert(elements(temperatureHistory,node=>node.props?.children === warning).length > 0);
+  assert(elements(temperatureHistory,node=>node.props?.children === persistence.PERSISTENT_TEMPERATURE_ACTION).length > 0);
+  const currentRecords = tables.controleTemperaturaEquipamento;
+  tables.controleTemperaturaEquipamento = [{...currentRecords[0],status:'ALERTA',acaoCorretiva:rules[2].acaoCorretiva}];
+  const savedSnapshot = JSON.stringify(tables.controleTemperaturaEquipamento);
+  assert((await report('controle-temperatura-equipamentos')).includes(rules[2].acaoCorretiva));
+  assert.equal(JSON.stringify(tables.controleTemperaturaEquipamento),savedSnapshot,'Reports do not rewrite inconsistent historical actions');
+  tables.controleTemperaturaEquipamento = currentRecords;
   console.log('PASS: temperature actions create/edit, normal recovery, independent equipment, next day/month, single shift, missing/stale/maintenance, saved times and historical fallback.');
 
   // Hortifruti: reusable retirement, preserved snapshots and calculated times.

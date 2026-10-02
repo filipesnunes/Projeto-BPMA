@@ -29,6 +29,7 @@ import {
 import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
 import { saveTemperatureEquipmentEvidenceImage } from "@/lib/local-image-storage";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
@@ -774,7 +775,6 @@ export async function reopenMonthAction(formData: FormData) {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.temperatura.reabrir_mes", "Seu perfil não pode reabrir períodos de temperatura.");
 
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
@@ -783,23 +783,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.controleTemperaturaEquipamentoFechamento.findUnique({
-      where: { mes_ano: { mes, ano } }
-    });
-
-    if (
-      !fechamento ||
-      fechamento.status !== StatusFechamentoTemperaturaEquipamento.ASSINADO
-    ) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.controleTemperaturaEquipamentoFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoTemperaturaEquipamento.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: "temperatura", mes, ano });
 
     revalidateModulePaths();
     redirectWithFeedback(

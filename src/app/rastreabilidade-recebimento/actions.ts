@@ -17,12 +17,12 @@ import {
   createSignatureLog,
   ensureCanCloseMonth,
   ensureCanManageOptions,
-  ensureCanReopenMonth,
   ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
 import { canEditRecordDate, hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 import type { UserRole } from "@/lib/rbac";
 
 import {
@@ -1354,7 +1354,6 @@ export async function reopenMonthAction(formData: FormData) {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensureCanReopenMonth(actor);
 
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
@@ -1363,23 +1362,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.rastreabilidadeRecebimentoFechamento.findUnique({
-      where: { mes_ano: { mes, ano } }
-    });
-
-    if (
-      !fechamento ||
-      fechamento.status !== StatusFechamentoRastreabilidadeRecebimento.ASSINADO
-    ) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.rastreabilidadeRecebimentoFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoRastreabilidadeRecebimento.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: "rastreabilidade", mes, ano });
 
     revalidateModulePaths();
     redirectWithFeedback(

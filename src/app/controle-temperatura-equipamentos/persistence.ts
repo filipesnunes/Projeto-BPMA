@@ -1,6 +1,6 @@
 import { findMatchingTemperatureRule, type CategoriaTemperatura, type RegraTemperaturaCategoria, type TurnoTemperatura } from "./utils";
 
-export const PERSISTENT_TEMPERATURE_ACTION = "Transferir insumos para outro equipamento e acionar manutenção.";
+export const PERSISTENT_TEMPERATURE_ACTION = "Variação aceitável persistente entre turnos. Acionar a manutenção.";
 
 export type PreviousTemperatureRecord = {
   equipamento: string;
@@ -35,6 +35,6 @@ export function correctiveActionWithPersistence(params: {
     previous.statusOperacionalEquipamento !== "EM_OPERACAO" || previous.status !== "ALERTA" || previous.temperaturaAferida === null) return action;
   const previousRule = findMatchingTemperatureRule(previous.temperaturaAferida, params.rules);
   if (!previousRule || previousRule.ordem !== rule.ordem) return action;
-  return params.rules.find((candidate) => candidate.isActive !== false && candidate.status === "CRITICO" &&
-    /transferir insumos/i.test(candidate.acaoCorretiva) && /manuten/i.test(candidate.acaoCorretiva))?.acaoCorretiva || PERSISTENT_TEMPERATURE_ACTION;
+  // Persistence requests maintenance; only the matching CRITICO rule may request transfer.
+  return PERSISTENT_TEMPERATURE_ACTION;
 }

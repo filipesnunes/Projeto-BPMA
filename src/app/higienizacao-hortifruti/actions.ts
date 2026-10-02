@@ -11,10 +11,10 @@ import {
   ensureCanCloseMonth,
   ensureCanDeleteOperationalRecords,
   ensureCanManageOptions,
-  ensureCanReopenMonth,
   validateSignaturePassword
 } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 
 import {
   findCatalogOptionByName,
@@ -356,7 +356,6 @@ export async function reopenMonthAction(formData: FormData) {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensureCanReopenMonth(actor);
 
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
@@ -365,20 +364,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.higienizacaoHortifrutiFechamento.findUnique({
-      where: { mes_ano: { mes, ano } }
-    });
-
-    if (!fechamento || fechamento.status !== StatusFechamentoHortifruti.ASSINADO) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.higienizacaoHortifrutiFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoHortifruti.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: "hortifruti", mes, ano });
 
     revalidatePath(MODULE_PATH);
     redirectWithFeedback(

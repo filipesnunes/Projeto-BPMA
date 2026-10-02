@@ -18,6 +18,7 @@ import {
 } from "@/lib/authz";
 import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 
 import {
   findAcaoCorretivaByName,
@@ -1498,7 +1499,6 @@ export async function reopenMonthAction(formData: FormData) {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.amostras.reabrir_mes", "Seu perfil não pode reabrir períodos de amostras.");
 
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
@@ -1507,20 +1507,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.controleBuffetAmostraFechamento.findUnique({
-      where: { mes_ano: { mes, ano } }
-    });
-
-    if (!fechamento || fechamento.status !== StatusFechamentoBuffetAmostra.ASSINADO) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.controleBuffetAmostraFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoBuffetAmostra.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: "amostras", mes, ano });
 
     revalidateModulePaths();
     redirectWithFeedback(

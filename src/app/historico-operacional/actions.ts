@@ -13,6 +13,7 @@ import {
   getOperationalSignatureModule
 } from "@/lib/module-signatures";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 type FeedbackType = "success" | "error";
@@ -82,6 +83,23 @@ function parseIndicatorsSnapshot(value: string): Prisma.InputJsonValue | null {
     return parsed as Prisma.InputJsonValue;
   } catch {
     return null;
+  }
+}
+
+export async function reopenModuleMonthlyClosureAction(formData: FormData) {
+  let returnTo = "/";
+  try {
+    const config = getOperationalSignatureModule(getInputValue(formData, "moduloCodigo"));
+    returnTo = getSafeReturnTo(formData, config.historyPath);
+    const mes = Number(getInputValue(formData, "mes"));
+    const ano = Number(getInputValue(formData, "ano"));
+    await reopenOperationalMonth({ user: await getCurrentUserForAction(), moduleCode: config.codigo, mes, ano });
+    redirectWithFeedback(returnTo, "success", `Mês ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`);
+  } catch (error) {
+    rethrowIfRedirectError(error);
+    const message = error instanceof Error && !/prisma|p20\d{2}|transaction|stack/i.test(error.message)
+      ? error.message : "Não foi possível reabrir o mês. Tente novamente.";
+    redirectWithFeedback(returnTo, "error", message);
   }
 }
 

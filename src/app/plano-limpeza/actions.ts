@@ -15,13 +15,13 @@ import {
   createSignatureLog,
   ensureCanCloseMonth,
   ensureCanManageOptions,
-  ensureCanReopenMonth,
   ensureCanSignResponsible,
   ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 
 import {
   consolidateWeeklyExecutionsByAreaWeek,
@@ -2254,7 +2254,6 @@ async function reopenMonthByType(params: {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensureCanReopenMonth(actor);
 
     const mes = parsePositiveInt(getInputValue(params.formData, "mes"));
     const ano = parsePositiveInt(getInputValue(params.formData, "ano"));
@@ -2263,20 +2262,7 @@ async function reopenMonthByType(params: {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.planoLimpezaFechamento.findUnique({
-      where: { tipo_mes_ano: { tipo: params.tipo, mes, ano } }
-    });
-
-    if (!fechamento || fechamento.status !== StatusFechamentoPlanoLimpeza.ASSINADO) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.planoLimpezaFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoPlanoLimpeza.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: params.tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano });
 
     revalidateModulePaths();
     redirectWithFeedback(

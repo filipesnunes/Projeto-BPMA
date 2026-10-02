@@ -16,6 +16,7 @@ import {
 } from "@/lib/authz";
 import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { reopenOperationalMonth } from "@/lib/monthly-reopening";
 
 import {
   findOilOptionByLabel,
@@ -460,7 +461,6 @@ export async function reopenMonthAction(formData: FormData) {
 
   try {
     const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.oleo.reabrir_mes", "Seu perfil não pode reabrir períodos de óleo.");
 
     const mes = parsePositiveInt(getInputValue(formData, "mes"));
     const ano = parsePositiveInt(getInputValue(formData, "ano"));
@@ -469,20 +469,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    const fechamento = await prisma.controleQualidadeOleoFechamento.findUnique({
-      where: { mes_ano: { mes, ano } }
-    });
-
-    if (!fechamento || fechamento.status !== StatusFechamentoQualidadeOleo.ASSINADO) {
-      throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} não está assinado.`);
-    }
-
-    await prisma.controleQualidadeOleoFechamento.update({
-      where: { id: fechamento.id },
-      data: {
-        status: StatusFechamentoQualidadeOleo.ABERTO
-      }
-    });
+    await reopenOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano });
 
     revalidateModulePaths();
     redirectWithFeedback(

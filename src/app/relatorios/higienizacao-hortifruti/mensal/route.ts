@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { APP_NAME } from "@/lib/app-branding";
+import { getReportIdentity } from "@/lib/visual-personalization";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
   formatAppDate,
@@ -45,14 +46,6 @@ function formatMonthYear(month: number, year: number): string {
 function formatGeneratedAtSentence(date: Date): string {
   const [datePart, timePart] = formatAppDateTime(date).split(" ");
   return `${datePart} às ${timePart ?? ""}`.trim();
-}
-
-function getConfiguredUnitName(): string {
-  return (
-    process.env.STAYSAFE_UNIT_NAME?.trim() ||
-    process.env.BPMA_UNIT_NAME?.trim() ||
-    "Unidade não informada"
-  );
 }
 
 function getDaysInMonth(monthEnd: Date): number {
@@ -126,6 +119,7 @@ export async function GET(request: NextRequest) {
   ).length;
   const referenceMonthYear = formatMonthYear(month, year);
 
+  const identity = await getReportIdentity();
   const report: MonthlySanitaryReport = {
     title: REPORT_TITLE,
     reportName: REPORT_NAME,
@@ -133,7 +127,8 @@ export async function GET(request: NextRequest) {
     revision: REVISION,
     elaborationDate: ELABORATION_DATE,
     referenceMonthYear,
-    unitName: getConfiguredUnitName(),
+    unitName: identity.unitName,
+    logoDataUrl: identity.logoDataUrl,
     moduleName: MODULE_NAME,
     brandName: APP_NAME,
     emittedAt: formatAppDateTime(generatedAt),

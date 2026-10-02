@@ -251,6 +251,7 @@ model Usuario {
   chamadosManutencaoCriados      ChamadoManutencao[]           @relation("ChamadoCriadoPor")
   documentosTecnicosCriados      DocumentoTecnicoAnexo[]       @relation("DocumentoTecnicoCriadoPor")
   configuracoesModuloAtualizadas ModuloConfiguracao[]          @relation("ModuloConfiguracaoAtualizadoPor")
+  personalizacoesVisuaisAtualizadas PersonalizacaoVisual[]     @relation("PersonalizacaoVisualAtualizadoPor")
   etiquetasValidadeGeradas       EtiquetaValidadeGerada[]      @relation("EtiquetaValidadeResponsavel")
   etiquetasValidadeEmissoes      EtiquetaValidadeEmissao[]     @relation("EtiquetaValidadeEmissaoResponsavel")
 
@@ -1090,6 +1091,20 @@ model ModuloConfiguracao {
 
   @@index([atualizadoPorUsuarioId])
   @@map("modulo_configuracao")
+}
+
+model PersonalizacaoVisual {
+  id                     Int      @id @default(1)
+  nomeUnidade            String?  @db.VarChar(120)
+  logoDados              Bytes?
+  logoMimeType           String?
+  logoNomeArquivo        String?
+  atualizadoPorUsuarioId Int?
+  atualizadoPor          Usuario? @relation("PersonalizacaoVisualAtualizadoPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
+  criadoEm               DateTime @default(now())
+  atualizadoEm           DateTime @updatedAt
+
+  @@map("personalizacao_visual")
 }
 
 model EtiquetaValidadeClassificacao {

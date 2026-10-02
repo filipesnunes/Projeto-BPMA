@@ -6,7 +6,8 @@ import {
   TurnoPlanoLimpeza
 } from "@prisma/client";
 
-import { APP_NAME } from "@/lib/app-branding";
+import { getReportIdentity } from "@/lib/visual-personalization";
+import { renderReportIdentity, REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
   formatAppDateInput,
@@ -58,6 +59,7 @@ type MonthlyDailyCleaningReport = {
   year: number;
   monthYearLabel: string;
   unitName: string;
+  logoDataUrl: string | null;
   emittedAt: string;
   areas: AreaReport[];
   closureResponsible: string;
@@ -73,14 +75,6 @@ function parseMonth(value: string | null): number | null {
 function parseYear(value: string | null): number | null {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 2020 && parsed <= 2100 ? parsed : null;
-}
-
-function getConfiguredUnitName(): string {
-  return (
-    process.env.STAYSAFE_UNIT_NAME?.trim() ||
-    process.env.BPMA_UNIT_NAME?.trim() ||
-    "Unidade não informada"
-  );
 }
 
 function getMonthName(month: number): string {
@@ -315,6 +309,7 @@ function escapeHtml(value: string | number | null | undefined): string {
 function renderStyles(): string {
   return `
     <style>
+      ${REPORT_IDENTITY_CSS}
       @page {
         size: A4 landscape;
         margin: 8mm;
@@ -566,8 +561,7 @@ function renderHeader(report: MonthlyDailyCleaningReport): string {
         <tbody>
           <tr>
             <td class="brand-cell">
-              <strong>${escapeHtml(APP_NAME)}</strong>
-              <span>${escapeHtml(report.unitName)}</span>
+              ${renderReportIdentity(report)}
             </td>
             <td class="title-cell">${escapeHtml(REPORT_TITLE)}</td>
             <td class="month-cell">
@@ -711,11 +705,12 @@ function renderReportDocument(report: MonthlyDailyCleaningReport): string {
   <body>
     <main class="report-page">
       <div class="screen-actions">
-        <button type="button" onclick="window.print()">Imprimir / Salvar PDF</button>
+        <button type="button" onclick="printReport()">Imprimir / Salvar PDF</button>
       </div>
       ${renderHeader(report)}
       ${renderAreas(report)}
     </main>
+    ${REPORT_PRINT_SCRIPT}
   </body>
 </html>`;
 }
@@ -828,11 +823,13 @@ export async function GET(request: NextRequest) {
     ])
   );
 
+  const identity = await getReportIdentity();
   const report: MonthlyDailyCleaningReport = {
     month,
     year,
     monthYearLabel,
-    unitName: getConfiguredUnitName(),
+    unitName: identity.unitName,
+    logoDataUrl: identity.logoDataUrl,
     emittedAt: formatAppDateTime(generatedAt),
     areas: buildAreaReports({
       monthYearLabel,

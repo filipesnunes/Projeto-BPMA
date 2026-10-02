@@ -4,6 +4,9 @@ import { ModuloDocumento } from "@prisma/client";
 import Link from "next/link";
 
 import { APP_NAME } from "@/lib/app-branding";
+import { getReportIdentity } from "@/lib/visual-personalization";
+import type { ReportIdentity } from "@/lib/report-identity";
+import { ReportIdentityMark } from "@/components/report-identity-mark";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDateTime, getAppDate, getAppMonthYear } from "@/lib/date-time";
 import { prisma } from "@/lib/prisma";
@@ -344,14 +347,14 @@ function SanitaryReportsSection({
   );
 }
 
-function ReportResult({ report }: { report: GeneratedReport }) {
+function ReportResult({ report, identity }: { report: GeneratedReport; identity: ReportIdentity }) {
   return (
     <section className="bpma-card space-y-5 print:rounded-none print:border-0 print:shadow-none">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {APP_NAME}
-          </p>
+          <div className="w-40 max-w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <ReportIdentityMark identity={identity} />
+          </div>
           <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
             {report.reportLabel}
           </h2>
@@ -519,7 +522,7 @@ export default async function RelatoriosPage({ searchParams }: PageProps) {
       />
 
       {report ? (
-        <ReportResult report={report} />
+        <ReportResult report={report} identity={await getReportIdentity()} />
       ) : (
         <section className="bpma-card print:hidden">
           <p className="text-sm text-slate-600 dark:text-slate-300">

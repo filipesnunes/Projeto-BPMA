@@ -7,7 +7,8 @@ import {
   TurnoTemperaturaEquipamento
 } from "@prisma/client";
 
-import { APP_NAME } from "@/lib/app-branding";
+import { getReportIdentity } from "@/lib/visual-personalization";
+import { renderReportIdentity, REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
   APP_TIME_ZONE,
@@ -54,6 +55,7 @@ type MonthlyTemperatureReport = {
   year: number;
   monthYearLabel: string;
   unitName: string;
+  logoDataUrl: string | null;
   emittedAt: string;
   equipments: EquipmentReport[];
   days: number[];
@@ -70,14 +72,6 @@ function parseMonth(value: string | null): number | null {
 function parseYear(value: string | null): number | null {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 2020 && parsed <= 2100 ? parsed : null;
-}
-
-function getConfiguredUnitName(): string {
-  return (
-    process.env.STAYSAFE_UNIT_NAME?.trim() ||
-    process.env.BPMA_UNIT_NAME?.trim() ||
-    "Unidade não informada"
-  );
 }
 
 function getMonthName(month: number): string {
@@ -280,6 +274,7 @@ function buildEquipmentReports(params: {
 function renderStyles(): string {
   return `
     <style>
+      ${REPORT_IDENTITY_CSS}
       @page {
         size: A4 landscape;
         margin: 7mm;
@@ -529,8 +524,7 @@ function renderHeader(report: MonthlyTemperatureReport): string {
         <tbody>
           <tr>
             <td class="brand-cell">
-              <strong>${escapeHtml(APP_NAME)}</strong>
-              <span>${escapeHtml(report.unitName)}</span>
+              ${renderReportIdentity(report)}
             </td>
             <td class="title-cell">${escapeHtml(REPORT_TITLE)}</td>
             <td class="month-cell">
@@ -707,11 +701,12 @@ function renderReportDocument(report: MonthlyTemperatureReport): string {
   </head>
   <body>
     <div class="screen-actions">
-      <button type="button" onclick="window.print()">Imprimir / Salvar PDF</button>
+      <button type="button" onclick="printReport()">Imprimir / Salvar PDF</button>
     </div>
     <main>
       ${equipmentPages}
     </main>
+    ${REPORT_PRINT_SCRIPT}
   </body>
 </html>`;
 }
@@ -788,11 +783,13 @@ export async function GET(request: NextRequest) {
         ? formatGeneratedAtSentence(legacyMonthlyClosure.dataAssinatura)
         : "";
 
+  const identity = await getReportIdentity();
   const report: MonthlyTemperatureReport = {
     month,
     year,
     monthYearLabel: formatMonthYear(month, year),
-    unitName: getConfiguredUnitName(),
+    unitName: identity.unitName,
+    logoDataUrl: identity.logoDataUrl,
     emittedAt: formatAppDateTime(generatedAt),
     equipments: buildEquipmentReports({
       equipmentOptions,

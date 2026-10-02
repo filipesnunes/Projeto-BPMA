@@ -1,3 +1,5 @@
+import { renderReportIdentity, REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
+
 export type MonthlySanitaryReportColumn = {
   key: string;
   label: string;
@@ -18,6 +20,7 @@ export type MonthlySanitaryReport = {
   elaborationDate: string;
   referenceMonthYear: string;
   unitName: string;
+  logoDataUrl?: string | null;
   moduleName: string;
   brandName: string;
   emittedAt: string;
@@ -123,8 +126,7 @@ function renderHeader(report: MonthlySanitaryReport): string {
         <tbody>
           <tr>
             <td class="brand-cell" rowspan="4">
-              <strong>${escapeHtml(report.brandName)}</strong>
-              <span>Controle sanitário</span>
+              ${renderReportIdentity({ unitName: report.unitName, logoDataUrl: report.logoDataUrl ?? null }, report.brandName)}
             </td>
             <td class="title-cell" colspan="4">${escapeHtml(report.title)}</td>
           </tr>
@@ -174,6 +176,7 @@ function renderFooter(report: MonthlySanitaryReport): string {
 function renderStyles(): string {
   return `
     <style>
+      ${REPORT_IDENTITY_CSS}
       @page {
         size: A4 landscape;
         margin: 10mm;
@@ -421,13 +424,14 @@ export function renderMonthlySanitaryReportDocument(
   <body>
     <main class="report-page">
       <div class="screen-actions">
-        <button type="button" onclick="window.print()">Imprimir / Salvar PDF</button>
+        <button type="button" onclick="printReport()">Imprimir / Salvar PDF</button>
       </div>
       ${renderHeader(report)}
       ${renderSummaryTable(report.summaryItems)}
       ${renderDataTable(report)}
       ${renderFooter(report)}
     </main>
+    ${REPORT_PRINT_SCRIPT}
   </body>
 </html>`;
 }

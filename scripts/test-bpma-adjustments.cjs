@@ -304,7 +304,8 @@ async function main() {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert(html.includes('Imprimir / Salvar PDF'));
-  assert(html.includes('onclick="window.print()"'));
+  assert(html.includes('onclick="printReport()"'));
+  assert(html.includes('window.print()'));
   assert.match(html, /@media print\s*\{\s*\.screen-actions\s*\{\s*display: none/);
   fs.mkdirSync(path.join(root, '.data/validation'), { recursive: true });
   fs.writeFileSync(path.join(root, '.data/validation/hortifruti.html'), html);

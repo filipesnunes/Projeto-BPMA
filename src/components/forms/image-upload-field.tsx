@@ -16,6 +16,8 @@ type ImageUploadFieldProps = {
   inputClassName?: string;
   existingImageDataUrl?: string | null;
   existingFileName?: string | null;
+  onPreviewChange?: (url: string | null) => void;
+  previewImageClassName?: string;
   requiredStatusFieldName?: string;
   requiredStatusValues?: string[];
   requiredMessage?: string;
@@ -148,6 +150,8 @@ export function ImageUploadField({
   inputClassName = DEFAULT_INPUT_CLASS,
   existingImageDataUrl = null,
   existingFileName = null,
+  onPreviewChange,
+  previewImageClassName = "max-h-44 max-w-full rounded-lg border border-slate-200 object-contain dark:border-slate-700",
   requiredStatusFieldName,
   requiredStatusValues = [],
   requiredMessage = "Anexe uma foto para continuar.",
@@ -170,6 +174,8 @@ export function ImageUploadField({
   const [validationError, setValidationError] = useState<string>("");
   const [isProcessingFile, setIsProcessingFile] = useState(false);
   const [disabledByStatus, setDisabledByStatus] = useState(false);
+
+  useEffect(() => { onPreviewChange?.(previewUrl); }, [onPreviewChange, previewUrl]);
 
   useEffect(() => {
     setPreviewUrl(existingImageDataUrl ?? null);
@@ -474,7 +480,7 @@ export function ImageUploadField({
           <img
             src={previewUrl}
             alt="Pré-visualização da imagem"
-            className="max-h-44 max-w-full rounded-lg border border-slate-200 object-contain dark:border-slate-700"
+            className={previewImageClassName}
           />
         </div>
       ) : null}

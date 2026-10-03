@@ -7,7 +7,8 @@ const FORMATS: Record<string, string> = { png: "image/png", jpeg: "image/jpeg", 
 
 export async function parseHotelLogo(formData: FormData) {
   const value = formData.get("logoHotel");
-  if (value == null || (value instanceof File && value.size === 0 && !value.name)) return null;
+  // Multipart decoding can represent an unselected file input as an empty string.
+  if (value == null || value === "" || (value instanceof File && value.size === 0 && !value.name)) return null;
   if (!(value instanceof File) || value.size === 0) throw new Error("Selecione uma imagem válida para a logomarca.");
   const upload = await parseImageUploadFromFormData({ formData, key: "logoHotel", maxBytes: HOTEL_LOGO_MAX_BYTES });
   if (!upload) return null;

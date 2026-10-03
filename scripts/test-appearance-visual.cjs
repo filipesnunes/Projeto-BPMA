@@ -1,10 +1,13 @@
 // Compiled application CSS/fonts in an isolated browser; no production access.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),Module=require('node:module'),ts=require('typescript');
 const {pathToFileURL}=require('node:url');
+const http=require('node:http');
 const root=path.resolve(__dirname,'..'),dir=path.join(root,'.data/validation');
 const file=path.join(root,'src/lib/appearance-settings.ts'),unit=new Module(file,module);
 unit._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,file);
 const a=unit.exports;
+const themeFile=path.join(root,'src/lib/theme-preference.ts'),themeUnit=new Module(themeFile,module);
+themeUnit._compile(ts.transpileModule(fs.readFileSync(themeFile,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,themeFile);
 async function main(){
   const cssDir=path.join(root,'.next/static/css');
   let css=fs.readdirSync(cssDir).filter(f=>f.endsWith('.css')).map(f=>fs.readFileSync(path.join(cssDir,f),'utf8')).join('\n');
@@ -20,7 +23,7 @@ async function main(){
   socket.onmessage=event=>{const r=JSON.parse(event.data),h=pending.get(r.id);if(!h)return;pending.delete(r.id);r.error?h.reject(r.error):h.resolve(r.result)};
   const send=(method,params={})=>new Promise((resolve,reject)=>{const next=++id;pending.set(next,{resolve,reject});socket.send(JSON.stringify({id:next,method,params}))});
   const evaluate=async expression=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value};
-  let count=0,semantic=null;const results=[];
+  let count=0,semantic=null,themeServer;const results=[];
   try{
     await send('Page.enable');
     for(const theme of ['CLARO','ESCURO','AUTOMATICO'])for(const font of Object.keys(a.FONT_OPTIONS))for(const size of Object.keys(a.TEXT_SIZES)){
@@ -39,8 +42,48 @@ async function main(){
       if(font==='INTER'&&size==='AMPLIADO')fs.writeFileSync(path.join(dir,name+'.png'),Buffer.from((await send('Page.captureScreenshot')).data,'base64'));
       results.push({theme,font,size,...metrics});count++;
     }
+    // Actual browser storage and full page navigation on one isolated origin.
+    const visual=a.normalizeAppearance({...a.APPEARANCE_PALETTES[4],fonteAplicativo:'INTER',tamanhoTexto:'AMPLIADO'});
+    themeServer=http.createServer((request,response)=>{
+      const params=new URL(request.url,'http://localhost').searchParams;
+      const institutional=params.get('theme'),session=Number(params.get('session'));
+      response.setHeader('Content-Type','text/html; charset=utf-8');
+      response.end(`<!doctype html><html data-institutional-theme="${institutional}" data-theme-session="${session}"><head><style>${css}\n${a.appearanceCss(visual)}</style><script>${themeUnit.exports.themeInitScript(institutional,session)}</script></head><body>Isolated navigation fixture</body></html>`);
+    });
+    await new Promise(resolve=>themeServer.listen(0,'127.0.0.1',resolve));
+    const origin='http://127.0.0.1:'+themeServer.address().port;
+    async function visit(theme,session,page){
+      const url=`${origin}/?theme=${theme}&session=${session}&page=${page}`;
+      await send('Page.navigate',{url});
+      for(let i=0;i<100;i++){
+        if(await evaluate(`document.readyState==='complete'&&location.href===${JSON.stringify(url)}`))return;
+        await new Promise(resolve=>setTimeout(resolve,30));
+      }
+      throw Error('Theme navigation timeout');
+    }
+    const isDark=()=>evaluate('document.documentElement.classList.contains("dark")');
+    for(const institutional of ['CLARO','ESCURO','AUTOMATICO'])for(const osDark of [false,true]){
+      await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:osDark?'dark':'light'}]});
+      await visit(institutional,42,'login');
+      await evaluate('sessionStorage.clear();localStorage.setItem("bpma-theme","dark")');
+      await visit(institutional,42,'first');
+      const expected=institutional==='ESCURO'||(institutional==='AUTOMATICO'&&osDark);
+      assert.equal(await isDark(),expected,'Institutional theme at login ignores old localStorage');
+      const tokens=()=>evaluate(`(()=>{const css=getComputedStyle(document.documentElement);return ['--btn-primary-bg','--app-font-family','--app-font-size'].map(key=>css.getPropertyValue(key))})()`);
+      const originalTokens=await tokens();
+      await evaluate(`sessionStorage.setItem('bpma-theme',${JSON.stringify(expected?'light':'dark')})`);
+      await visit(institutional,42,'second');assert.equal(await isDark(),!expected);
+      assert.deepEqual(await tokens(),originalTokens,'Institutional colors/font/size survive theme choice');
+      await visit(institutional,42,'reload');assert.equal(await isDark(),!expected);
+      await visit(institutional,43,'new-login');assert.equal(await isDark(),expected);
+      assert.equal(await evaluate('sessionStorage.getItem("bpma-theme")'),null);
+    }
+    console.log('PASS actual browser: six institutional/OS cases; full page navigation/reload preserves manual theme; new session restores institutional theme; colors/font/size preserved.');
     fs.writeFileSync(path.join(dir,'appearance-visual-results.json'),JSON.stringify(results,null,2));
     console.log(`PASS ${count} appearance combinations: desktop/mobile, local fonts, scales, semantic colors and independent report typography`);
-  }finally{await send('Browser.close');socket.close()}
+  }finally{
+    if(themeServer){themeServer.closeAllConnections();await new Promise(resolve=>themeServer.close(resolve));}
+    await send('Browser.close');socket.close();
+  }
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

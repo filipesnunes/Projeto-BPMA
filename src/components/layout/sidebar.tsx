@@ -9,6 +9,7 @@ import type { AppModule } from "@/lib/modules";
 import { ThemeToggleButton } from "./theme-toggle-button";
 
 type SidebarProps = {
+  sessionId?: number;
   institutionalTheme?: "CLARO" | "ESCURO" | "AUTOMATICO";
   modules: AppModule[];
   userName: string;
@@ -19,6 +20,7 @@ type SidebarProps = {
 };
 
 export function Sidebar({
+  sessionId,
   institutionalTheme = "CLARO",
   modules,
   userName,
@@ -187,7 +189,7 @@ export function Sidebar({
                 {resetRequestsNavItem}
               </ul>
               <div className="mt-4">
-              <ThemeToggleButton compact institutionalTheme={institutionalTheme} />
+              <ThemeToggleButton compact institutionalTheme={institutionalTheme} sessionId={sessionId} />
               </div>
               <form action={onLogout} className="mt-4">
                 <button type="submit" className="btn-secondary w-full">
@@ -220,7 +222,7 @@ export function Sidebar({
             {resetRequestsNavItem}
           </ul>
           <div className="mt-4">
-            <ThemeToggleButton compact institutionalTheme={institutionalTheme} />
+            <ThemeToggleButton compact institutionalTheme={institutionalTheme} sessionId={sessionId} />
           </div>
           <form action={onLogout} className="mt-4">
             <button type="submit" className="btn-secondary w-full">

@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/permissions";
 import { getRoleLabel } from "@/lib/rbac";
 import { getAppAppearance } from "@/lib/visual-personalization";
 import { appearanceCss } from "@/lib/appearance-settings";
+import { themeInitScript } from "@/lib/theme-preference";
 import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-600.css";
 import "@fontsource/inter/latin-700.css";
@@ -31,25 +32,6 @@ type RootLayoutProps = {
   children: React.ReactNode;
 };
 
-const themeInitScript = (institutional: string) => `
-(() => {
-  const syncTheme = () => {
-  try {
-    let theme = null;
-    try { theme = window.localStorage.getItem("bpma-theme"); } catch (_storageError) {}
-    const institutional = document.documentElement.dataset.institutionalTheme || ${JSON.stringify(institutional)};
-    if (theme === "dark" || (theme !== "light" && (institutional === "ESCURO" || (institutional === "AUTOMATICO" && window.matchMedia('(prefers-color-scheme: dark)').matches)))) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  } catch (_error) {}
-  };
-  syncTheme();
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncTheme);
-})();
-`;
-
 export default async function RootLayout({ children }: RootLayoutProps) {
   const user = await getCurrentUser();
   const appearance = await getAppAppearance();
@@ -57,10 +39,10 @@ export default async function RootLayout({ children }: RootLayoutProps) {
   const modules = user ? getModulesForUser(user) : [];
 
   return (
-    <html lang="pt-BR" data-institutional-theme={appearance.temaPadrao} suppressHydrationWarning>
+    <html lang="pt-BR" data-institutional-theme={appearance.temaPadrao} data-theme-session={user?.sessaoId ?? ""} suppressHydrationWarning>
       <head>
         <style>{appearanceCss(appearance)}</style>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript(appearance.temaPadrao) }} />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript(appearance.temaPadrao, user?.sessaoId ?? null) }} />
       </head>
       <body className="bg-[var(--background-page)] text-[var(--text-default)]">
         {!user ? (
@@ -70,6 +52,7 @@ export default async function RootLayout({ children }: RootLayoutProps) {
         ) : (
           <div className="min-h-screen 2xl:flex">
             <Sidebar
+              sessionId={user.sessaoId}
               institutionalTheme={appearance.temaPadrao}
               modules={modules}
               userName={user.nomeCompleto}

@@ -14,6 +14,7 @@ const SESSION_DURATION_MS = 1000 * 60 * 60 * 12; // 12 horas
 
 export type AuthenticatedUser = {
   id: number;
+  sessaoId: number;
   nomeCompleto: string;
   nomeUsuario: string;
   perfil: UserRole;
@@ -46,6 +47,7 @@ function isMissingProfileAccessColumnError(error: unknown): boolean {
 }
 
 function buildAuthenticatedUser(params: {
+  sessaoId: number;
   usuario: {
     id: number;
     nomeCompleto: string;
@@ -73,6 +75,7 @@ function buildAuthenticatedUser(params: {
 
   return {
     id: params.usuario.id,
+    sessaoId: params.sessaoId,
     nomeCompleto: params.usuario.nomeCompleto,
     nomeUsuario: params.usuario.nomeUsuario,
     perfil: legacyRole,
@@ -228,9 +231,9 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   if ("perfilAcesso" in session.usuario && await registerPersonalizationPermission()) {
     const refreshed = await findSessionWithProfileAccess(tokenHash);
     if (!refreshed) return null;
-    return buildAuthenticatedUser({ usuario: refreshed.usuario });
+    return buildAuthenticatedUser({ usuario: refreshed.usuario, sessaoId: refreshed.id });
   }
-  return buildAuthenticatedUser({ usuario: session.usuario });
+  return buildAuthenticatedUser({ usuario: session.usuario, sessaoId: session.id });
 }
 
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUser> {

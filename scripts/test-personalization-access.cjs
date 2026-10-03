@@ -117,7 +117,7 @@ async function main() {
         perfil:'GERENTE',status:'ATIVO',obrigarTrocaSenha:false};
       if (!legacy) usuario.perfilAcesso = {id:1,codigo:'GERENTE',nome:'Gerente',ativo:true,
         permissoes:grants.filter(g => g.perfilId === 1).map(() => ({permissao:{codigo:code}}))};
-      return {expiraEm:new Date(Date.now()+60_000),usuario};
+      return {id: 42, expiraEm:new Date(Date.now()+60_000),usuario};
     }
   };
   const sessions = load('src/lib/auth-session.ts');
@@ -128,7 +128,9 @@ async function main() {
   cookie = 'synthetic-token';
   const readsBefore = sessionReads;
   for (sessionUserId of [8,9,10,11]) {
-    assert(permissions.hasPermission(await sessions.getCurrentUser(),code),'All existing linked managers receive access');
+    const current = await sessions.getCurrentUser();
+    assert.equal(current.sessaoId,42,'Session ID reaches the display layer without exposing the token');
+    assert(permissions.hasPermission(current,code),'All existing linked managers receive access');
   }
   assert.equal(sessionReads-readsBefore,5,'Initial session reloads the new grant');
   grants = grants.filter(g => g.perfilId !== 1);

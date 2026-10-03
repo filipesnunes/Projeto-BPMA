@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const STORAGE_KEY = "bpma-theme";
+import { readThemePreference, saveThemePreference } from "@/lib/theme-preference";
 
 type ThemeMode = "light" | "dark";
 
@@ -38,36 +37,34 @@ function MoonIcon() {
   );
 }
 
-export function ThemeToggleButton({ compact = false, institutionalTheme = "CLARO" }: { compact?: boolean; institutionalTheme?: "CLARO" | "ESCURO" | "AUTOMATICO" }) {
+export function ThemeToggleButton({ compact = false, institutionalTheme = "CLARO", sessionId = null }: { compact?: boolean; institutionalTheme?: "CLARO" | "ESCURO" | "AUTOMATICO"; sessionId?: number | null }) {
   const [theme, setTheme] = useState<ThemeMode>("light");
-  const [individual, setIndividual] = useState(false);
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const sync = () => {
-      let savedTheme: string | null = null;
-      try { savedTheme = window.localStorage.getItem(STORAGE_KEY); } catch {}
+      const savedTheme = readThemePreference(sessionId);
       const hasIndividual = savedTheme === 'dark' || savedTheme === 'light';
       const nextTheme = hasIndividual ? savedTheme as ThemeMode :
         institutionalTheme === 'ESCURO' || (institutionalTheme === 'AUTOMATICO' && media.matches) ? 'dark' : 'light';
-      setIndividual(hasIndividual); setTheme(nextTheme); applyTheme(nextTheme);
+      setTheme(nextTheme); applyTheme(nextTheme);
     };
     sync(); media.addEventListener('change',sync);window.addEventListener('storage',sync);window.addEventListener('bpma-theme-change',sync);
     return () => {media.removeEventListener('change',sync);window.removeEventListener('storage',sync);window.removeEventListener('bpma-theme-change',sync);};
-  }, [institutionalTheme]);
+  }, [institutionalTheme, sessionId]);
 
   const toggleTheme = () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
-    try { window.localStorage.setItem(STORAGE_KEY, nextTheme); } catch {}
-    setIndividual(true); window.dispatchEvent(new Event('bpma-theme-change'));
+    saveThemePreference(sessionId, nextTheme);
+    window.dispatchEvent(new Event('bpma-theme-change'));
   };
 
   const nextLabel = theme === "dark" ? "Tema claro" : "Tema escuro";
 
   return (
-    <div className="space-y-2"><button
+    <button
       type="button"
       onClick={toggleTheme}
       className={`btn-secondary gap-2 ${compact ? "w-full justify-start px-3" : ""}`}
@@ -77,9 +74,5 @@ export function ThemeToggleButton({ compact = false, institutionalTheme = "CLARO
       {theme === "dark" ? <SunIcon /> : <MoonIcon />}
       <span>{theme === "dark" ? "Claro" : "Escuro"}</span>
     </button>
-    {individual ? <button type="button" className="btn-secondary text-xs" onClick={() => {
-      try {window.localStorage.removeItem(STORAGE_KEY);}catch{}
-      window.dispatchEvent(new Event('bpma-theme-change'));
-    }}>Usar tema da unidade</button> : null}</div>
   );
 }

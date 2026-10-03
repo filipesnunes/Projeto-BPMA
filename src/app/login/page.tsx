@@ -1,12 +1,11 @@
 import Link from "next/link";
+import Image from "next/image";
 
 import { PasswordInput } from "@/components/auth/password-input";
-import { APP_DESCRIPTION, APP_NAME } from "@/lib/app-branding";
+import { APP_DESCRIPTION } from "@/lib/app-branding";
 
 import { loginAction } from "./actions";
-
-const INPUT_CLASS =
-  "bpma-input";
+import styles from "./login.module.css";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 type LoginPageProps = {
@@ -26,38 +25,41 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const next = firstParam(params.next).trim();
 
   return (
-    <section className="flex min-h-screen items-center justify-center py-8 dark:text-slate-100">
-      <div className="w-full max-w-md bpma-card">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{APP_NAME}</h1>
-          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+    <section className={styles.page}>
+      <div className={styles.card}>
+        <header className={styles.header}>
+          <h1 className={styles.brand}>
+            <Image src="/logo-staysafe.webp" alt="StaySafe" width={384} height={216}
+              className={styles.logo} sizes="(max-width: 380px) calc(100vw - 80px), 330px" priority />
+          </h1>
+          <p className={styles.slogan}>
             {APP_DESCRIPTION}
           </p>
-        </div>
+        </header>
 
         {feedback ? (
           <div
             className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
               feedbackType === "error"
-                ? "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                ? "border-red-200 bg-red-50 text-red-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
             }`}
           >
             {feedback}
           </div>
         ) : null}
 
-        <form action={loginAction} className="space-y-4">
+        <form action={loginAction} className={styles.form}>
           <input type="hidden" name="next" value={next} />
 
-          <label className="text-sm text-slate-700 dark:text-slate-200">
+          <label>
             Nome de Usuário
             <input
               type="text"
               name="nomeUsuario"
               required
               autoComplete="username"
-              className={`${INPUT_CLASS} mt-1`}
+              className={styles.input}
             />
           </label>
 
@@ -65,23 +67,24 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             name="senha"
             label="Senha"
             required
-            className={INPUT_CLASS}
+            className={styles.input}
           />
 
-          <button type="submit" className="btn-primary w-full">
+          <button type="submit" className={styles.submit}>
             Entrar
           </button>
         </form>
 
-        <div className="mt-4 text-center text-sm">
+        <div className={styles.recovery}>
           <Link
             href="/login/esqueci-senha"
-            className="text-slate-700 underline decoration-slate-400 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white"
+            className={styles.recoveryLink}
           >
             Esqueci Minha Senha
           </Link>
         </div>
       </div>
+      <p className={styles.poweredBy}>POWERED BY BOTSTAY</p>
     </section>
   );
 }

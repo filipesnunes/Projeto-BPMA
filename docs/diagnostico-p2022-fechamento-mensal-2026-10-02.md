@@ -107,3 +107,46 @@ pois a migration ainda não foi aplicada e as confirmações estão pendentes.
 Branch main; nenhum arquivo de implementação alterado.
 Nenhum dado excluído ou modificado. Sem seed/reset, db push, commit ou push.
 O tenant-refactor não foi acessado ou alterado.
+
+## Nova verificação — digest 877757007
+
+Na nova solicitação, HEAD é `59b64af` e o Git estava limpo. Ambas as migrations
+continuam rastreadas. Novo migrate status e consultas somente leitura confirmaram
+as mesmas duas pendências, ausência dos quatro campos de períodos, ausência da
+tabela personalizacao_visual e 31 fechamentos armazenados no banco local configurado.
+Sua correspondência com o serviço publicado ainda não foi comprovada.
+
+Não há CLI Railway disponível, configuração Railway versionada ou acesso aos
+logs/configurações do serviço por ferramentas conectadas nesta sessão. Assim,
+**não é possível afirmar que o digest 877757007 é o P2022 anterior**. É necessário
+consultar os Runtime Logs do deploy ativo do serviço **Projeto-BPMA**, buscando
+877757007 e a exceção/stack anterior ao digest, incluindo código Prisma, coluna,
+rota e horário. Os Deploy Logs também devem mostrar se o pre-deploy foi executado,
+se concluiu migrate deploy ou falhou antes de publicar a aplicação.
+
+A verificação HTTP sem sessão retornou login com formulário e sem a mensagem de
+erro para `/`, `/login` e `/gerenciamento-periodos/rastreabilidade`. Isso comprova
+somente a disponibilidade pública do login, não o dashboard autenticado ou a
+restauração do aplicativo. Não foi realizado login com uma conta real.
+
+Há uma limitação independente: `/personalizacao` não possui page.tsx ou Server
+Actions expostas no código atual; só existe personalization-form.tsx preparado.
+A identificação do Gerente Geral continua pendente conforme o relatório de
+personalização. A migration cria armazenamento, mas não cria essa página. Não
+foi implementada funcionalidade nova para contornar essa pendência.
+
+Configuração a conferir no Railway, preservando valores que já estejam corretos:
+
+- Build Command: `npm run prisma:generate && npm run build`.
+- Pre-deploy Command: `npm run prisma:migrate:deploy`.
+- Start Command: `npm run start`.
+
+Esses são os comandos necessários; os valores reais do painel não foram
+consultados nem alterados. O pre-deploy usa o banco vinculado ao serviço, cuja
+identidade deve ser verificada antes da primeira execução autorizada.
+
+Prisma generate, lint, build, diff check e testes isolados de períodos foram
+executados novamente e passaram. Não existe comprovação de correção em produção.
+A operação mutável permanece interrompida por falta de confirmação do destino,
+backup recuperável e autorização de aplicação, exigidos na seção 5 do novo pedido.
+Somente este documento foi atualizado; nenhum código, schema ou migration mudou.

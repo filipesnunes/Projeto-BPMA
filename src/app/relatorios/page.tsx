@@ -349,7 +349,7 @@ function SanitaryReportsSection({
 
 function ReportResult({ report, identity }: { report: GeneratedReport; identity: ReportIdentity }) {
   return (
-    <section className="bpma-card space-y-5 print:rounded-none print:border-0 print:shadow-none">
+    <section className="bpma-report-document bpma-card space-y-5 print:rounded-none print:border-0 print:shadow-none">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div className="w-40 max-w-full text-xs font-semibold text-slate-500 dark:text-slate-400">

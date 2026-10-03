@@ -1105,6 +1105,12 @@ model PersonalizacaoVisual {
   logoNomeArquivo        String?
   logoLargura            Int      @default(120)
   logoAlturaMaxima       Int      @default(56)
+  corPrimaria           String?  @db.VarChar(7)
+  corSecundaria         String?  @db.VarChar(7)
+  corDestaque           String?  @db.VarChar(7)
+  fonteAplicativo       String   @default("SISTEMA")
+  tamanhoTexto          String   @default("PADRAO")
+  temaPadrao            String   @default("CLARO")
   atualizadoPorUsuarioId Int?
   atualizadoPor          Usuario? @relation("PersonalizacaoVisualAtualizadoPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
   criadoEm               DateTime @default(now())

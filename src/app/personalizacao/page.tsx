@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-session";
 import { APP_TIME_ZONE } from "@/lib/date-time";
 import { hasPermission } from "@/lib/permissions";
+import { normalizeAppearance } from "@/lib/appearance-settings";
 import { defaultUnitName, getReportIdentity, getVisualPersonalization } from "@/lib/visual-personalization";
 import { removeLogoAction, restoreDefaultsAction, savePersonalizationAction } from "./actions";
 import { PersonalizationForm } from "./personalization-form";
@@ -25,6 +26,7 @@ export default async function PersonalizationPage() {
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Configure a identidade visual dos relatórios da unidade.</p>
     </section>
     <PersonalizationForm logoDataUrl={identity.logoDataUrl} fileName={config?.logoNomeArquivo ?? null}
+      appearance={normalizeAppearance(config ?? {})}
       logoLargura={identity.logoLargura} logoAlturaMaxima={identity.logoAlturaMaxima}
       unitName={config?.nomeUnidade ?? ""} fallbackUnitName={defaultUnitName()} previewMonth={previewMonth}
       saveAction={savePersonalizationAction} removeAction={removeLogoAction} resetAction={restoreDefaultsAction} />

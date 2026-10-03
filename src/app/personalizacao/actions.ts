@@ -20,7 +20,7 @@ export async function savePersonalizationAction(
   try {
     await saveVisualPersonalization(formData, user.id);
   } catch (error) {
-    if (error instanceof Error && /^(Informe um nome|Selecione uma imagem|Imagem inválida|Formato de imagem|A foto selecionada)/.test(error.message)) {
+    if (error instanceof Error && /^(Informe um nome|Informe uma cor|Informe uma opção|Selecione uma imagem|Imagem inválida|Formato de imagem|A foto selecionada)/.test(error.message)) {
       return { status: "error", message: error.message };
     }
     console.error("Falha ao salvar personalização visual", error instanceof Error ? error.name : "Erro desconhecido");

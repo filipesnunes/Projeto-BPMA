@@ -38,30 +38,36 @@ function MoonIcon() {
   );
 }
 
-export function ThemeToggleButton({ compact = false }: { compact?: boolean }) {
+export function ThemeToggleButton({ compact = false, institutionalTheme = "CLARO" }: { compact?: boolean; institutionalTheme?: "CLARO" | "ESCURO" | "AUTOMATICO" }) {
   const [theme, setTheme] = useState<ThemeMode>("light");
+  const [individual, setIndividual] = useState(false);
 
   useEffect(() => {
-    const savedTheme = window.localStorage.getItem(STORAGE_KEY);
-    const fallbackTheme = document.documentElement.classList.contains("dark") ? "dark" : "light";
-    const nextTheme =
-      savedTheme === "dark" || savedTheme === "light" ? savedTheme : fallbackTheme;
-
-    setTheme(nextTheme);
-    applyTheme(nextTheme);
-  }, []);
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const sync = () => {
+      let savedTheme: string | null = null;
+      try { savedTheme = window.localStorage.getItem(STORAGE_KEY); } catch {}
+      const hasIndividual = savedTheme === 'dark' || savedTheme === 'light';
+      const nextTheme = hasIndividual ? savedTheme as ThemeMode :
+        institutionalTheme === 'ESCURO' || (institutionalTheme === 'AUTOMATICO' && media.matches) ? 'dark' : 'light';
+      setIndividual(hasIndividual); setTheme(nextTheme); applyTheme(nextTheme);
+    };
+    sync(); media.addEventListener('change',sync);window.addEventListener('storage',sync);window.addEventListener('bpma-theme-change',sync);
+    return () => {media.removeEventListener('change',sync);window.removeEventListener('storage',sync);window.removeEventListener('bpma-theme-change',sync);};
+  }, [institutionalTheme]);
 
   const toggleTheme = () => {
     const nextTheme = theme === "dark" ? "light" : "dark";
     setTheme(nextTheme);
     applyTheme(nextTheme);
-    window.localStorage.setItem(STORAGE_KEY, nextTheme);
+    try { window.localStorage.setItem(STORAGE_KEY, nextTheme); } catch {}
+    setIndividual(true); window.dispatchEvent(new Event('bpma-theme-change'));
   };
 
   const nextLabel = theme === "dark" ? "Tema claro" : "Tema escuro";
 
   return (
-    <button
+    <div className="space-y-2"><button
       type="button"
       onClick={toggleTheme}
       className={`btn-secondary gap-2 ${compact ? "w-full justify-start px-3" : ""}`}
@@ -71,5 +77,9 @@ export function ThemeToggleButton({ compact = false }: { compact?: boolean }) {
       {theme === "dark" ? <SunIcon /> : <MoonIcon />}
       <span>{theme === "dark" ? "Claro" : "Escuro"}</span>
     </button>
+    {individual ? <button type="button" className="btn-secondary text-xs" onClick={() => {
+      try {window.localStorage.removeItem(STORAGE_KEY);}catch{}
+      window.dispatchEvent(new Event('bpma-theme-change'));
+    }}>Usar tema da unidade</button> : null}</div>
   );
 }

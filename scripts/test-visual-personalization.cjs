@@ -249,6 +249,27 @@ async function main() {
   delete require.cache[require.resolve(path.join(root,'src/lib/visual-personalization.ts'))];
   await assert.rejects(()=>load('src/lib/visual-personalization.ts').getReportIdentity(),e=>e.code==='P2022');
   mocks.set('@/lib/prisma',{prisma});
+  const appearance=load('src/lib/appearance-settings.ts');
+  const branded=form(logos.transparent);
+  const settings={corPrimaria:'#702c40',corSecundaria:'#efe1e6',corDestaque:'#a65d73',fonteAplicativo:'INTER',tamanhoTexto:'AMPLIADO',temaPadrao:'AUTOMATICO'};
+  for(const [key,value] of Object.entries(settings))branded.set(key,value);
+  await service.saveVisualPersonalization(branded,7);
+  assert.deepEqual(await service.getAppAppearance(),settings);
+  assert.equal((await service.getReportIdentity()).unitName,'K Platz Hotel');
+  const originalSettings=JSON.stringify(tables.personalizacaoVisual);
+  for(const [key,value] of [['corPrimaria','#fff'],['corSecundaria','red; background:url(evil)'],['corDestaque','javascript:evil'],['fonteAplicativo','UPLOAD'],['tamanhoTexto','999'],['temaPadrao','INVALIDO']]) {
+    const bad=form(null);for(const [k,v] of Object.entries(settings))bad.set(k,v);bad.set(key,value);
+    await assert.rejects(()=>service.saveVisualPersonalization(bad,7));
+    assert.equal(JSON.stringify(tables.personalizacaoVisual),originalSettings,'Invalid appearance is rejected atomically');
+  }
+  const css=appearance.appearanceCss(settings);
+  assert(css.includes('--btn-primary-bg:#702c40'));assert(!css.includes('--btn-danger'));assert(!css.includes('--btn-action'));assert(!css.includes('success'));
+  for(const palette of appearance.APPEARANCE_PALETTES) {
+    const colors=appearance.normalizeAppearance(palette);
+    for(const color of [colors.corPrimaria,colors.corSecundaria])assert(['#ffffff','#000000'].includes(appearance.contrastingText(color)));
+  }
+  await service.removeHotelLogo(7);assert.deepEqual(await service.getAppAppearance(),settings);
+  await service.restoreVisualDefaults(7);assert.deepEqual(await service.getAppAppearance(),appearance.DEFAULT_APPEARANCE);
   const escaped=renderReportIdentity({unitName:'<script>"&</script>',logoDataUrl:'javascript:evil'});
   assert(!escaped.includes('<script>'));assert(!escaped.includes('javascript:'));assert(escaped.includes('&lt;script&gt;'));
   let hookValues=[],hookCursor=0;
@@ -271,6 +292,13 @@ async function main() {
   ui=draw();
   assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoLargura,200);
   assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoAlturaMaxima,100);
+  elements(ui,node=>node.props?.name==='corPrimaria')[0].props.onChange({currentTarget:{value:'#702c40'}});
+  ui=draw();
+  assert(elements(ui,node=>node.type==='span'&&node.props?.style?.backgroundColor==='#702c40').length>0,'Color changes are reflected in app preview');
+  elements(ui,node=>node.props?.name==='fonteAplicativo')[0].props.onChange({currentTarget:{value:'INTER'}});
+  ui=draw();
+  assert(elements(ui,node=>node.props?.style?.fontFamily==='"Inter", Arial, sans-serif').length>0,'Selected local font appears in preview');
+  assert(elements(ui,node=>node.props?.role==='status'&&String(node.props.children).includes('não salvas')).length>0);
   const {renderToStaticMarkup}=require('react-dom/server');
   const {ReportIdentityMark}=load('src/components/report-identity-mark.tsx');
   const previewHtml=renderToStaticMarkup(ReportIdentityMark({identity:{unitName:'K Platz Hotel',logoDataUrl:`data:image/png;base64,${logos.transparent.toString('base64')}`,logoLargura:200,logoAlturaMaxima:100}}));
@@ -280,6 +308,7 @@ async function main() {
   console.log('PASS: prepared form updates logo/name header preview through reusable upload; no logo styling effects.');
   console.log('PASS: all seven real monthly routes render fallback/personalized identity; titles, month/year and records query unchanged.');
   console.log('PASS: size min/max/default/invalid, live preview, restore/removal, legacy schema reads and unrelated errors propagate.');
+  console.log('PASS: application appearance persistence, color/option injection rejected atomically, semantic tokens untouched, logo removal and restore.');
   fs.writeFileSync(path.join(outputDir,'identity-report-fixtures.json'),JSON.stringify({modules:reportModules,kinds:['default',...Object.keys(logos),'small','large','invalid','jpeg','webp']}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

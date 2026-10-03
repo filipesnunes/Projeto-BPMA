@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Documents keep their existing type scale independently from application settings. */
+.bpma-report-document {font-family:system-ui,sans-serif;font-size:16px;}
+.bpma-report-document .text-xs {font-size:12px;}
+.bpma-report-document .text-sm {font-size:14px;}
+.bpma-report-document .text-base {font-size:16px;}
+.bpma-report-document .text-lg {font-size:18px;}
+.bpma-report-document .text-xl {font-size:20px;}
+.bpma-report-document .text-2xl {font-size:24px;}
+@media print { html {font-size:16px !important;} }
+
 :root {
   --background-page: #eef3f8;
   --background-card: #ffffff;
@@ -137,6 +147,7 @@ html.dark {
 }
 
 body {
+  font-family: var(--app-font-family, system-ui, sans-serif);
   margin: 0;
   background-color: var(--background-page);
   color: var(--text-default);
@@ -151,6 +162,7 @@ body {
   }
 
   html {
+    font-size: var(--app-font-size, 16px);
     -webkit-text-size-adjust: 100%;
   }
 

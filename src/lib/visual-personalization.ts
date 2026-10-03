@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import type { ReportIdentity } from "@/lib/report-identity";
 import { parseHotelLogo } from "@/lib/hotel-logo-upload";
 import { logoDimensionsFromForm, normalizeLogoDimensions } from "@/lib/logo-dimensions";
+import { appearanceFromForm, normalizeAppearance } from "@/lib/appearance-settings";
 
 export function defaultUnitName(): string {
   return process.env.STAYSAFE_UNIT_NAME?.trim() || process.env.BPMA_UNIT_NAME?.trim() || "Unidade não informada";
@@ -15,18 +16,36 @@ export async function getVisualPersonalization() {
   } catch (error) {
     // Read only the previous fields during the rollout of the dimensions migration.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2022" &&
-      /logoLargura|logoAlturaMaxima/.test(String(error.meta?.column ?? error.message))) {
-      const previous = await prisma.personalizacaoVisual.findUnique({ where: { id: 1 }, select: {
+      /logoLargura|logoAlturaMaxima|corPrimaria|corSecundaria|corDestaque|fonteAplicativo|tamanhoTexto|temaPadrao/.test(String(error.meta?.column ?? error.message))) {
+      const previousFields = {
         id: true, nomeUnidade: true, logoDados: true, logoMimeType: true, logoNomeArquivo: true,
         atualizadoPorUsuarioId: true, criadoEm: true, atualizadoEm: true
-      } });
-      return previous ? { ...previous, ...normalizeLogoDimensions({}) } : null;
+      } as const;
+      const missingDimensions = /logoLargura|logoAlturaMaxima/.test(String(error.meta?.column ?? error.message));
+      let previous;
+      try {
+        previous = await prisma.personalizacaoVisual.findUnique({ where: { id: 1 }, select: {
+          ...previousFields, ...(!missingDimensions ? {logoLargura:true,logoAlturaMaxima:true} as const : {})
+        } });
+      } catch (previousError) {
+        if (!(previousError instanceof Prisma.PrismaClientKnownRequestError) || previousError.code !== 'P2022' ||
+          !/logoLargura|logoAlturaMaxima/.test(String(previousError.meta?.column ?? previousError.message))) throw previousError;
+        previous = await prisma.personalizacaoVisual.findUnique({where:{id:1},select:previousFields});
+      }
+      return previous ? { ...previous, ...normalizeLogoDimensions({
+        logoLargura: 'logoLargura' in previous ? previous.logoLargura : undefined,
+        logoAlturaMaxima: 'logoAlturaMaxima' in previous ? previous.logoAlturaMaxima : undefined
+      }), ...normalizeAppearance() } : null;
     }
     // Optional visual settings must not break existing reports before their first migration.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2021" &&
       String(error.meta?.table ?? error.message).includes("personalizacao_visual")) return null;
     throw error;
   }
+}
+
+export async function getAppAppearance() {
+  return normalizeAppearance((await getVisualPersonalization()) ?? {});
 }
 
 export async function getReportIdentity(): Promise<ReportIdentity> {
@@ -48,7 +67,7 @@ export async function saveVisualPersonalization(formData: FormData, userId: numb
   const name = typeof rawName === "string" ? rawName.trim() : "";
   if (name.length > 120 || /[\x00-\x1f\x7f]/.test(name)) throw new Error("Informe um nome de unidade válido, com até 120 caracteres.");
   const logo = await parseHotelLogo(formData);
-  const data = { nomeUnidade: name || null, atualizadoPorUsuarioId: userId, ...logoDimensionsFromForm(formData),
+  const data = { nomeUnidade: name || null, atualizadoPorUsuarioId: userId, ...logoDimensionsFromForm(formData), ...appearanceFromForm(formData),
     ...(logo ? { logoDados: Uint8Array.from(logo.buffer), logoMimeType: logo.mimeType, logoNomeArquivo: logo.fileName } : {}) };
   return prisma.personalizacaoVisual.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
 }
@@ -63,6 +82,6 @@ export async function removeHotelLogo(userId: number) {
 
 export async function restoreVisualDefaults(userId: number) {
   const data = { nomeUnidade: null, logoDados: null, logoMimeType: null, logoNomeArquivo: null, atualizadoPorUsuarioId: userId,
-    ...normalizeLogoDimensions({}) };
+    ...normalizeLogoDimensions({}), ...normalizeAppearance() };
   return prisma.personalizacaoVisual.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
 }

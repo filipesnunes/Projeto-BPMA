@@ -23,6 +23,14 @@ type PathPermissionRule = {
 
 export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   {
+    codigo: "modulo.personalizacao.acessar",
+    nome: "Acessar e editar Personalização Visual",
+    descricao: "Permite personalizar a unidade e logomarca. Disponível para GERENTE e DEV.",
+    grupo: "Personalização Visual",
+    modulo: "personalizacao",
+    acao: "acessar"
+  },
+  {
     codigo: "dashboard.acessar",
     nome: "Acessar Dashboard",
     grupo: "Dashboard",
@@ -301,6 +309,7 @@ const NUTRICIONISTA_PERMISSIONS = new Set([
 
 const GERENTE_PERMISSIONS = new Set([
   ...NUTRICIONISTA_PERMISSIONS,
+  "modulo.personalizacao.acessar",
   "usuarios.acessar",
   "usuarios.criar",
   "usuarios.editar",
@@ -332,6 +341,10 @@ export function getDefaultPermissionCodes(role: UserRole): string[] {
 export function hasPermission(user: PermissionAwareUser, codigo: string): boolean {
   if (user.perfil === "DEV") {
     return true;
+  }
+
+  if (codigo === "modulo.personalizacao.acessar" && user.perfil !== "GERENTE") {
+    return false;
   }
 
   if (typeof user.perfilAcessoId === "number") {
@@ -377,6 +390,7 @@ export function getRequiredPermissionsForPath(pathname: string): string[] {
   }
 
   const exactRules: PathPermissionRule[] = [
+    { prefix: "/personalizacao", permissions: ["modulo.personalizacao.acessar"] },
     { prefix: "/usuarios/solicitacoes", permissions: ["usuarios.redefinir_senha"] },
     { prefix: "/usuarios", permissions: ["usuarios.acessar"] },
     { prefix: "/relatorios/opcoes", permissions: ["modulo.relatorios.gerenciar_configuracoes"] },

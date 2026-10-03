@@ -1,6 +1,6 @@
 # Personalização visual — BPMA/KPlatz atual
 
-## Estado e definição de acesso pendente
+## Acesso definido e interface ativada
 
 Workspace auditado: `A:\Projeto-BPMA-KPlatz`, branch `main`, Git inicialmente limpo.
 O projeto tenant-refactor não foi acessado ou modificado.
@@ -9,17 +9,33 @@ A consulta somente leitura ao banco encontrou os perfis DEV, Gerente,
 Nutricionista e Colaborador. Existem quatro usuários ligados ao perfil Gerente.
 Não existe Gerente Geral no enum legado nem nos registros de `PerfilAcesso`.
 
-Conforme a seção 11.4 do pedido, a implementação de acesso está interrompida até
-uma definição inequívoca. Foi apresentada a opção de reutilizar `PerfilAcesso`,
-criando o código exclusivo GERENTE_GERAL e uma permissão somente de personalização,
-com atribuição posterior pela Gestão de Usuários. Não foi concedido acesso
-aos gerentes existentes ou a DEV. Essa escolha permanece aguardando resposta.
+O ajuste de escopo resolveu a definição: reutilizar GERENTE e manter o acesso
+total de DEV. Não foi criado GERENTE_GERAL, novo perfil ou enum.
+NUTRICIONISTA e COLABORADOR não podem acessar, mesmo se receberem manualmente
+o código da permissão.
 
-O formulário da Personalização está preparado, mas ainda não existe uma página
-administrativa ativa, item de menu ou Server Action de alteração exposta.
-Os serviços internos são server-only e não constituem endpoints públicos.
-Os testes de acesso de Gerente Geral e das Server Actions ainda não podem ser
-concluídos sem essa definição.
+A permissão `modulo.personalizacao.acessar` está no catálogo e nos padrões de
+GERENTE/DEV. Para usuários com PerfilAcesso vinculado, a primeira sessão válida
+registra essa entrada e os vínculos aos perfis GERENTE/DEV existentes, em uma
+transação nas tabelas já existentes. A sessão é recarregada para refletir o
+acesso imediatamente; os demais gerentes recebem o mesmo vínculo de perfil.
+Perfis inativos continuam sem acesso. Não há writes em sessões anônimas/inválidas.
+
+A existência da entrada no catálogo impede repetir a concessão em logins
+posteriores: remover a permissão na Gestão de Usuários não é desfeito pela
+aplicação. A edição e a auditoria existentes foram preservadas, sem alteração
+das outras permissões. O fallback de sessão para banco legado foi preservado.
+
+`/personalizacao` agora contém a página administrativa e usa o formulário já
+implementado. O menu segue o mesmo controle de permissão, inclusive em dispositivos
+móveis. Middleware, página e todas as Server Actions verificam o acesso no
+servidor. Salvar, remover logo e restaurar padrões revalidam o layout para atualizar
+os relatórios. Upload, prévia e serviços internos server-only foram reutilizados.
+
+Não foi necessária alteração estrutural: a migration de Personalização existente
+foi preservada, sem nova migration ou execução no banco real nesta manutenção.
+O registro da nova permissão será realizado pela aplicação quando publicada,
+após uma sessão válida; não foi executado seed.
 
 ## Auditoria dos relatórios e configurações
 
@@ -43,8 +59,10 @@ nome da unidade, bytes da logo, MIME, nome original, usuário e horário da atua
 A imagem fica no PostgreSQL, com limite de 2 MB. Substituição atualiza o mesmo
 registro, sem arquivos órfãos ou dependência de diretórios temporários no Railway.
 
-A migration `20261002000100_personalizacao_visual` está preparada e **não foi
-aplicada em produção**. Ela cria apenas a nova tabela, FK opcional para usuário,
+A migration `20261002000100_personalizacao_visual` foi reutilizada. O migrate
+status desta etapa informou as 53 migrations aplicadas no banco configurado
+localmente; não houve aplicação por esta manutenção, nem confirmação do vínculo
+desse banco com o serviço publicado. Ela cria apenas a nova tabela, FK opcional para usuário,
 restrições de singleton e tamanho da imagem. Nenhum registro antigo é atualizado.
 
 PNG, JPEG e WebP estáticos são conferidos com sharp 0.34.5, já instalado pelo
@@ -104,8 +122,12 @@ Relatórios adaptados individualmente:
 - Regressões de fotos, filtros, temperaturas, Hortifruti, óleo, Rastreabilidade e
   reabertura passaram em adapters isolados, sem writes no banco de produção.
 
-Não foram executados login real/relogin, deploy/restart de produção ou testes de
-acesso administrativo, pois a migration e a definição de Gerente Geral estão pendentes.
+Não foram executados login real/relogin ou deploy/restart de produção.
+Os controles administrativos agora foram testados em adapters isolados, incluindo
+quatro gerentes vinculados, DEV, negação de NUTRICIONISTA/COLABORADOR, sessão ausente,
+perfil com permissão revogada, página e chamadas diretas às três Server Actions.
+A action real da Gestão de Usuários foi testada removendo e restaurando essa
+permissão, preservando outro vínculo e gerando a auditoria existente.
 
 ## Arquivos
 
@@ -115,6 +137,11 @@ Criados: migration; `src/app/personalizacao/personalization-form.tsx`;
 `scripts/test-visual-personalization.cjs`; `scripts/test-visual-personalization-print.cjs`;
 este documento.
 
+Ativação de acesso: criados `src/app/personalizacao/page.tsx`,
+`src/app/personalizacao/actions.ts`, `src/lib/personalization-permission.ts` e
+`scripts/test-personalization-access.cjs`; alterados `src/lib/permissions.ts`,
+`src/lib/modules.ts` e `src/lib/auth-session.ts`.
+
 Alterados: `prisma/schema.prisma`; package.json/package-lock.json;
 `src/components/forms/image-upload-field.tsx`; `src/lib/monthly-sanitary-report.ts`;
 as sete rotas mensais acima; `src/app/relatorios/page.tsx`;
@@ -122,7 +149,7 @@ as sete rotas mensais acima; `src/app/relatorios/page.tsx`;
 
 ## Evoluções possíveis
 
-Depois de concluir o acesso, podem ser acrescentados rodapé institucional,
+Em etapas futuras, podem ser acrescentados rodapé institucional,
 endereço/contato, logo específica para impressão e cores institucionais.
 Nenhum campo para essas evoluções foi criado nesta etapa.
 
@@ -133,13 +160,19 @@ Nenhum campo para essas evoluções foi criado nesta etapa.
 - `npm.cmd run lint`: passou sem warnings ou erros do ESLint.
 - `npm.cmd run build`: passou, incluindo compilação, tipos e geração das rotas.
 - `git diff --check`: passou; Git informa apenas a normalização LF/CRLF configurada.
-- Git final: branch `main`, 15 arquivos rastreados modificados e nove entradas
-  novas (incluindo diretórios da migration e do formulário). Sem commit ou push.
+- Git da implementação inicial: branch `main`, 15 arquivos rastreados modificados
+  e nove entradas novas, sem commit ou push naquela etapa. Na ativação atual:
+  quatro arquivos rastreados modificados e quatro novos, sem commit ou push.
 
 A integridade da migration foi conferida contra o model: tipos, nulabilidade,
 default do ID, timestamps, chave primária e relação para Usuario correspondem
 ao schema. As constraints adicionais limitam a configuração a um registro e a
-imagem a 2 MB. A execução no PostgreSQL de produção permanece pendente.
+imagem a 2 MB. O banco publicado não foi auditado diretamente nesta ativação.
 
-Nenhuma regra operacional, autenticação, sessão, assinatura ou fechamento foi
-modificado. Não foi utilizado db push, seed, reset, commit ou push.
+Na ativação de acesso, lint e build passaram, assim como os testes de acesso,
+upload/relatórios e reabertura mensal. A conferência final de diff também passou.
+Prisma Client foi gerado novamente e migrate status não encontrou pendências
+no banco configurado. Os testes funcionais usaram apenas adapters isolados.
+As únicas mudanças na sessão são o registro inicial da permissão e a recarga
+dos vínculos nesse momento. Regras operacionais, assinaturas e fechamentos não
+foram alterados. Não foi utilizado db push, seed, reset, commit ou push nesta etapa.

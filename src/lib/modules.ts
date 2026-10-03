@@ -11,6 +11,12 @@ export type AppModule = {
 
 export const modules: AppModule[] = [
   {
+    name: "Personalização Visual",
+    href: "/personalizacao",
+    allowedRoles: ["DEV", "GERENTE"],
+    permissionCode: "modulo.personalizacao.acessar"
+  },
+  {
     name: "Higienização de Hortifruti",
     href: "/higienizacao-hortifruti",
     allowedRoles: ["DEV", "GERENTE", "NUTRICIONISTA", "COLABORADOR"],

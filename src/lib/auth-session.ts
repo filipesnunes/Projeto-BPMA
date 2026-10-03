@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getDefaultPermissionCodes } from "@/lib/permissions";
+import { registerPersonalizationPermission } from "@/lib/personalization-permission";
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/lib/rbac";
 
@@ -222,6 +223,13 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     return null;
   }
 
+  // Only a valid, active session can initialize the new permission catalog entry.
+  // Reload the profile grants when this request performed the initial registration.
+  if ("perfilAcesso" in session.usuario && await registerPersonalizationPermission()) {
+    const refreshed = await findSessionWithProfileAccess(tokenHash);
+    if (!refreshed) return null;
+    return buildAuthenticatedUser({ usuario: refreshed.usuario });
+  }
   return buildAuthenticatedUser({ usuario: session.usuario });
 }
 

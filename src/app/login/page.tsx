@@ -28,16 +28,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <section className="flex min-h-screen items-center justify-center py-8 dark:text-slate-100">
       <div className="w-full max-w-md bpma-card">
-        <div className="mb-6 flex items-start justify-between gap-2">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{APP_NAME}</h1>
-            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-              {APP_DESCRIPTION}
-            </p>
-          </div>
-          <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-            Ambiente de Testes
-          </span>
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{APP_NAME}</h1>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+            {APP_DESCRIPTION}
+          </p>
         </div>
 
         {feedback ? (

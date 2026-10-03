@@ -66,6 +66,8 @@ type MonthlyWeeklyCleaningReport = {
   monthYearLabel: string;
   unitName: string;
   logoDataUrl: string | null;
+  logoLargura?: number;
+  logoAlturaMaxima?: number;
   emittedAt: string;
   areas: AreaReport[];
   closureResponsible: string;
@@ -1008,6 +1010,8 @@ export async function GET(request: NextRequest) {
     monthYearLabel,
     unitName: identity.unitName,
     logoDataUrl: identity.logoDataUrl,
+    logoLargura: identity.logoLargura,
+    logoAlturaMaxima: identity.logoAlturaMaxima,
     emittedAt: formatAppDateTime(generatedAt),
     areas: buildAreaReports({
       monthLabel: monthYearLabel,

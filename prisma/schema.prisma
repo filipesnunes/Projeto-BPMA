@@ -1103,6 +1103,8 @@ model PersonalizacaoVisual {
   logoDados              Bytes?
   logoMimeType           String?
   logoNomeArquivo        String?
+  logoLargura            Int      @default(120)
+  logoAlturaMaxima       Int      @default(56)
   atualizadoPorUsuarioId Int?
   atualizadoPor          Usuario? @relation("PersonalizacaoVisualAtualizadoPor", fields: [atualizadoPorUsuarioId], references: [id], onDelete: SetNull)
   criadoEm               DateTime @default(now())

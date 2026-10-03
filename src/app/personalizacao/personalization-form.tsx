@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
 import { ReportIdentityMark } from "@/components/report-identity-mark";
+import { LOGO_WIDTH, LOGO_HEIGHT, normalizeLogoDimensions } from "@/lib/logo-dimensions";
 
 export type PersonalizationActionState = { status: "idle" | "success" | "error"; message: string };
 const INITIAL_STATE: PersonalizationActionState = { status: "idle", message: "" };
@@ -15,8 +16,10 @@ function SaveButton() {
 }
 
 export function PersonalizationForm({ logoDataUrl, fileName, unitName, fallbackUnitName, previewMonth,
+  logoLargura = LOGO_WIDTH.default, logoAlturaMaxima = LOGO_HEIGHT.default,
   saveAction, removeAction, resetAction }: {
   logoDataUrl: string | null; fileName: string | null; unitName: string; fallbackUnitName: string; previewMonth: string;
+  logoLargura?: number; logoAlturaMaxima?: number;
   saveAction: (state: PersonalizationActionState, formData: FormData) => Promise<PersonalizationActionState>;
   removeAction: (formData: FormData) => Promise<void>; resetAction: (formData: FormData) => Promise<void>;
 }) {
@@ -24,6 +27,9 @@ export function PersonalizationForm({ logoDataUrl, fileName, unitName, fallbackU
   const [state, action] = useActionState(saveAction, INITIAL_STATE);
   const [name, setName] = useState(unitName);
   const [previewLogo, setPreviewLogo] = useState(logoDataUrl);
+  const [width, setWidth] = useState(logoLargura);
+  const [height, setHeight] = useState(logoAlturaMaxima);
+  useEffect(() => { setWidth(logoLargura); setHeight(logoAlturaMaxima); }, [logoLargura, logoAlturaMaxima]);
   useEffect(() => { setName(unitName); setPreviewLogo(logoDataUrl); }, [unitName, logoDataUrl]);
   useEffect(() => { if (state.status === "success") router.refresh(); }, [state, router]);
   return <div className="space-y-5">
@@ -40,13 +46,27 @@ export function PersonalizationForm({ logoDataUrl, fileName, unitName, fallbackU
           previewImageClassName="max-h-44 max-w-full object-contain"
           helperText="PNG, JPG ou WebP estático, até 2 MB. A proporção e a transparência serão preservadas." />
         <p className="text-xs text-slate-500">{logoDataUrl ? "Existe uma logomarca salva. Selecione outra imagem para substituí-la ao salvar." : "Sem logomarca salva. Os relatórios exibem StaySafe."}</p>
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-semibold">Tamanho da logomarca</legend>
+          <p className="text-sm text-slate-600 dark:text-slate-300">Ajuste os controles e confira a prévia. A imagem mantém a proporção e cabe no espaço do cabeçalho.</p>
+          <p className="text-xs text-slate-500">Uma altura maior pode fazer o relatório ocupar mais páginas na impressão.</p>
+          <label className="block text-sm">Largura: {width} px
+            <input className="mt-2 block w-full" type="range" name="logoLargura" min={LOGO_WIDTH.min} max={LOGO_WIDTH.max}
+              value={width} onChange={event => setWidth(Number(event.currentTarget.value))} />
+          </label>
+          <label className="block text-sm">Altura máxima: {height} px
+            <input className="mt-2 block w-full" type="range" name="logoAlturaMaxima" min={LOGO_HEIGHT.min} max={LOGO_HEIGHT.max}
+              value={height} onChange={event => setHeight(Number(event.currentTarget.value))} />
+          </label>
+        </fieldset>
       </section>
       <section className="bpma-card space-y-4">
         <h2 className="text-lg font-semibold">Pré-visualização do cabeçalho</h2>
         <p className="text-sm text-slate-600 dark:text-slate-300">A prévia acompanha sua seleção. Salve para aplicar aos relatórios.</p>
         <div className="overflow-x-auto">
-          <div className="grid min-w-[420px] grid-cols-[21fr_53fr_26fr] border border-slate-400 bg-white text-slate-900">
-            <div className="flex items-center justify-center p-2"><ReportIdentityMark identity={{ unitName: name.trim() || fallbackUnitName, logoDataUrl: previewLogo }} /></div>
+          <div className="grid min-w-[720px] grid-cols-[21fr_53fr_26fr] border border-slate-400 bg-white text-slate-900">
+            <div className="flex min-w-0 items-center justify-center p-2"><ReportIdentityMark identity={{ unitName: name.trim() || fallbackUnitName, logoDataUrl: previewLogo,
+              ...normalizeLogoDimensions({logoLargura:width,logoAlturaMaxima:height}) }} /></div>
             <div className="flex items-center justify-center border-x border-slate-400 p-2 text-center text-sm font-bold">PLANO DE LIMPEZA SEMANAL</div>
             <div className="flex flex-col items-center justify-center p-2 text-center text-xs"><strong>Mês/Ano</strong>{previewMonth}</div>
           </div>

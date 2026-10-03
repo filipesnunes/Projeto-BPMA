@@ -180,6 +180,18 @@ async function main() {
     fs.writeFileSync(path.join(outputDir,`identity-${module}-reopened.html`),html);
   }
   for (const closure of tables.fechamentoMensalModulo) closure.status='FECHADO';
+  for (const [kind,width,height] of [['small',40,24],['large',240,120],['invalid',999,-1]]) {
+    const sized=form(logos.transparent); sized.set('logoLargura',String(width)); sized.set('logoAlturaMaxima',String(height));
+    await service.saveVisualPersonalization(sized,7);
+    const expected=kind==='invalid'?{logoLargura:120,logoAlturaMaxima:56}:{logoLargura:width,logoAlturaMaxima:height};
+    const identity=await service.getReportIdentity();
+    assert.equal(identity.logoLargura,expected.logoLargura); assert.equal(identity.logoAlturaMaxima,expected.logoAlturaMaxima);
+    for(const module of reportModules) {
+      const html=await report(module);
+      assert(html.includes(`style="width:${expected.logoLargura}px;height:${expected.logoAlturaMaxima}px"`));
+      fs.writeFileSync(path.join(outputDir,`identity-${module}-${kind}.html`),html);
+    }
+  }
   for (const [module,reportId] of [['chamados-manutencao','chamados-periodo'],['geral','resumo-geral']]) {
     const tree=await load('src/app/relatorios/page.tsx').default({searchParams:Promise.resolve({module,report:reportId,generated:'1',mes:'9',ano:'2026'})});
     const result=elements(tree,node=>node.type?.name==='ReportResult')[0];assert(result);
@@ -192,6 +204,12 @@ async function main() {
   const webp=await sharp(logos.square).webp().toBuffer();
   assert.equal((await parseHotelLogo(form(jpeg,'hotel.jpg','image/jpeg'))).mimeType,'image/jpeg');
   assert.equal((await parseHotelLogo(form(webp,'hotel.webp','image/webp'))).mimeType,'image/webp');
+  for (const [kind,buffer,mime,extension] of [['jpeg',jpeg,'image/jpeg','jpg'],['webp',webp,'image/webp','webp']]) {
+    const sized=form(buffer,`hotel.${extension}`,mime);sized.set('logoLargura','180');sized.set('logoAlturaMaxima','80');
+    await service.saveVisualPersonalization(sized,7);
+    for(const module of reportModules) fs.writeFileSync(path.join(outputDir,`identity-${module}-${kind}.html`),await report(module));
+  }
+  await service.saveVisualPersonalization(form(logos.transparent),7);
   const original=JSON.stringify(tables.personalizacaoVisual);
   for(const invalid of [form(Buffer.from('<script>evil</script>'),'fake.png'),
     form(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'),'hotel.svg','image/svg+xml'),
@@ -207,7 +225,30 @@ async function main() {
   assert.deepEqual(Buffer.from(tables.personalizacaoVisual[0].logoDados),logos.transparent);
   await service.removeHotelLogo(8);assert.equal((await service.getReportIdentity()).logoDataUrl,null);
   assert.equal((await service.getReportIdentity()).unitName,'Unidade atualizada');
+  const sizeBeforeRemoval={logoLargura:tables.personalizacaoVisual[0].logoLargura,logoAlturaMaxima:tables.personalizacaoVisual[0].logoAlturaMaxima};
+  assert.equal((await service.getReportIdentity()).logoLargura,sizeBeforeRemoval.logoLargura,'Removing logo preserves size');
   await service.restoreVisualDefaults(8);assert.deepEqual(await service.getReportIdentity(),baseIdentity);
+  const {normalizeLogoDimensions}=load('src/lib/logo-dimensions.ts');
+  for(const invalid of [null,undefined,'200',NaN,Infinity,0,-2,999,120.5]) {
+    assert.deepEqual(normalizeLogoDimensions({logoLargura:invalid,logoAlturaMaxima:invalid}),{logoLargura:120,logoAlturaMaxima:56});
+  }
+  // A rollout before the new migration reads the previous fields; unrelated errors propagate.
+  const {Prisma}=require('@prisma/client');
+  const oldRow={nomeUnidade:'Unidade legada',logoDados:logos.transparent,logoMimeType:'image/png',logoNomeArquivo:'legacy.png'};
+  mocks.set('@/lib/prisma',{prisma:{personalizacaoVisual:{findUnique:async args=>{
+    if(!args.select)throw new Prisma.PrismaClientKnownRequestError('Missing logoLargura',{code:'P2022',clientVersion:'6.5.0',meta:{column:'personalizacao_visual.logoLargura'}});
+    assert(!('logoLargura' in args.select));assert(!('logoAlturaMaxima' in args.select));return oldRow;
+  }}}});
+  delete require.cache[require.resolve(path.join(root,'src/lib/visual-personalization.ts'))];
+  const legacyService=load('src/lib/visual-personalization.ts');
+  const legacyIdentity=await legacyService.getReportIdentity();
+  assert.equal(legacyIdentity.unitName,'Unidade legada');assert(legacyIdentity.logoDataUrl);assert.equal(legacyIdentity.logoLargura,120);
+  mocks.set('@/lib/prisma',{prisma:{personalizacaoVisual:{findUnique:async()=>{
+    throw new Prisma.PrismaClientKnownRequestError('Missing nomeUnidade',{code:'P2022',clientVersion:'6.5.0',meta:{column:'personalizacao_visual.nomeUnidade'}});
+  }}}});
+  delete require.cache[require.resolve(path.join(root,'src/lib/visual-personalization.ts'))];
+  await assert.rejects(()=>load('src/lib/visual-personalization.ts').getReportIdentity(),e=>e.code==='P2022');
+  mocks.set('@/lib/prisma',{prisma});
   const escaped=renderReportIdentity({unitName:'<script>"&</script>',logoDataUrl:'javascript:evil'});
   assert(!escaped.includes('<script>'));assert(!escaped.includes('javascript:'));assert(escaped.includes('&lt;script&gt;'));
   let hookValues=[],hookCursor=0;
@@ -224,11 +265,21 @@ async function main() {
   uploadField.props.onPreviewChange('blob:synthetic-logo');
   elements(ui,node=>node.props?.name==='nomeUnidade')[0].props.onChange({currentTarget:{value:'K Platz Hotel'}});
   ui=draw();const preview=elements(ui,node=>node.type?.name==='ReportIdentityMark')[0];
-  assert.deepEqual(preview.props.identity,{unitName:'K Platz Hotel',logoDataUrl:'blob:synthetic-logo'});
+  assert.deepEqual(preview.props.identity,{unitName:'K Platz Hotel',logoDataUrl:'blob:synthetic-logo',logoLargura:120,logoAlturaMaxima:56});
+  elements(ui,node=>node.props?.name==='logoLargura')[0].props.onChange({currentTarget:{value:'200'}});
+  elements(ui,node=>node.props?.name==='logoAlturaMaxima')[0].props.onChange({currentTarget:{value:'100'}});
+  ui=draw();
+  assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoLargura,200);
+  assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoAlturaMaxima,100);
+  const {renderToStaticMarkup}=require('react-dom/server');
+  const {ReportIdentityMark}=load('src/components/report-identity-mark.tsx');
+  const previewHtml=renderToStaticMarkup(ReportIdentityMark({identity:{unitName:'K Platz Hotel',logoDataUrl:`data:image/png;base64,${logos.transparent.toString('base64')}`,logoLargura:200,logoAlturaMaxima:100}}));
+  fs.writeFileSync(path.join(outputDir,'logo-size-preview.html'),`<!doctype html><style>body{font-family:Arial} .logo-cell{width:220px;display:flex;align-items:center;justify-content:center;border:1px solid #555;padding:8px} .flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.justify-center{justify-content:center}.max-w-full{max-width:100%}.h-full{height:100%}.w-full{width:100%}.object-contain{object-fit:contain}.object-center{object-position:center}.block{display:block}.text-center{text-align:center}</style><div class="logo-cell">${previewHtml}</div>`);
   assert.equal(elements(ui,node=>node.type==='details').length,1,'Restore confirmation present; no saved logo to remove');
   console.log('PASS: database persistence/reload, PNG/JPEG/WebP, four logo proportions/transparency, replacement, removal, restore, validation, atomic failure and HTML escaping.');
   console.log('PASS: prepared form updates logo/name header preview through reusable upload; no logo styling effects.');
   console.log('PASS: all seven real monthly routes render fallback/personalized identity; titles, month/year and records query unchanged.');
-  fs.writeFileSync(path.join(outputDir,'identity-report-fixtures.json'),JSON.stringify({modules:reportModules,kinds:['default',...Object.keys(logos)]}));
+  console.log('PASS: size min/max/default/invalid, live preview, restore/removal, legacy schema reads and unrelated errors propagate.');
+  fs.writeFileSync(path.join(outputDir,'identity-report-fixtures.json'),JSON.stringify({modules:reportModules,kinds:['default',...Object.keys(logos),'small','large','invalid','jpeg','webp']}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

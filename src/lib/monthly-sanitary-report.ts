@@ -21,6 +21,8 @@ export type MonthlySanitaryReport = {
   referenceMonthYear: string;
   unitName: string;
   logoDataUrl?: string | null;
+  logoLargura?: number;
+  logoAlturaMaxima?: number;
   moduleName: string;
   brandName: string;
   emittedAt: string;
@@ -126,7 +128,8 @@ function renderHeader(report: MonthlySanitaryReport): string {
         <tbody>
           <tr>
             <td class="brand-cell" rowspan="4">
-              ${renderReportIdentity({ unitName: report.unitName, logoDataUrl: report.logoDataUrl ?? null }, report.brandName)}
+              ${renderReportIdentity({ unitName: report.unitName, logoDataUrl: report.logoDataUrl ?? null,
+                logoLargura: report.logoLargura, logoAlturaMaxima: report.logoAlturaMaxima }, report.brandName)}
             </td>
             <td class="title-cell" colspan="4">${escapeHtml(report.title)}</td>
           </tr>

@@ -131,6 +131,8 @@ export async function GET(request: NextRequest) {
     referenceMonthYear,
     unitName: identity.unitName,
     logoDataUrl: identity.logoDataUrl,
+    logoLargura: identity.logoLargura,
+    logoAlturaMaxima: identity.logoAlturaMaxima,
     moduleName: MODULE_NAME,
     brandName: APP_NAME,
     emittedAt: formatAppDateTime(generatedAt),

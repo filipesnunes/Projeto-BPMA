@@ -1,6 +1,7 @@
 import { APP_NAME } from "@/lib/app-branding";
+import { normalizeLogoDimensions } from "@/lib/logo-dimensions";
 
-export type ReportIdentity = { unitName: string; logoDataUrl: string | null };
+export type ReportIdentity = { unitName: string; logoDataUrl: string | null; logoLargura?: number; logoAlturaMaxima?: number };
 
 export function escapeIdentityHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -9,8 +10,9 @@ export function escapeIdentityHtml(value: string): string {
 
 export function renderReportIdentity(identity: ReportIdentity, fallbackBrand = APP_NAME): string {
   const safeLogo = identity.logoDataUrl && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(identity.logoDataUrl);
+  const size = normalizeLogoDimensions(identity);
   const brand = safeLogo
-    ? `<div class="report-logo-box"><img class="report-hotel-logo" src="${identity.logoDataUrl}" alt="Logomarca do hotel" /></div>`
+    ? `<div class="report-logo-box" style="width:${size.logoLargura}px;height:${size.logoAlturaMaxima}px"><img class="report-hotel-logo" src="${identity.logoDataUrl}" alt="Logomarca do hotel" /></div>`
     : `<strong>${escapeIdentityHtml(fallbackBrand)}</strong>`;
   const unitName = escapeIdentityHtml(identity.unitName || "Unidade não informada");
   return `<div class="report-identity">${brand}<span title="${unitName}">${unitName}</span></div>`;
@@ -19,8 +21,8 @@ export function renderReportIdentity(identity: ReportIdentity, fallbackBrand = A
 export const REPORT_IDENTITY_CSS = `
   .report-identity { display: flex; flex-direction: column; align-items: center; justify-content: center; max-width: 100%; min-width: 0; }
   .report-identity > span { max-width: 100%; overflow-wrap: anywhere; max-height: 2.6em; line-height: 1.3; overflow: hidden; }
-  .report-logo-box { display: flex; align-items: center; justify-content: center; height: 16px; width: 100%; }
-  .report-hotel-logo { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+  .report-logo-box { display: flex; align-items: center; justify-content: center; max-width: 100%; flex-shrink: 0; }
+  .report-hotel-logo { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; object-position: center; }
 `;
 
 // Embedded images are independent of session/expiring URLs. Wait for decoding before printing.

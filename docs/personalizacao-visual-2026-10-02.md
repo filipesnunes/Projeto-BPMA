@@ -1,5 +1,11 @@
 # Personalização visual — BPMA/KPlatz atual
 
+Atualização posterior: o dimensionamento da logo agora é configurável e o
+cabeçalho pode crescer conforme a altura escolhida. A migration nova permanece
+pendente, sem aplicação nesta tarefa. Consulte
+[Dimensionamento da logomarca](dimensionamento-logo-2026-10-02.md) para limites,
+arquivos e validações atuais; os registros abaixo descrevem a implantação inicial.
+
 ## Acesso definido e interface ativada
 
 Workspace auditado: `A:\Projeto-BPMA-KPlatz`, branch `main`, Git inicialmente limpo.

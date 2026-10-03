@@ -49,6 +49,8 @@ type MonthlyBuffetReport = {
   monthYearLabel: string;
   unitName: string;
   logoDataUrl: string | null;
+  logoLargura?: number;
+  logoAlturaMaxima?: number;
   emittedAt: string;
   services: BuffetServiceTable[];
   closureResponsible: string;
@@ -728,6 +730,8 @@ export async function GET(request: NextRequest) {
     monthYearLabel: formatMonthYear(month, year),
     unitName: identity.unitName,
     logoDataUrl: identity.logoDataUrl,
+    logoLargura: identity.logoLargura,
+    logoAlturaMaxima: identity.logoAlturaMaxima,
     emittedAt: formatAppDateTime(generatedAt),
     services: buildServiceTables(records, supervisorByDate),
     closureResponsible,

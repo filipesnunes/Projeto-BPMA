@@ -25,6 +25,7 @@ export default async function PersonalizationPage() {
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Configure a identidade visual dos relatórios da unidade.</p>
     </section>
     <PersonalizationForm logoDataUrl={identity.logoDataUrl} fileName={config?.logoNomeArquivo ?? null}
+      logoLargura={identity.logoLargura} logoAlturaMaxima={identity.logoAlturaMaxima}
       unitName={config?.nomeUnidade ?? ""} fallbackUnitName={defaultUnitName()} previewMonth={previewMonth}
       saveAction={savePersonalizationAction} removeAction={removeLogoAction} resetAction={restoreDefaultsAction} />
   </div>;

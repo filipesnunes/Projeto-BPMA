@@ -1,4 +1,5 @@
-import { renderReportIdentity, REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
+import { REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
+import { renderReportHeader } from "@/lib/report-header";
 
 export type MonthlySanitaryReportColumn = {
   key: string;
@@ -122,39 +123,14 @@ function renderDataTable(report: MonthlySanitaryReport): string {
 }
 
 function renderHeader(report: MonthlySanitaryReport): string {
-  return `
-    <header>
-      <table class="header-table">
-        <tbody>
-          <tr>
-            <td class="brand-cell" rowspan="4">
-              ${renderReportIdentity({ unitName: report.unitName, logoDataUrl: report.logoDataUrl ?? null,
-                logoLargura: report.logoLargura, logoAlturaMaxima: report.logoAlturaMaxima }, report.brandName)}
-            </td>
-            <td class="title-cell" colspan="4">${escapeHtml(report.title)}</td>
-          </tr>
-          <tr>
-            <th>Relatório</th>
-            <td>${escapeHtml(report.reportName)}</td>
-            <th>Anexo</th>
-            <td>${escapeHtml(report.annexCode)}</td>
-          </tr>
-          <tr>
-            <th>Data da elaboração</th>
-            <td>${escapeHtml(report.elaborationDate)}</td>
-            <th>Emissão</th>
-            <td>${escapeHtml(report.emittedAt)}</td>
-          </tr>
-          <tr>
-            <th>Mês/Ano</th>
-            <td>${escapeHtml(report.referenceMonthYear)}</td>
-            <th>Unidade</th>
-            <td>${escapeHtml(report.unitName)}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="module-line"><strong>Módulo:</strong> ${escapeHtml(report.moduleName)}</p>
-    </header>`;
+  const closure = report.summaryItems.find(item => item.label === "Status do fechamento mensal")?.value;
+  return renderReportHeader({
+    identity: { unitName: report.unitName, logoDataUrl: report.logoDataUrl ?? null,
+      logoLargura: report.logoLargura, logoAlturaMaxima: report.logoAlturaMaxima },
+    title: report.title, reportName: report.reportName, moduleName: report.moduleName,
+    period: report.referenceMonthYear, emittedAt: report.emittedAt,
+    closureStatus: closure === undefined ? undefined : String(closure), fallbackBrand: report.brandName
+  });
 }
 
 function renderFooter(report: MonthlySanitaryReport): string {
@@ -234,35 +210,6 @@ function renderStyles(): string {
       h2,
       p {
         margin: 0;
-      }
-
-      .header-table {
-        table-layout: fixed;
-      }
-
-      .brand-cell {
-        width: 18%;
-        text-align: center;
-        vertical-align: middle;
-        font-size: 14px;
-      }
-
-      .brand-cell span {
-        display: block;
-        margin-top: 4px;
-        font-size: 10px;
-        font-weight: 400;
-      }
-
-      .title-cell {
-        text-align: center;
-        font-size: 16px;
-        font-weight: 700;
-        letter-spacing: 0;
-      }
-
-      .module-line {
-        margin-top: 6px;
       }
 
       .report-section {

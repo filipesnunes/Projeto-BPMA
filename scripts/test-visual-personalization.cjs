@@ -104,7 +104,18 @@ const outputDir = path.join(root,'.data/validation');
 fs.mkdirSync(outputDir,{recursive:true});
 async function report(module, month = 9, year = 2026) {
   const result = await load(`src/app/relatorios/${module}/mensal/route.ts`).GET(new NextRequest(`http://localhost/relatorios/${module}/mensal?mes=${month}&ano=${year}`));
-  assert.equal(result.status,200); return result.text();
+  assert.equal(result.status,200);
+  const html = await result.text();
+  const header = html.match(/<header\b[^>]*>[\s\S]*?<\/header>/)?.[0];
+  assert(header?.includes('report-header-main'));
+  assert(header.includes('report-header-hotel') && header.includes('report-header-title') && header.includes('report-header-platform'));
+  assert(header.includes('class="report-staysafe-logo" src="data:image/webp;base64,'));
+  assert(header.includes('report-header-info'));
+  assert(header.includes('<strong>Mês/Ano:</strong>'));
+  assert(header.includes('<strong>Emissão:</strong>') && header.includes('<strong>Fechamento mensal:</strong>'));
+  assert(!/Anexo|Data da elaboração|Data de Elaboração|<th>Unidade/.test(header));
+  assert(!header.includes('<table'), 'Administrative info is not a table');
+  return html;
 }
 const reportModules = ['plano-limpeza-semanal','plano-limpeza-diario','controle-temperatura-equipamentos',
   'controle-buffet-amostras','higienizacao-hortifruti','controle-qualidade-oleo','rastreabilidade-recebimento'];
@@ -180,6 +191,15 @@ async function main() {
     fs.writeFileSync(path.join(outputDir,`identity-${module}-reopened.html`),html);
   }
   for (const closure of tables.fechamentoMensalModulo) closure.status='FECHADO';
+  const closures=tables.fechamentoMensalModulo;
+  tables.fechamentoMensalModulo=[];
+  for(const module of reportModules){
+    const html=await report(module);
+    const header=html.match(/<header\b[^>]*>[\s\S]*?<\/header>/)[0];
+    assert(header.includes('Pendente de assinatura'));
+    fs.writeFileSync(path.join(outputDir,`identity-${module}-pending.html`),html);
+  }
+  tables.fechamentoMensalModulo=closures;
   for (const [kind,width,height] of [['small',40,24],['large',240,120],['invalid',999,-1]]) {
     const sized=form(logos.transparent); sized.set('logoLargura',String(width)); sized.set('logoAlturaMaxima',String(height));
     await service.saveVisualPersonalization(sized,7);
@@ -197,7 +217,14 @@ async function main() {
     const result=elements(tree,node=>node.type?.name==='ReportResult')[0];assert(result);
     assert.equal(result.props.identity.unitName,'K Platz Hotel');assert(result.props.identity.logoDataUrl);
     const rendered=result.type(result.props);
-    assert(elements(rendered,node=>node.type?.name==='ReportIdentityMark').length>0);
+    const header=elements(rendered,node=>node.type?.name==='ReportHeader')[0];assert(header);
+    assert.equal(header.props.periodLabel,'Período');assert.equal(header.props.closureStatus,undefined);
+    assert(header.props.institutionalLogoSrc.startsWith('data:image/webp;base64,'));
+    assert(elements(header.type(header.props),node=>node.type?.name==='ReportIdentityMark').length>0);
+    const {renderToStaticMarkup}=require('react-dom/server');
+    const reportHtml=renderToStaticMarkup(rendered);
+    assert(!reportHtml.includes('Fechamento mensal:'),'No invented monthly closure in generic reports');
+    fs.writeFileSync(path.join(outputDir,`identity-${module}-generic.html`),`<!doctype html><html><meta charset="utf-8"><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial;font-size:12px;background:white;color:#0f172a}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:4px}.print\\:hidden{display:none}</style>${reportHtml}</html>`);
   }
   assert((await sharp(Buffer.from(tables.personalizacaoVisual[0].logoDados)).metadata()).hasAlpha);
   const jpeg=await sharp(logos.horizontal).flatten({background:'#fff'}).jpeg().toBuffer();
@@ -285,13 +312,13 @@ async function main() {
   assert.equal(uploadField.props.maxBytes,2*1024*1024);assert.equal(uploadField.props.previewImageClassName,'max-h-44 max-w-full object-contain');
   uploadField.props.onPreviewChange('blob:synthetic-logo');
   elements(ui,node=>node.props?.name==='nomeUnidade')[0].props.onChange({currentTarget:{value:'K Platz Hotel'}});
-  ui=draw();const preview=elements(ui,node=>node.type?.name==='ReportIdentityMark')[0];
+  ui=draw();const preview=elements(ui,node=>node.type?.name==='ReportHeader')[0];
   assert.deepEqual(preview.props.identity,{unitName:'K Platz Hotel',logoDataUrl:'blob:synthetic-logo',logoLargura:120,logoAlturaMaxima:56});
   elements(ui,node=>node.props?.name==='logoLargura')[0].props.onChange({currentTarget:{value:'200'}});
   elements(ui,node=>node.props?.name==='logoAlturaMaxima')[0].props.onChange({currentTarget:{value:'100'}});
   ui=draw();
-  assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoLargura,200);
-  assert.equal(elements(ui,node=>node.type?.name==='ReportIdentityMark')[0].props.identity.logoAlturaMaxima,100);
+  assert.equal(elements(ui,node=>node.type?.name==='ReportHeader')[0].props.identity.logoLargura,200);
+  assert.equal(elements(ui,node=>node.type?.name==='ReportHeader')[0].props.identity.logoAlturaMaxima,100);
   elements(ui,node=>node.props?.name==='corPrimaria')[0].props.onChange({currentTarget:{value:'#702c40'}});
   ui=draw();
   assert(elements(ui,node=>node.type==='span'&&node.props?.style?.backgroundColor==='#702c40').length>0,'Color changes are reflected in app preview');
@@ -303,12 +330,16 @@ async function main() {
   const {ReportIdentityMark}=load('src/components/report-identity-mark.tsx');
   const previewHtml=renderToStaticMarkup(ReportIdentityMark({identity:{unitName:'K Platz Hotel',logoDataUrl:`data:image/png;base64,${logos.transparent.toString('base64')}`,logoLargura:200,logoAlturaMaxima:100}}));
   fs.writeFileSync(path.join(outputDir,'logo-size-preview.html'),`<!doctype html><style>body{font-family:Arial} .logo-cell{width:220px;display:flex;align-items:center;justify-content:center;border:1px solid #555;padding:8px} .flex{display:flex}.flex-col{flex-direction:column}.items-center{align-items:center}.justify-center{justify-content:center}.max-w-full{max-width:100%}.h-full{height:100%}.w-full{width:100%}.object-contain{object-fit:contain}.object-center{object-position:center}.block{display:block}.text-center{text-align:center}</style><div class="logo-cell">${previewHtml}</div>`);
+  const {ReportHeader}=load('src/components/report-identity-mark.tsx');
+  const {getInstitutionalReportLogo}=load('src/lib/report-header.ts');
+  const headerHtml=renderToStaticMarkup(ReportHeader({...preview.props,identity:{...preview.props.identity,logoDataUrl:`data:image/png;base64,${logos.transparent.toString('base64')}`},institutionalLogoSrc:getInstitutionalReportLogo()}));
+  fs.writeFileSync(path.join(outputDir,'logo-header-preview.html'),`<!doctype html><meta charset="utf-8"><style>body{font-family:Arial;width:900px;margin:20px auto}</style>${headerHtml}`);
   assert.equal(elements(ui,node=>node.type==='details').length,1,'Restore confirmation present; no saved logo to remove');
   console.log('PASS: database persistence/reload, PNG/JPEG/WebP, four logo proportions/transparency, replacement, removal, restore, validation, atomic failure and HTML escaping.');
   console.log('PASS: prepared form updates logo/name header preview through reusable upload; no logo styling effects.');
   console.log('PASS: all seven real monthly routes render fallback/personalized identity; titles, month/year and records query unchanged.');
   console.log('PASS: size min/max/default/invalid, live preview, restore/removal, legacy schema reads and unrelated errors propagate.');
   console.log('PASS: application appearance persistence, color/option injection rejected atomically, semantic tokens untouched, logo removal and restore.');
-  fs.writeFileSync(path.join(outputDir,'identity-report-fixtures.json'),JSON.stringify({modules:reportModules,kinds:['default',...Object.keys(logos),'small','large','invalid','jpeg','webp']}));
+  fs.writeFileSync(path.join(outputDir,'identity-report-fixtures.json'),JSON.stringify({modules:reportModules,kinds:['default',...Object.keys(logos),'small','large','invalid','jpeg','webp','pending']}));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

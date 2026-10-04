@@ -4,7 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { ImageUploadField } from "@/components/forms/image-upload-field";
-import { ReportIdentityMark } from "@/components/report-identity-mark";
+import { ReportHeader } from "@/components/report-identity-mark";
 import { LOGO_WIDTH, LOGO_HEIGHT, normalizeLogoDimensions } from "@/lib/logo-dimensions";
 import { APPEARANCE_PALETTES, DEFAULT_APPEARANCE, FONT_OPTIONS, TEXT_SIZES, normalizeAppearance, contrastingText, type AppearanceSettings } from "@/lib/appearance-settings";
 
@@ -127,11 +127,10 @@ export function PersonalizationForm({ logoDataUrl, fileName, unitName, fallbackU
         <h2 className="text-lg font-semibold">Pré-visualização do cabeçalho</h2>
         <p className="text-sm text-slate-600 dark:text-slate-300">A prévia acompanha sua seleção. Salve para aplicar aos relatórios.</p>
         <div className="overflow-x-auto">
-          <div className="grid min-w-[720px] grid-cols-[21fr_53fr_26fr] border border-slate-400 bg-white text-slate-900">
-            <div className="flex min-w-0 items-center justify-center p-2"><ReportIdentityMark identity={{ unitName: name.trim() || fallbackUnitName, logoDataUrl: previewLogo,
-              ...normalizeLogoDimensions({logoLargura:width,logoAlturaMaxima:height}) }} /></div>
-            <div className="flex items-center justify-center border-x border-slate-400 p-2 text-center text-sm font-bold">PLANO DE LIMPEZA SEMANAL</div>
-            <div className="flex flex-col items-center justify-center p-2 text-center text-xs"><strong>Mês/Ano</strong>{previewMonth}</div>
+          <div className="min-w-[720px]">
+            <ReportHeader identity={{ unitName: name.trim() || fallbackUnitName, logoDataUrl: previewLogo,
+              ...normalizeLogoDimensions({logoLargura:width,logoAlturaMaxima:height}) }}
+              title="PLANO DE LIMPEZA SEMANAL" reportName="Relatório mensal" moduleName="Plano de Limpeza Semanal" period={previewMonth} />
           </div>
         </div>
       </section>

@@ -6,7 +6,8 @@ import Link from "next/link";
 import { APP_NAME } from "@/lib/app-branding";
 import { getReportIdentity } from "@/lib/visual-personalization";
 import type { ReportIdentity } from "@/lib/report-identity";
-import { ReportIdentityMark } from "@/components/report-identity-mark";
+import { ReportHeader } from "@/components/report-identity-mark";
+import { getInstitutionalReportLogo } from "@/lib/report-header";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDateTime, getAppDate, getAppMonthYear } from "@/lib/date-time";
 import { prisma } from "@/lib/prisma";
@@ -350,29 +351,15 @@ function SanitaryReportsSection({
 function ReportResult({ report, identity }: { report: GeneratedReport; identity: ReportIdentity }) {
   return (
     <section className="bpma-report-document bpma-card space-y-5 print:rounded-none print:border-0 print:shadow-none">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="w-40 max-w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <ReportIdentityMark identity={identity} />
-          </div>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
-            {report.reportLabel}
-          </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            {report.moduleLabel} • {report.periodLabel}
-          </p>
-        </div>
-        <ReportActions />
-      </div>
+      <div className="flex justify-end print:hidden"><ReportActions /></div>
+      <ReportHeader identity={identity} title={report.reportLabel} reportName={report.reportLabel}
+        moduleName={report.moduleLabel} period={report.periodLabel} periodLabel="Período"
+        emittedAt={formatDateTimeDisplay(report.generatedAt)} institutionalLogoSrc={getInstitutionalReportLogo()} />
 
       <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-700 dark:bg-slate-800 md:grid-cols-2 xl:grid-cols-4">
         <p><strong>Sistema:</strong> {APP_NAME}</p>
-        <p><strong>Relatório:</strong> {report.reportLabel}</p>
         <p><strong>Usuário que emitiu:</strong> {report.generatedBy}</p>
         <p><strong>Perfil:</strong> {report.generatedByRole}</p>
-        <p><strong>Emissão:</strong> {formatDateTimeDisplay(report.generatedAt)}</p>
-        <p><strong>Módulo:</strong> {report.moduleLabel}</p>
-        <p><strong>Período:</strong> {report.periodLabel}</p>
       </div>
 
       {report.appliedFilters.length > 0 ? (

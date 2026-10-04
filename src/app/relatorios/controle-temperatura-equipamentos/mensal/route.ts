@@ -9,7 +9,8 @@ import {
 } from "@prisma/client";
 
 import { getReportIdentity } from "@/lib/visual-personalization";
-import { renderReportIdentity, REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
+import { REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
+import { renderReportHeader } from "@/lib/report-header";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
   APP_TIME_ZONE,
@@ -353,44 +354,6 @@ function renderStyles(): string {
         font-weight: 700;
       }
 
-      .header-table {
-        table-layout: fixed;
-      }
-
-      .brand-cell {
-        width: 20%;
-        font-size: 12px;
-        text-align: center;
-      }
-
-      .brand-cell span {
-        display: block;
-        margin-top: 2px;
-        font-size: 8px;
-        font-weight: 400;
-      }
-
-      .title-cell {
-        width: 54%;
-        font-size: 14px;
-        font-weight: 700;
-        letter-spacing: 0;
-        text-align: center;
-      }
-
-      .month-cell {
-        width: 26%;
-        font-size: 10px;
-        text-align: center;
-      }
-
-      .meta-line {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: space-between;
-        font-size: 8px;
-      }
 
       .equipment-info {
         table-layout: fixed;
@@ -521,29 +484,10 @@ function renderStyles(): string {
 }
 
 function renderHeader(report: MonthlyTemperatureReport): string {
-  return `
-    <header>
-      <table class="header-table">
-        <tbody>
-          <tr>
-            <td class="brand-cell">
-              ${renderReportIdentity(report)}
-            </td>
-            <td class="title-cell">${escapeHtml(REPORT_TITLE)}</td>
-            <td class="month-cell">
-              <strong>Mês/Ano</strong><br />
-              ${escapeHtml(report.monthYearLabel)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="meta-line">
-        <span><strong>Relatório:</strong> ${escapeHtml(REPORT_NAME)}</span>
-        <span><strong>Módulo:</strong> ${escapeHtml(MODULE_NAME)}</span>
-        <span><strong>Emissão:</strong> ${escapeHtml(report.emittedAt)}</span>
-        <span><strong>Fechamento mensal:</strong> ${escapeHtml(report.closureStatus)}</span>
-      </div>
-    </header>`;
+  return renderReportHeader({
+    identity: report, title: REPORT_TITLE, reportName: REPORT_NAME, moduleName: MODULE_NAME,
+    period: report.monthYearLabel, emittedAt: report.emittedAt, closureStatus: report.closureStatus
+  });
 }
 
 function renderEquipmentInfo(equipment: EquipmentReport, report: MonthlyTemperatureReport): string {

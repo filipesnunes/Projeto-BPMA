@@ -234,7 +234,9 @@ async function main() {
     if(module==='controle-temperatura-equipamentos'){
       assert.equal(findElement(form,node=>node.type?.name==='TemperatureReferenceFields').props.referenceDate,todayInput,'Temperature calendar defaults to today despite month filter');
     }else{
-      assert(findElement(form, node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.startsWith(dates.formatAppDate(dates.getAppDate()))), `${module}: new record displays today despite month filter`);
+      const calendar=findElement(form,node=>node.props?.name==='data');
+      assert.equal(calendar.props.type,'date');
+      assert.equal(calendar.props.defaultValue,todayInput,'Oil calendar defaults to today despite month filter');
     }
     const returnTo = findElement(form, node => node.props?.name === 'returnTo').props.value;
     assert.equal(new URL(returnTo, 'http://localhost').searchParams.has('filtroData'), false, `${module}: return URL must not reintroduce today`);

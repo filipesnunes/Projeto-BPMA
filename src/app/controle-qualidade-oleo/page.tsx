@@ -24,7 +24,6 @@ import { OIL_OPERATION_GUIDELINES } from "./options";
 import {
   formatDateDisplay,
   formatDateInput,
-  formatDateTimeDisplay,
   formatTemperatureDisplay,
   getCurrentSystemDateTime,
   getMonthDateRange,
@@ -116,6 +115,11 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const now = getCurrentSystemDateTime();
   const currentPeriod = getMonthYear(getTodaySystemDate());
   const todayInput = formatDateInput(now);
+  const submittedDate = firstParam(params.formDataReferencia);
+  const validSubmittedDate = /^\d{4}-\d{2}-\d{2}$/.test(submittedDate) ? parseDateInput(submittedDate) : null;
+  const defaultRecordDate = feedbackType === "error" && params.formDataReferencia !== undefined
+    ? validSubmittedDate ? formatDateInput(validSubmittedDate) : ""
+    : todayInput;
 
   const filtroData = firstParam(params.filtroData).trim();
   const filtroMesRaw = firstParam(params.filtroMes).trim();
@@ -389,14 +393,17 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               <input type="hidden" name="returnTo" value={formReturnTo} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
+            {registroEmEdicao ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Data
               </p>
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {registroEmEdicao ? formatDateDisplay(registroEmEdicao.data) : formatDateTimeDisplay(now)}
+                {formatDateDisplay(registroEmEdicao.data)}
               </p>
-            </div>
+            </div> : <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
+              Data do Procedimento *
+              <input type="date" name="data" required defaultValue={defaultRecordDate} className={INPUT_CLASS} />
+            </label>}
 
             <OilRegisterFields
               previsaoFita={ultimaAfericaoFita

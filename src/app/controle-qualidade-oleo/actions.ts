@@ -36,6 +36,7 @@ import {
   isTemperatureCritical,
   OIL_STRIP_TEMPERATURE_SAVE_MESSAGE,
   parsePositiveInt,
+  parseDateInput,
   parseTemperatureInput
 } from "./utils";
 
@@ -43,6 +44,7 @@ const MODULE_PATH = "/controle-qualidade-oleo";
 const HISTORY_PATH = "/controle-qualidade-oleo/historico";
 const OPTIONS_PATH = "/controle-qualidade-oleo/opcoes";
 const REGISTRO_FORM_PARAM_KEYS = [
+  "formDataReferencia",
   "formFita",
   "formTemperatura",
   "formSemUtilizacao",
@@ -113,6 +115,7 @@ function getRegistroFormState(
   formData: FormData
 ): Record<(typeof REGISTRO_FORM_PARAM_KEYS)[number], string> {
   return {
+    formDataReferencia: getInputValue(formData, "data"),
     formFita: getInputValue(formData, "fitaOleo"),
     formTemperatura: getInputValue(formData, "temperatura"),
     formSemUtilizacao: getInputValue(formData, "semUtilizacao") === "true" ? "true" : "false",
@@ -195,7 +198,11 @@ export async function createRegistroAction(formData: FormData) {
       "Seu perfil não pode criar registros de óleo."
     );
 
-    const data = getTodaySystemDate();
+    const dataInput = formData.get("data");
+    // Retain today's default for older callers; explicitly submitted dates must be valid.
+    const data = dataInput === null ? getTodaySystemDate() :
+      typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseDateInput(dataInput) : null;
+    if (!data) throw new Error("Informe uma data válida para o registro.");
     const payload = await getRegistroPayload(formData, actor.nomeCompleto);
     const { mes, ano } = getMonthYear(data);
 

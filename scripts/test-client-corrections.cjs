@@ -171,6 +171,78 @@ async function main() {
   assert.equal(evaluate({rule:rules[0]}),'Nenhuma ação necessária.');
   assert.equal(evaluate({rule:rules[2]}),rules[2].acaoCorretiva);
   assert.equal(evaluate({rule:{...rules[1],acaoCorretiva:'Ajustar termostato.'}}),'Ajustar termostato.');
+  // Date/shift context survives save and reopening the form; no real database.
+  const originalNow=dates.getAppNow,originalDate=dates.getAppDate;
+  const fixedNow=new Date('2026-10-13T18:00:00Z'); // Afternoon in Sao Paulo.
+  dates.getAppNow=()=>fixedNow;
+  dates.getAppDate=value=>originalDate(value??fixedNow);
+  const tempPage=load('src/app/controle-temperatura-equipamentos/page.tsx').default;
+  for(const rule of rules)rule.categoria={categoria:'REFRIGERACAO'};
+  tables.controleTemperaturaEquipamentoOpcao.push({id:3,nome:'C',tipo:'EQUIPAMENTO',categoriaEquipamento:'REFRIGERACAO',ativo:true,turnoManha:true,turnoTarde:true});
+  const getFields=tree=>elements(tree,node=>node.type?.name==='AutomaticCorrectiveActionFields')[0].props;
+  const historical={new:'1',dataRegistro:'2026-09-13',turnoRegistro:'MANHA'};
+  const beforeFiles=['temperature-actions-before.ts','temperature-page-before.ts'].map(file=>path.join(outputDir,file));
+  if(beforeFiles.every(file=>fs.existsSync(file))){
+    function oldModule(fixture,sourcePath){
+      const file=path.join(root,sourcePath),unit=new Module(file,module);unit.filename=file;unit.paths=Module._nodeModulePaths(path.dirname(file));
+      unit._compile(ts.transpileModule(fs.readFileSync(fixture,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,file);return unit.exports;
+    }
+    const oldPage=oldModule(beforeFiles[1],'src/app/controle-temperatura-equipamentos/page.tsx').default;
+    const oldFields=getFields(await oldPage({searchParams:Promise.resolve(historical)}));
+    assert.equal(oldFields.defaultTurno,'TARDE','Original page ignores the previously chosen morning shift');
+    assert.equal(oldFields.dataReferencia,'2026-10-13','Original page ignores the requested historical date');
+    const oldActions=oldModule(beforeFiles[0],'src/app/controle-temperatura-equipamentos/actions.ts');
+    const oldResult=await action(oldActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13'});
+    assert.equal(oldResult.get('turnoRegistro'),null,'Original redirect loses selected shift');
+    assert.equal(dates.formatAppDateInput(tables.controleTemperaturaEquipamento.at(-1).data),'2026-10-13','Original action forces today');
+    tables.controleTemperaturaEquipamento.pop(); // Synthetic diagnostic record only.
+    console.log('PASS reproduction before fix: forced current date and afternoon default after morning save.');
+  }
+  const originalRows=JSON.stringify(tables.controleTemperaturaEquipamento);
+  let formPage=await tempPage({searchParams:Promise.resolve({new:'1'})});
+  assert.equal(elements(formPage,node=>node.type?.name==='TemperatureReferenceFields')[0].props.referenceDate,'2026-10-13');
+  let fields=getFields(await tempPage({searchParams:Promise.resolve(historical)}));
+  assert.equal(fields.dataReferencia,'2026-09-13');assert.equal(fields.defaultTurno,'MANHA');
+  const saved=await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13',returnTo:'/controle-temperatura-equipamentos?new=1'});
+  const savedRow=tables.controleTemperaturaEquipamento.at(-1);
+  assert.equal(dates.formatAppDateInput(savedRow.data),'2026-09-13');
+  assert(savedRow.createdAt>new Date('2026-09-30T23:59:59Z'),'Creation timestamp remains actual insertion time');
+  assert.equal(savedRow.responsavel,actor.nomeCompleto);
+  assert.equal(saved.get('dataRegistro'),'2026-09-13');assert.equal(saved.get('turnoRegistro'),'MANHA');
+  const list=await tempPage({searchParams:Promise.resolve(Object.fromEntries(saved))});
+  const newLink=elements(list,node=>node.props?.children==='Novo Registro'&&node.props.href)[0];
+  const newParams=Object.fromEntries(new URL(newLink.props.href,'http://localhost').searchParams);
+  fields=getFields(await tempPage({searchParams:Promise.resolve(newParams)}));
+  assert.equal(fields.defaultTurno,'MANHA');assert.equal(fields.dataReferencia,'2026-09-13');
+  assert.deepEqual(fields.equipamentosTurnos.find(item=>item.nome==='C').turnos,['TARDE'],'Saved morning is excluded while afternoon stays available');
+  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13'},'error');
+  assert.equal(tables.controleTemperaturaEquipamento.length,JSON.parse(originalRows).length+1,'Duplicate attempt does not insert');
+  await action(tempActions.createRegistroAction,{...tempValues('C','TARDE',4),data:'2026-09-13'});
+  fields=getFields(await tempPage({searchParams:Promise.resolve(historical)}));
+  assert(!fields.equipamentoOptions.includes('C'),'Both completed shifts remove equipment for that date');
+  fields=getFields(await tempPage({searchParams:Promise.resolve({...historical,dataRegistro:'2026-09-14'})}));
+  assert.deepEqual(fields.equipamentosTurnos.find(item=>item.nome==='C').turnos,['MANHA','TARDE'],'Next date remains independent');
+  const countBeforeInvalid=tables.controleTemperaturaEquipamento.length;
+  for(const invalid of ['','2026-02-30','2026-13-01','13/09/2026'])await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:invalid},'error');
+  assert.equal(tables.controleTemperaturaEquipamento.length,countBeforeInvalid);
+  tables.fechamentoMensalModulo=[{moduloCodigo:'temperatura',mes:9,ano:2026,status:'FECHADO'}];
+  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-14'},'error');
+  assert.equal(tables.controleTemperaturaEquipamento.length,countBeforeInvalid,'Closed historical month is still protected');
+  tables.fechamentoMensalModulo=[];
+  for(const equipment of ['A','B'])for(const shift of ['MANHA','TARDE']){
+    await action(tempActions.createRegistroAction,{...tempValues(equipment,shift,4),data:'2026-09-13'});
+  }
+  const completePage=await tempPage({searchParams:Promise.resolve(historical)});
+  assert.equal(getFields(completePage).equipamentoOptions.length,0);
+  assert(elements(completePage,node=>node.type?.name==='TemperatureReferenceFields'&&node.props.editable).length,'Date remains selectable when every equipment has been filled');
+  assert(elements(completePage,node=>node.props?.type==='submit'&&node.props.disabled).length,'Completed date cannot submit another record');
+  const retroReport=await report('controle-temperatura-equipamentos',9,2026);
+  assert(retroReport.includes('C')&&retroReport.includes('4 °C'));
+  assert.match(retroReport,/<td[^>]*>13<\/td>/,'Monthly report uses reference day');
+  fs.writeFileSync(path.join(outputDir,'temperature-reference-date.html'),retroReport);
+  assert.equal(JSON.stringify(tables.controleTemperaturaEquipamento.slice(0,JSON.parse(originalRows).length)),originalRows,'Prior records remain intact');
+  dates.getAppNow=originalNow;dates.getAppDate=originalDate;
+  console.log('PASS reference date: current default, historical morning save, automatic return context, independent shifts/dates, duplicate guard, invalid dates, closed month, report and original metadata.');
   tables.controleTemperaturaEquipamento = [
     {id:1,data:date('2026-09-01'),createdAt:new Date('2026-09-01T11:17:00Z'),turno:'MANHA',temperaturaAferida:6,acaoCorretiva:warning},
     {id:2,data:date('2026-09-01'),createdAt:new Date('2026-09-01T18:42:00Z'),turno:'TARDE',temperaturaAferida:7,acaoCorretiva:persistence.PERSISTENT_TEMPERATURE_ACTION},
@@ -284,7 +356,7 @@ async function main() {
 
   // Exercise state transitions of the actual client components without a DOM.
   const realReact = require('react'); let states=[],cursor=0;
-  mocks.set('react',{...realReact,useState(initial){const index=cursor++; if(!(index in states)) states[index]=initial; return [states[index],value=>{states[index]=value;}];},useMemo:fn=>fn(),useEffect(){},useRef:()=>({current:null})});
+  mocks.set('react',{...realReact,useState(initial){const index=cursor++; if(!(index in states)) states[index]=initial; return [states[index],value=>{states[index]=value;}];},useMemo:fn=>fn(),useEffect(){},useRef:()=>({current:null}),useTransition:()=>[false,callback=>callback()]});
   const timePath=path.join(root,'src/app/higienizacao-hortifruti/process-time-fields.tsx'); delete require.cache[timePath];
   const TimeFields=load('src/app/higienizacao-hortifruti/process-time-fields.tsx').ProcessTimeFields;
   const renderTime=()=>{cursor=0;return TimeFields({inputClassName:'test'});};
@@ -309,6 +381,26 @@ async function main() {
   let tempTree=renderTemp(); assert.equal(elements(tempTree,n=>n.props?.name==='acaoCorretiva')[0].props.value,persistence.PERSISTENT_TEMPERATURE_ACTION);
   elements(tempTree,n=>n.props?.name==='temperaturaAferida')[0].props.onChange({target:{value:'4'}});
   tempTree=renderTemp(); assert.equal(elements(tempTree,n=>n.props?.name==='acaoCorretiva')[0].props.value,'Nenhuma ação necessária.');
+  states=[];cursor=0;
+  const pendingProps={...tempProps,defaultEquipamento:'',equipamentosTurnos:[{nome:'A',turnos:['TARDE']},{nome:'B',turnos:['MANHA','TARDE']}]};
+  const renderPending=()=>{cursor=0;return TemperatureFields(pendingProps)};
+  let pendingTree=renderPending();
+  assert.deepEqual(elements(pendingTree,node=>node.type?.name==='SearchableOptionField')[0].props.options,['B']);
+  elements(pendingTree,node=>node.props?.name==='turno')[0].props.onChange({target:{value:'TARDE'}});
+  pendingTree=renderPending();assert.deepEqual(elements(pendingTree,node=>node.type?.name==='SearchableOptionField')[0].props.options,['A','B']);
+  let replacedUrl;
+  mocks.set('next/navigation',{useRouter:()=>({replace(url){replacedUrl=url}})});
+  global.window={location:{href:'http://localhost/controle-temperatura-equipamentos?new=1&filtroMes=9'}};
+  global.HTMLSelectElement=class{constructor(){this.value='MANHA'}};
+  delete require.cache[require.resolve(path.join(root,'src/app/controle-temperatura-equipamentos/reference-date-fields.tsx'))];
+  const {TemperatureReferenceFields}=load('src/app/controle-temperatura-equipamentos/reference-date-fields.tsx');
+  states=[];cursor=0;const referenceTree=TemperatureReferenceFields({referenceDate:'2026-10-13',editable:true,children:null});
+  const dateField=elements(referenceTree,node=>node.props?.name==='data')[0];
+  assert.equal(dateField.props.type,'date');assert.equal(dateField.props.required,true);
+  dateField.props.onChange({currentTarget:{value:'2026-09-13',form:{elements:{namedItem:()=>new HTMLSelectElement()}}}});
+  const url=new URL(replacedUrl,'http://localhost');assert.equal(url.searchParams.get('dataRegistro'),'2026-09-13');
+  assert.equal(url.searchParams.get('turnoRegistro'),'MANHA');assert.equal(url.searchParams.get('filtroMes'),'9');
+  delete global.window;delete global.HTMLSelectElement;
   mocks.delete('react');
   console.log('PASS: client start changes recalculate immediately; end is readonly; strip radios optional/unselected; temperature preview escalates and recovers.');
 }

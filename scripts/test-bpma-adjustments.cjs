@@ -231,7 +231,11 @@ async function main() {
     const tree = await load(`src/app/${module}/page.tsx`).default({ searchParams: Promise.resolve({ new: '1', filtroMes: '7' }) });
     const form = findElement(tree, node => node.type === 'form' && node.props.action === moduleActions.createRegistroAction);
     assert(form, `${module}: new record form must be available`);
-    assert(findElement(form, node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.startsWith(dates.formatAppDate(dates.getAppDate()))), `${module}: new record displays today despite month filter`);
+    if(module==='controle-temperatura-equipamentos'){
+      assert.equal(findElement(form,node=>node.type?.name==='TemperatureReferenceFields').props.referenceDate,todayInput,'Temperature calendar defaults to today despite month filter');
+    }else{
+      assert(findElement(form, node => node.type === 'p' && typeof node.props.children === 'string' && node.props.children.startsWith(dates.formatAppDate(dates.getAppDate()))), `${module}: new record displays today despite month filter`);
+    }
     const returnTo = findElement(form, node => node.props?.name === 'returnTo').props.value;
     assert.equal(new URL(returnTo, 'http://localhost').searchParams.has('filtroData'), false, `${module}: return URL must not reintroduce today`);
   }

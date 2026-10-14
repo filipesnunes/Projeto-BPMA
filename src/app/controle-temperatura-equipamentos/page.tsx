@@ -34,13 +34,13 @@ import {
   updateRegistroAction
 } from "./actions";
 import { AutomaticCorrectiveActionFields } from "./automatic-corrective-action-fields";
+import { TemperatureReferenceFields } from "./reference-date-fields";
 import { EvidencePhoto } from "./evidence-photo";
 import { normalizeOption } from "./options";
 import { TemperatureStatusBadge } from "./temperature-status-badge";
 import {
   formatDateInput,
   formatDateDisplay,
-  formatDateTimeDisplay,
   formatTemperatureDisplay,
   getCurrentShift,
   getCurrentSystemDateTime,
@@ -152,6 +152,10 @@ export default async function ControleTemperaturaEquipamentosPage({
 
   const now = getCurrentSystemDateTime();
   const todayDateInput = formatDateInput(now);
+  const dataRegistroInput = firstParam(params.dataRegistro).trim();
+  const dataRegistro = /^\d{4}-\d{2}-\d{2}$/.test(dataRegistroInput) ? parseDateInput(dataRegistroInput) : null;
+  const turnoRegistroInput = firstParam(params.turnoRegistro);
+  const turnoRegistro = turnoRegistroInput === "MANHA" || turnoRegistroInput === "TARDE" ? turnoRegistroInput : null;
 
   const filtroData = firstParam(params.filtroData).trim();
   const filtroMesRaw = firstParam(params.filtroMes).trim();
@@ -319,6 +323,8 @@ export default async function ControleTemperaturaEquipamentosPage({
     : false;
 
   const parametrosRetorno = new URLSearchParams();
+  if (dataRegistro) parametrosRetorno.set("dataRegistro", formatDateInput(dataRegistro));
+  if (turnoRegistro) parametrosRetorno.set("turnoRegistro", turnoRegistro);
   if (filtroData) parametrosRetorno.set("filtroData", filtroData);
   if (filtroMes) parametrosRetorno.set("filtroMes", String(filtroMes));
   if (filtroAno) parametrosRetorno.set("filtroAno", String(filtroAno));
@@ -346,7 +352,7 @@ export default async function ControleTemperaturaEquipamentosPage({
   const mostrarFormulario = novoRegistroSelecionado || Boolean(registroEmEdicao);
   const modalError = feedback && feedbackType === "error" ? feedback : "";
   const dataFormulario =
-    registroEmEdicao?.data ?? parseDateInput(todayDateInput) ?? getTodaySystemDate();
+    registroEmEdicao?.data ?? dataRegistro ?? parseDateInput(todayDateInput) ?? getTodaySystemDate();
   const previousDay = new Date(dataFormulario);
   previousDay.setUTCDate(previousDay.getUTCDate() - 1);
   const registrosPersistencia = mostrarFormulario ? await prisma.controleTemperaturaEquipamento.findMany({
@@ -356,6 +362,7 @@ export default async function ControleTemperaturaEquipamentosPage({
   }) : [];
   const turnoFormulario =
     registroEmEdicao?.turno ??
+    turnoRegistro ??
     (getCurrentShift(now) === "MANHA"
       ? TurnoTemperaturaEquipamento.MANHA
       : TurnoTemperaturaEquipamento.TARDE);
@@ -504,32 +511,29 @@ export default async function ControleTemperaturaEquipamentosPage({
                 " Solicite à gestão a configuração inicial do módulo."
               )}
             </p>
-          ) : semEquipamentosDisponiveis ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-              Todos os equipamentos previstos para este período já foram registrados.
-            </p>
           ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
               Este registro pertence a um mês fechado e não pode ser alterado.
             </p>
           ) : (
             <form
+              key={formatDateInput(dataFormulario)}
               action={registroEmEdicao ? updateRegistroAction : createRegistroAction}
               className="grid gap-4 md:grid-cols-2"
             >
+              <TemperatureReferenceFields referenceDate={formatDateInput(dataFormulario)} editable={!registroEmEdicao}>
               <input type="hidden" name="returnTo" value={formReturnTo} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
+            {semEquipamentosDisponiveis ? <p className="text-sm md:col-span-2">Todos os equipamentos previstos para esta data já foram registrados. Selecione outra data para consultar as pendências.</p> : null}
+            {registroEmEdicao ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-800">
               <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Data do Procedimento
               </p>
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                {registroEmEdicao
-                  ? formatDateDisplay(registroEmEdicao.data)
-                  : formatDateTimeDisplay(now)}
+                {formatDateDisplay(registroEmEdicao.data)}
               </p>
-            </div>
+            </div> : null}
 
             <AutomaticCorrectiveActionFields
               equipamentoOptions={equipamentoFormOptions}
@@ -606,10 +610,11 @@ export default async function ControleTemperaturaEquipamentosPage({
             </label>
 
             <div className="md:col-span-2">
-              <button type="submit" className="btn-primary">
+              <button type="submit" className="btn-primary" disabled={semEquipamentosDisponiveis}>
                 {registroEmEdicao ? "Salvar Alterações" : "Salvar Registro"}
               </button>
             </div>
+              </TemperatureReferenceFields>
             </form>
           )}
         </section>

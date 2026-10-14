@@ -431,7 +431,7 @@ async function ensureCategoryHasAnotherActiveRule(
 }
 
 export async function createRegistroAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
+  let returnTo = getReturnToPath(formData);
 
   try {
     const actor = await getCurrentUserForAction();
@@ -441,10 +441,18 @@ export async function createRegistroAction(formData: FormData) {
       "Seu perfil não pode criar registros de temperatura."
     );
 
-    const data = getTodaySystemDate();
+    const dataInput = formData.get("data");
+    // Older callers without a date retain today's default; an explicit date must be valid.
+    const data = dataInput === null ? getTodaySystemDate() :
+      typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseAppDateInput(dataInput) : null;
+    if (!data) throw new Error("Informe uma data válida para o registro.");
     const turnoInput = getInputValue(formData, "turno");
     const turno = turnoInput ? parseShiftValue(turnoInput) : getCurrentShift();
     if (!turno) throw new Error("Selecione um turno de conferência válido.");
+    const returnUrl = new URL(returnTo, "http://localhost");
+    returnUrl.searchParams.set("dataRegistro", formatAppDateInput(data));
+    returnUrl.searchParams.set("turnoRegistro", turno);
+    returnTo = `${returnUrl.pathname}?${returnUrl.searchParams.toString()}`;
     const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data, turno });
     const { turnosConferencia, ...payload } = registroPayload;
     const { mes, ano } = getMonthYear(data);

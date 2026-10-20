@@ -133,7 +133,92 @@ function reset(target='temperatura') {
  actor.perfil='DEV';delete actor.permissoes;delete actor.perfilAcessoId;
  return tables[model][0];
 }
+async function testPreviousDayDeletionControls() {
+ const referenceDates=[today,new Date(+today-86400000),new Date(+today-2*86400000),date(dates.formatAppDateInput(today).slice(0,8)+'01')];
+ const previousMonth=new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth()-1,15));
+ referenceDates.push(previousMonth);
+ const scenarios=[['oleo','controle-qualidade-oleo'],['temperatura','controle-temperatura-equipamentos'],['hortifruti','higienizacao-hortifruti']];
+ function seed(target) {
+  reset(target);
+  tables[targets[target]]=[...referenceDates,referenceDates[1],referenceDates[1]].map((data,index)=>({
+   id:index+1,data,createdAt:new Date(),updatedAt:new Date(),excluidoEm:null,
+   responsavel:'Responsável do lançamento '+(index+1),observacao:null,observacoes:null,
+   fitaOleo:null,temperatura:170,status:null,orientacao:'',temperaturaCritica:false,semUtilizacao:false,
+   equipamento:'Equipamento '+(index+1),categoriaEquipamento:'REFRIGERACAO',turno:'MANHA',
+   statusOperacionalEquipamento:'EM_OPERACAO',temperaturaAferida:4,
+   hortifruti:'Alface '+(index+1),produtoUtilizado:'Sanitizante',inicioProcesso:'08:00',terminoProcesso:'08:02',duracaoMinutos:2
+  }));
+ }
+ function deleteLink(node,id) {
+  return elements(node,n=>typeof n.props?.href==='string' && new URL(n.props.href,'http://localhost').searchParams.get('deleteId')===String(id) && n.props.children==='Excluir');
+ }
+ for(const [target,route] of scenarios) {
+  const pageFile='src/app/'+route+'/page.tsx', page=load(pageFile).default;
+  for(const role of ['DEV','GERENTE','NUTRICIONISTA']) {
+   seed(target);actor.perfil=role;
+   const tree=await page({searchParams:Promise.resolve({})});
+   for(const record of tables[targets[target]]) {
+    assert.equal(deleteLink(tree,record.id).length,1,route+' '+role+' '+dates.formatAppDateInput(record.data));
+    if(target!=='hortifruti' && +record.data!==+today) {
+     const row=elements(tree,n=>n.type==='tr' && n.key===String(record.id))[0];
+     assert.equal(elements(row,n=>n.type==='button' && n.props.disabled && n.props.children==='Editar').length,1,'Edição de data anterior permanece bloqueada');
+    }
+   }
+   const selected=await page({searchParams:Promise.resolve({deleteId:'2'})});
+   const form=elements(selected,n=>n.type==='form' && n.props.action===load('src/app/'+route+'/actions.ts').deleteRegistroAction)[0];
+   assert(form,'Confirmação de lançamento anterior disponível');
+   assert.equal(elements(form,n=>n.props?.name==='id')[0].props.value,2);
+   assert.equal(elements(form,n=>n.props?.name==='justificativaExclusao')[0].props.required,true);
+  }
+  for(const legacy of [false,true]) {
+   seed(target);const old=tables[targets[target]][1].data;
+   if(legacy){const model={oleo:'controleQualidadeOleoFechamento',temperatura:'controleTemperaturaEquipamentoFechamento',hortifruti:'higienizacaoHortifrutiFechamento'}[target];tables[model]=[{mes:old.getUTCMonth()+1,ano:old.getUTCFullYear(),status:'ASSINADO'}];}
+   else tables.fechamentoMensalModulo=[{moduloCodigo:target,mes:old.getUTCMonth()+1,ano:old.getUTCFullYear(),status:'FECHADO'}];
+   const closed=await page({searchParams:Promise.resolve({deleteId:'2'})});
+   assert.equal(deleteLink(closed,2).length,0);
+   assert.equal(elements(closed,n=>n.type==='form' && n.props.action===load('src/app/'+route+'/actions.ts').deleteRegistroAction).length,0);
+  }
+  seed(target);actor.perfil='COLABORADOR';actor.permissoes=realPermissions.ALL_PERMISSION_CODES;
+  const forbidden=await page({searchParams:Promise.resolve({deleteId:'2'})});
+  assert.equal(deleteLink(forbidden,2).length,0);
+  assert.equal(elements(forbidden,n=>n.type==='form' && n.props.action===load('src/app/'+route+'/actions.ts').deleteRegistroAction).length,0);
+ }
+ // Three distinct previous-day oil measurements must remain independently addressable.
+ seed('oleo');const oil=load('src/app/controle-qualidade-oleo/actions.ts');
+ const originals=structuredClone(tables.controleQualidadeOleoRegistro);
+ await action(oil.deleteRegistroAction,{id:2,justificativaExclusao:'Aferição no registro errado'});
+ assert.equal(tables.controleQualidadeOleoRegistro.length,originals.length);
+ for(const original of originals.filter(r=>r.id!==2))assert.deepEqual(tables.controleQualidadeOleoRegistro.find(r=>r.id===original.id),original);
+ assert.equal(tables.exclusaoRegistroOperacional.length,1);assert.equal(tables.exclusaoRegistroOperacional[0].registroId,2);
+ const refreshed=await load('src/app/controle-qualidade-oleo/page.tsx').default({searchParams:Promise.resolve({})});
+ assert.equal(deleteLink(refreshed,2).length,0);assert.equal(deleteLink(refreshed,6).length,1);assert.equal(deleteLink(refreshed,7).length,1);
+ const excludedHtml=await report('controle-qualidade-oleo',referenceDates[1].getUTCMonth()+1,referenceDates[1].getUTCFullYear());
+ assert(!excludedHtml.includes(originals[1].responsavel));
+ const saved=await action(oil.createRegistroAction,{data:dates.formatAppDateInput(referenceDates[1]),horarioExecucao:'08:43',temperatura:170});
+ assert.equal(saved.get('feedbackType'),'success');const retro=tables.controleQualidadeOleoRegistro.at(-1);
+ await action(oil.deleteRegistroAction,{id:retro.id,justificativaExclusao:'Correção do lançamento retroativo'});
+ assert(retro.excluidoEm instanceof Date);
+ // Receiving deletion is independent from its readonly/finalized editing state.
+ const receivingDetail=load('src/app/rastreabilidade-recebimento/nota/[id]/page.tsx').default;
+ for(const role of ['DEV','GERENTE','NUTRICIONISTA'])for(const status of ['IMPORTADA','FINALIZADA']) {
+  reset('rastreabilidade');actor.perfil=role;
+  const item=tables.rastreabilidadeRecebimentoRegistro[0];
+  Object.assign(item,{notaId:10,produto:'Produto anterior',quantidadeComprada:null,statusGeral:'PENDENTE',temperatura:null,temperaturaTipo:'AMBIENTE',dataFabricacao:null,dataValidade:null,sif:'NA'});
+  tables.rastreabilidadeRecebimentoNota=[{id:10,excluidoEm:null,data:item.data,notaFiscal:'123',fornecedor:'Fornecedor',statusNota:status,origemXml:false,itens:[item],_count:{itens:1},createdAt:new Date()}];
+  tables.assinaturaDiariaModulo=[{moduloCodigo:'rastreabilidade',dataReferencia:item.data,usuarioNomeSnapshot:'Supervisor'}];
+  let tree=await receivingDetail({params:Promise.resolve({id:'10'}),searchParams:Promise.resolve({})});
+  let form=elements(tree,n=>n.type?.name==='NoteItemsForm')[0];
+  assert.equal(form.props.canDeleteItems,true);if(status==='FINALIZADA')assert.equal(form.props.readOnlyMode,true);
+  assert.equal(elements(tree,n=>n.type?.name==='DeleteNoteModal').length,1);
+  tables.fechamentoMensalModulo=[{moduloCodigo:'rastreabilidade',mes:9,ano:2026,status:'FECHADO'}];
+  tree=await receivingDetail({params:Promise.resolve({id:'10'}),searchParams:Promise.resolve({})});
+  form=elements(tree,n=>n.type?.name==='NoteItemsForm')[0];assert.equal(form.props.canDeleteItems,false);
+  assert.equal(elements(tree,n=>n.type?.name==='DeleteNoteModal').length,0);
+ }
+ console.log('PASS regressão por data: hoje, dias anteriores, início do mês e mês anterior aberto; três perfis; edição preservada; confirmação por ID; fechamento legado/genérico; exclusão individual entre três aferições do mesmo dia, retroativo, relatório e auditoria.');
+}
 async function main(){
+ await testPreviousDayDeletionControls();
  for(const target of Object.keys(targets))for(const role of ['DEV','GERENTE','NUTRICIONISTA']){
   const before=structuredClone(reset(target));actor.perfil=role;
   if(target==='etiquetas' && role!=='DEV'){await assert.rejects(()=>deletion.deleteOperationalRecord({user:actor,target,id:1,reason:'Módulo restrito'}),/perfil/);continue;}

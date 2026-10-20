@@ -1,10 +1,10 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { StatusNotaRecebimento } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth-session";
-import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -21,7 +21,6 @@ import {
 } from "../../utils";
 import { formatSifDisplayValue } from "../../sif";
 import {
-  canDeleteImportedReceivingNote,
   getReceivingNoteEditAccessReason,
   type ReceivingNoteEditAccessReason
 } from "../../note-permissions";
@@ -148,7 +147,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
   }
 
   const period = getMonthYear(note.data);
-  const [fechamento, fechamentoMensal, assinaturaDiaria] = await Promise.all([
+  const [fechamento, fechamentoMensal] = await Promise.all([
     prisma.rastreabilidadeRecebimentoFechamento.findUnique({
       where: { mes_ano: { mes: period.mes, ano: period.ano } }
     }),
@@ -160,19 +159,9 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
           mes: period.mes
         }
       }
-    }),
-    prisma.assinaturaDiariaModulo.findUnique({
-      where: {
-        moduloCodigo_dataReferencia: {
-          moduloCodigo: "rastreabilidade",
-          dataReferencia: note.data
-        }
-      }
     })
   ]);
   const monthSigned = fechamento?.status === "ASSINADO" || Boolean(fechamentoMensal);
-  const daySigned = Boolean(assinaturaDiaria);
-  const noteFinalizada = note.statusNota === StatusNotaRecebimento.FINALIZADA;
   const authUser = await getCurrentUser();
   const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
   const today = getTodaySystemDate();
@@ -186,20 +175,10 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
   const canEditNote = editAccessReason === "EDITABLE";
   const readOnlyMode = !canEditNote;
   const readOnlyReasonMessage = getReadOnlyReasonMessage(editAccessReason);
-  const canDeleteByDate = authUser
-    ? canEditRecordDate(authUser, "modulo.rastreabilidade", note.data, today)
-    : false;
   const xmlProductLocked = note.origemXml && !canEditImportedXmlFields(authUser?.perfil);
-  const canDeleteNote =
-    Boolean(authUser && canDeleteOperationalRecord(authUser, "rastreabilidade")) &&
-    !monthSigned &&
-    !daySigned &&
-    !noteFinalizada &&
-    canDeleteImportedReceivingNote(note);
-  const canDeleteItems =
-    Boolean(authUser && canDeleteOperationalRecord(authUser, "rastreabilidade")) &&
-    !readOnlyMode &&
-    canDeleteByDate;
+  const competenciaExclusaoFechada = await isOperationalMonthClosed("rastreabilidade", period.mes, period.ano);
+  const canDeleteNote = canDeleteOperationalRecord(authUser, "rastreabilidade") && !competenciaExclusaoFechada;
+  const canDeleteItems = canDeleteNote;
   const returnTo = `/rastreabilidade-recebimento/nota/${note.id}`;
 
   const query = await searchParams;

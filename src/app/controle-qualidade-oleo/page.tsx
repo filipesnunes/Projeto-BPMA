@@ -561,9 +561,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               ) : (
                 registros.map((registro) => {
                   const periodo = getMonthYear(registro.data);
-                  const bloqueado =
-                    assinadosSet.has(periodKey(periodo.mes, periodo.ano)) ||
-                    formatDateInput(registro.data) !== todayInput;
+                  const competenciaFechada = assinadosSet.has(periodKey(periodo.mes, periodo.ano));
+                  const bloqueado = competenciaFechada || formatDateInput(registro.data) !== todayInput;
                   const hrefEditar = (() => {
                     const query = new URLSearchParams(parametrosRetorno);
                     query.set("editId", String(registro.id));
@@ -602,12 +601,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                               Editar
                             </Link>
                           )}
-                          {podeExcluirRegistros && !bloqueado ? (
-                            bloqueado ? (
-                              <button type="button" disabled className="btn-danger">
-                                Excluir
-                              </button>
-                            ) : (
+                          {podeExcluirRegistros && !competenciaFechada ? (
                               <Link
                                 href={(() => {
                                   const query = new URLSearchParams(parametrosRetorno);
@@ -618,7 +612,6 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                               >
                                 Excluir
                               </Link>
-                            )
                           ) : null}
                         </div>
                       </td>
@@ -631,13 +624,14 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
         </div>
       </section>
 
-      {registroParaExcluir ? (
+      {registroParaExcluir && podeExcluirRegistros ? (
         <ActionModal
           title="Excluir Registro"
           cancelHref={hrefCancelarFormulario}
           description={
             <p>
-              Registro de óleo de {formatDateDisplay(registroParaExcluir.data)}.
+              Controle da Qualidade do Óleo — Registro #{registroParaExcluir.id} de {formatDateDisplay(registroParaExcluir.data)}.
+              Temperatura: {formatTemperatureDisplay(registroParaExcluir.temperatura)}. Fita: {registroParaExcluir.fitaOleo ?? "Não informada"}.
             </p>
           }
         >

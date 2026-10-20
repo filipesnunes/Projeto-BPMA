@@ -412,11 +412,6 @@ export default async function HigienizacaoHortifrutiPage({
                             </Link>
                           ) : null}
                           {podeExcluirRegistros && !bloqueado ? (
-                            bloqueado ? (
-                              <button type="button" disabled className="btn-danger">
-                                Excluir
-                              </button>
-                            ) : (
                               <Link
                                 href={(() => {
                                   const query = new URLSearchParams(parametrosRetorno);
@@ -427,7 +422,6 @@ export default async function HigienizacaoHortifrutiPage({
                               >
                                 Excluir
                               </Link>
-                            )
                           ) : null}
                         </div>
                       </td>
@@ -440,7 +434,7 @@ export default async function HigienizacaoHortifrutiPage({
         </div>
       </section>
 
-      {registroParaExcluir ? (
+      {registroParaExcluir && podeExcluirRegistros ? (
         <ActionModal
           title="Excluir Registro"
           cancelHref={hrefCancelarFormulario}

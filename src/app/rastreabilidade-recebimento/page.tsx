@@ -1,3 +1,4 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import {
@@ -17,7 +18,6 @@ import { prisma } from "@/lib/prisma";
 import { deleteNoteAction } from "./actions";
 import { DeleteNoteModal } from "./delete-note-modal";
 import {
-  canDeleteImportedReceivingNote,
   isReceivingNotePendingConference
 } from "./note-permissions";
 import { RECEBIMENTO_ORIENTACOES } from "./options";
@@ -25,7 +25,6 @@ import { XmlImportForm } from "./xml-import-form";
 import {
   formatDateDisplay,
   formatManufacturingDateDisplay,
-  formatDateInput,
   getCurrentSystemDateTime,
   getMonthYear,
   parseDateInput,
@@ -225,9 +224,6 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
     },
     orderBy: [{ data: "asc" }, { createdAt: "asc" }]
   });
-  const notaDatas = Array.from(
-    new Map(notasPendentesConferencia.map((nota) => [formatDateInput(nota.data), nota.data])).values()
-  );
   const notaPeriodos = Array.from(
     new Map(
       notasPendentesConferencia.map((nota) => {
@@ -236,40 +232,10 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
       })
     ).values()
   );
-  const [fechamentosLegados, fechamentosMensais, assinaturasDiarias] =
-    notasPendentesConferencia.length > 0
-      ? await Promise.all([
-          prisma.rastreabilidadeRecebimentoFechamento.findMany({
-            where: {
-              status: "ASSINADO",
-              OR: notaPeriodos.map((period) => ({ mes: period.mes, ano: period.ano }))
-            },
-            select: { mes: true, ano: true }
-          }),
-          prisma.fechamentoMensalModulo.findMany({
-      where: { status: "FECHADO",
-              moduloCodigo: "rastreabilidade",
-              OR: notaPeriodos.map((period) => ({ mes: period.mes, ano: period.ano }))
-            },
-            select: { mes: true, ano: true }
-          }),
-          prisma.assinaturaDiariaModulo.findMany({
-            where: {
-              moduloCodigo: "rastreabilidade",
-              dataReferencia: { in: notaDatas }
-            },
-            select: { dataReferencia: true }
-          })
-        ])
-      : [[], [], []];
-  const mesesBloqueadosParaExclusao = new Set(
-    [...fechamentosLegados, ...fechamentosMensais].map(
-      (fechamento) => `${fechamento.mes}-${fechamento.ano}`
-    )
-  );
-  const diasBloqueadosParaExclusao = new Set(
-    assinaturasDiarias.map((assinatura) => formatDateInput(assinatura.dataReferencia))
-  );
+  const competenciasExclusao = await Promise.all(notaPeriodos.map(async period => ({
+    ...period, fechada: await isOperationalMonthClosed("rastreabilidade", period.mes, period.ano)
+  })));
+  const mesesBloqueadosParaExclusao = new Set(competenciasExclusao.filter(period => period.fechada).map(period => `${period.mes}-${period.ano}`));
 
   const itemSearchDate = parseDateInput(buscaItemRecebido);
   const dataFabricacaoFiltro = parseDateInput(filtroDataFabricacao);
@@ -591,14 +557,10 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
               ) : (
                 notasPendentesConferencia.map((nota) => {
                   const notePeriod = getMonthYear(nota.data);
-                  const exclusaoBloqueadaPorAssinatura =
-                    mesesBloqueadosParaExclusao.has(`${notePeriod.mes}-${notePeriod.ano}`) ||
-                    diasBloqueadosParaExclusao.has(formatDateInput(nota.data));
                   const periodoFechado = mesesBloqueadosParaExclusao.has(`${notePeriod.mes}-${notePeriod.ano}`);
                   const podeExcluirNota =
                     podeExcluirNotas &&
-                    !exclusaoBloqueadaPorAssinatura &&
-                    canDeleteImportedReceivingNote(nota);
+                    !periodoFechado;
                   const actionLabel = isReceivingNotePendingConference(nota.statusNota)
                     ? "Conferir Nota"
                     : "Abrir Nota";

@@ -744,9 +744,8 @@ export default async function ControleTemperaturaEquipamentosPage({
               ) : (
                 registros.map((registro) => {
                   const periodo = getMonthYear(registro.data);
-                  const bloqueado =
-                    assinadosSet.has(periodKey(periodo.mes, periodo.ano)) ||
-                    formatDateInput(registro.data) !== todayDateInput;
+                  const competenciaFechada = assinadosSet.has(periodKey(periodo.mes, periodo.ano));
+                  const bloqueado = competenciaFechada || formatDateInput(registro.data) !== todayDateInput;
                   const hrefEditar = (() => {
                     const query = new URLSearchParams(parametrosRetorno);
                     query.set("editId", String(registro.id));
@@ -810,12 +809,7 @@ export default async function ControleTemperaturaEquipamentosPage({
                               Editar
                             </Link>
                           )}
-                          {podeExcluirRegistros && !bloqueado ? (
-                            bloqueado ? (
-                              <button type="button" disabled className="btn-danger">
-                                Excluir
-                              </button>
-                            ) : (
+                          {podeExcluirRegistros && !competenciaFechada ? (
                               <Link
                                 href={(() => {
                                   const query = new URLSearchParams(parametrosRetorno);
@@ -826,7 +820,6 @@ export default async function ControleTemperaturaEquipamentosPage({
                               >
                                 Excluir
                               </Link>
-                            )
                           ) : null}
                         </div>
                       </td>
@@ -839,7 +832,7 @@ export default async function ControleTemperaturaEquipamentosPage({
         </div>
       </section>
 
-      {registroParaExcluir ? (
+      {registroParaExcluir && podeExcluirRegistros ? (
         <ActionModal
           title="Excluir Registro"
           cancelHref={hrefCancelarFormulario}

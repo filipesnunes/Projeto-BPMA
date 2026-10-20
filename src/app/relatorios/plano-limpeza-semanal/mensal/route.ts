@@ -1,3 +1,4 @@
+import { renderExecutionReportNotes } from "@/lib/execution-report-notes";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -237,6 +238,7 @@ function getCleaningDate(record: WeeklyRecord | null): string {
     return "-";
   }
 
+  if (record.horarioExecucao || record.horarioNaoInformado) return formatAppDateInput(record.dataExecucao);
   if (record.assinaturaResponsavelDataHora) {
     return formatAppDate(record.assinaturaResponsavelDataHora);
   }
@@ -854,6 +856,7 @@ async function getMonthlyWeeklyRecords(weeks: WeekBlock[]) {
       }
     },
     select: {
+      horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, createdAt: true,
       id: true,
       dataExecucao: true,
       area: true,
@@ -964,7 +967,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report), {
+  return new NextResponse(renderReportDocument(report).replace("</body>", renderExecutionReportNotes(records) + "</body>"), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

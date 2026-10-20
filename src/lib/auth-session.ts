@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { getDefaultPermissionCodes } from "@/lib/permissions";
 import { registerPersonalizationPermission } from "@/lib/personalization-permission";
+import { registerOperationalDeletionPermissions } from "@/lib/register-operational-deletion-permissions";
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@/lib/rbac";
 
@@ -228,7 +229,9 @@ export async function getCurrentUser(): Promise<AuthenticatedUser | null> {
 
   // Only a valid, active session can initialize the new permission catalog entry.
   // Reload the profile grants when this request performed the initial registration.
-  if ("perfilAcesso" in session.usuario && await registerPersonalizationPermission()) {
+  const registeredPersonalization = "perfilAcesso" in session.usuario && await registerPersonalizationPermission();
+  const registeredDeletion = "perfilAcesso" in session.usuario && await registerOperationalDeletionPermissions();
+  if (registeredPersonalization || registeredDeletion) {
     const refreshed = await findSessionWithProfileAccess(tokenHash);
     if (!refreshed) return null;
     return buildAuthenticatedUser({ usuario: refreshed.usuario, sessaoId: refreshed.id });

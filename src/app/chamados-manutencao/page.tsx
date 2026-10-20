@@ -1,3 +1,4 @@
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import {
   ModuloDocumento,
   OrigemChamadoManutencao,
@@ -396,6 +397,7 @@ export default async function ChamadosManutencaoPage({ searchParams }: PageProps
           </table>
         </div>
       </section>
+      <OperationalDeletionPanel target="chamados" selectedDate={params.exclusaoData} />
     </div>
   );
 }

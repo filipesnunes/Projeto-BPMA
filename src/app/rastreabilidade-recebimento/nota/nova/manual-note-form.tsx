@@ -1,4 +1,6 @@
 "use client";
+import { ReferenceExecutionFields } from "@/components/forms/execution-time-fields";
+import { formatAppDateInput, getAppDate } from "@/lib/date-time";
 
 import { useActionState, useState } from "react";
 
@@ -70,6 +72,7 @@ export function ManualNoteForm({
   return (
     <form action={formAction} className="grid gap-4 md:grid-cols-2">
       <input type="hidden" name="returnTo" value="/rastreabilidade-recebimento/nota/nova" />
+      <ReferenceExecutionFields defaultDate={formatAppDateInput(getAppDate())} today={formatAppDateInput(getAppDate())} />
 
       {state.status === "error" && state.message ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2 dark:border-red-800 dark:bg-red-950 dark:text-red-200">

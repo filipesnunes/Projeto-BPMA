@@ -1,3 +1,4 @@
+import { WeeklyExecutionFields } from "@/components/forms/weekly-execution-fields";
 import { StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
@@ -10,6 +11,7 @@ import { StatusBadge } from "../status-badge";
 import { formatDateDisplay, formatDateInput } from "../utils";
 
 type WeeklySignChecklistModalProps = {
+  selectedDate?: string;
   closeHref: string;
   returnTo: string;
   usuarioAssinando: string;
@@ -49,6 +51,7 @@ type WeeklySignChecklistModalProps = {
 };
 
 export function WeeklySignChecklistModal({
+  selectedDate,
   closeHref,
   returnTo,
   usuarioAssinando,
@@ -154,6 +157,7 @@ export function WeeklySignChecklistModal({
             <form action={signWeeklyAreaSupervisorAction} className="mt-4 grid gap-3 md:grid-cols-2">
               <input type="hidden" name="area" value={execution.area} />
               <input type="hidden" name="weekStart" value={formatDateInput(execution.weekStart)} />
+{execution.pendingItems > 0 && <WeeklyExecutionFields defaultDate={selectedDate} weekStart={formatDateInput(execution.weekStart)} />}
               <input type="hidden" name="returnTo" value={returnTo} />
               <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
                 Senha para confirmar
@@ -203,6 +207,7 @@ export function WeeklySignChecklistModal({
                 >
                   <input type="hidden" name="area" value={execution.area} />
                   <input type="hidden" name="weekStart" value={formatDateInput(execution.weekStart)} />
+<WeeklyExecutionFields defaultDate={selectedDate} weekStart={formatDateInput(execution.weekStart)} />
                   <input type="hidden" name="returnTo" value={returnTo} />
                   <input
                     type="password"
@@ -263,6 +268,7 @@ export function WeeklySignChecklistModal({
                             <input type="hidden" name="id" value={String(executionItem.id)} />
                             <input type="hidden" name="returnTo" value={returnTo} />
                             <input type="hidden" name="etapa" value="responsavel" />
+<WeeklyExecutionFields defaultDate={selectedDate} weekStart={formatDateInput(execution.weekStart)} />
                             <input
                               type="password"
                               name="senhaConfirmacao"

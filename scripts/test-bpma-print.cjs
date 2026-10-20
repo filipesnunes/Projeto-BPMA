@@ -43,7 +43,7 @@ async function main() {
   await navigate('hortifruti.html');
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.screen-actions')).display`), 'flex');
   assert.equal(await evaluate(`document.querySelector('button').innerText`), 'Imprimir / Salvar PDF');
-  assert.equal(await evaluate(`window.printCalls = 0; window.print = () => window.printCalls++; document.querySelector('button').click(); window.printCalls`), 1);
+  assert.equal(await evaluate(`(async()=>{window.printCalls = 0; window.print = () => window.printCalls++; document.querySelector('button').click(); for(let n=0;n<40 && !window.printCalls;n++) await new Promise(resolve=>setTimeout(resolve,25)); return window.printCalls;})()`), 1);
   fs.writeFileSync(path.join(directory, 'hortifruti-screen.png'), Buffer.from((await send('Page.captureScreenshot')).data, 'base64'));
   await send('Emulation.setEmulatedMedia', { media: 'print' });
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.screen-actions')).display`), 'none');

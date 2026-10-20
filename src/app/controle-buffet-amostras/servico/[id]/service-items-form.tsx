@@ -1,4 +1,5 @@
 "use client";
+import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
@@ -56,6 +57,9 @@ export type ServiceItemFormRow = {
   observacao: string;
   responsavelNome: string | null;
   dataHoraRegistro: string | null;
+  horarioExecucao?: string | null;
+  horarioNaoInformado?: boolean;
+  justificativaHorario?: string | null;
   assinaturaResumo: string | null;
   bloqueado: boolean;
 };
@@ -521,6 +525,7 @@ export function ServiceItemsForm({
                 }`}
               >
                 <input type="hidden" name="rowKey" value={row.rowKey} />
+                {!row.bloqueado && !naoServido && <ExecutionTimeFields required={false} date={dataInput} prefix={row.rowKey + "-"} defaultTime={row.horarioExecucao ?? ""} defaultUnknown={row.horarioNaoInformado} defaultJustification={row.justificativaHorario ?? ""} />}
                 <input
                   type="hidden"
                   name={`${row.rowKey}-naoServido`}
@@ -678,7 +683,7 @@ export function ServiceItemsForm({
                     Responsável: <strong>{row.responsavelNome ?? usuarioLogado}</strong>
                   </p>
                   <p>
-                    Data/hora: <strong>{row.dataHoraRegistro ?? "-"}</strong>
+                    Lançado em: <strong>{row.dataHoraRegistro ?? "-"}</strong>
                   </p>
                   <p>
                     Status: <ItemStatusBadge status={row.status} />

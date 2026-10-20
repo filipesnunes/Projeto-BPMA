@@ -27,6 +27,25 @@ export function readUnreportedTime(form: FormData, retroactive: boolean) {
   return { horarioNaoInformado: unknown, justificativaHorario: unknown ? justification : null };
 }
 
+export function readExecutionTime(form: FormData, date: Date, prefix = "", performed = true, now = getAppNow()) {
+  assertProcedureDate(date, now);
+  if (!performed) return { horarioExecucao: null, horarioNaoInformado: false, justificativaHorario: null };
+  const retroactive = formatAppDateInput(date) < formatAppDateInput(getAppDate(now));
+  const fields = new FormData();
+  for (const key of ["horarioNaoInformado", "justificativaHorario"]) fields.set(key, String(form.get(prefix + key) ?? ""));
+  const unknown = readUnreportedTime(fields, retroactive);
+  if (unknown.horarioNaoInformado) return { ...unknown, horarioExecucao: null };
+  const time = retroactive ? String(form.get(prefix + "horarioExecucao") ?? "").trim() : operationalTime(now);
+  assertProcedureTime(time, date, now);
+  return { ...unknown, horarioExecucao: time };
+}
+
+export function executionTimeLabel(record: { horarioExecucao?: string | null; horarioNaoInformado?: boolean; justificativaHorario?: string | null }) {
+  return record.horarioNaoInformado
+    ? `${UNKNOWN_PROCEDURE_TIME}: ${record.justificativaHorario ?? ""}`
+    : record.horarioExecucao ?? "-";
+}
+
 export function temperatureMeasurementTime(record: {
   data: Date; createdAt?: Date | null; horarioAfericao?: string | null; horarioNaoInformado?: boolean;
 }): string {

@@ -1,3 +1,4 @@
+import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 import { StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
@@ -99,6 +100,7 @@ export function DailySignChecklistModal({
         </div>
 
         <form action={updateDailyRecordAction} className="mt-4 space-y-4">
+ {etapa === "responsavel" && <ExecutionTimeFields date={record.data.toISOString().slice(0,10)} />}
           <input type="hidden" name="id" value={String(record.id)} />
           <input type="hidden" name="returnTo" value={returnTo} />
           {successReturnTo ? (

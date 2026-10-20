@@ -1,3 +1,4 @@
+import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 import { Fragment } from "react";
@@ -777,6 +778,7 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
             ) : (
               <form action={signDailyAreaPendingItemsAction} className="space-y-4">
                 <input type="hidden" name="data" value={formatDateInput(diaSelecionado.data)} />
+<ExecutionTimeFields date={formatDateInput(diaSelecionado.data)} />
                 <input type="hidden" name="area" value={areaRegularizacao.area} />
                 <input
                   type="hidden"

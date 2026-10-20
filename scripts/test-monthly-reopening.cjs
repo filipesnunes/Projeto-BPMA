@@ -283,7 +283,7 @@ async function main() {
   note.itens=[item];tables.rastreabilidadeRecebimentoNota=[note];tables.rastreabilidadeRecebimentoRegistro=[item];
   tables.rastreabilidadeRecebimentoCategoria=[{id:1,nome:'Geral',ativo:true,temperaturaMaxima:25}];
   const receiving=load('src/app/rastreabilidade-recebimento/actions.ts');
-  const edit=makeForm({notaId:1,'item-1-produto':item.produto,'item-1-lote':'L-123','item-1-dataFabricacao':'2026-09-01','item-1-dataValidade':'2027-09-01','item-1-sif':'NA','item-1-temperaturaTipo':'AMBIENTE','item-1-transporteEntregador':'CONFORME','item-1-aspectoSensorial':'CONFORME','item-1-embalagem':'CONFORME'});
+  const edit=makeForm({notaId:1,horarioExecucao:'09:40','item-1-produto':item.produto,'item-1-lote':'L-123','item-1-dataFabricacao':'2026-09-01','item-1-dataValidade':'2027-09-01','item-1-sif':'NA','item-1-temperaturaTipo':'AMBIENTE','item-1-transporteEntregador':'CONFORME','item-1-aspectoSensorial':'CONFORME','item-1-embalagem':'CONFORME'});
   actor.perfil='COLABORADOR';
   let result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error');assert.match(result.message,/mês.*fechado/);

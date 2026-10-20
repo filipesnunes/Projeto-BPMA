@@ -203,6 +203,7 @@ export default async function ExecucaoServicoBuffetPage({
         acaoCorretiva: registro?.acaoCorretiva?.trim() ?? "",
         observacao: registro?.observacao ?? "",
         responsavelNome: registro?.responsavelNome ?? null,
+        horarioExecucao: registro?.horarioExecucao, horarioNaoInformado: registro?.horarioNaoInformado, justificativaHorario: registro?.justificativaHorario,
         dataHoraRegistro: registro?.dataHoraRegistro
           ? formatDateTimeDisplay(registro.dataHoraRegistro)
           : null,
@@ -241,6 +242,7 @@ export default async function ExecucaoServicoBuffetPage({
         acaoCorretiva: registro.acaoCorretiva?.trim() ?? "",
         observacao: registro.observacao ?? "",
         responsavelNome: registro.responsavelNome,
+        horarioExecucao: registro.horarioExecucao, horarioNaoInformado: registro.horarioNaoInformado, justificativaHorario: registro.justificativaHorario,
         dataHoraRegistro: formatDateTimeDisplay(registro.dataHoraRegistro),
         assinaturaResumo: registro.assinaturaNome
           ? `${registro.assinaturaNome}${

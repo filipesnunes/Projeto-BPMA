@@ -1,4 +1,5 @@
 "use server";
+import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
@@ -39,7 +40,6 @@ import {
   getMonthDateRange,
   getMonthYear,
   parseDateInput,
-  formatWeeklySignatureDateTime,
   parsePositiveInt
 } from "./utils";
 import {
@@ -331,6 +331,7 @@ export async function updateDailyRecordAction(formData: FormData) {
       await prisma.planoLimpezaDiarioRegistro.update({
         where: { id },
         data: {
+          ...readExecutionTime(formData, existing.data),
           assinaturaResponsavel: actor.nomeCompleto,
           assinaturaResponsavelUsuarioId: actor.id,
           assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
@@ -456,15 +457,11 @@ export async function signDailyAreaPendingItemsAction(formData: FormData) {
 
     await prisma.$transaction(async (tx) => {
       for (const task of expectedTasks) {
-        const existing = await tx.planoLimpezaDiarioRegistro.findUnique({
-          where: {
-            data_turno_itemId: {
+        const existing = await tx.planoLimpezaDiarioRegistro.findFirst({ where: {
               data,
               turno: task.turno,
               itemId: task.itemId
-            }
-          }
-        });
+            } });
         const jaAssinado = Boolean(
           existing?.assinaturaResponsavel.trim() ||
             existing?.assinaturaResponsavelDataHora ||
@@ -483,6 +480,7 @@ export async function signDailyAreaPendingItemsAction(formData: FormData) {
           produtoUtilizado: task.produtoUtilizado,
           setorResponsavel: task.setorResponsavel,
           funcionarioResponsavel: task.funcionarioResponsavel,
+          ...readExecutionTime(formData, data),
           assinaturaResponsavel: actor.nomeCompleto,
           assinaturaResponsavelUsuarioId: actor.id,
           assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
@@ -770,7 +768,8 @@ export async function deleteDailyAreaConfigAction(formData: FormData) {
       where: realDailyHistoryWhere(executionScope)
     });
 
-    if (linkedRealHistory === 0) {
+    const auditedHistory = await prisma.exclusaoRegistroOperacional.count({ where: { modulo: "limpeza_diaria", dadosOriginais: { path: ["area"], equals: existing.nome } } });
+    if (linkedRealHistory === 0 && auditedHistory === 0) {
       await prisma.$transaction(async (tx) => {
         await tx.planoLimpezaDiarioRegistro.deleteMany({
           where: disposableDailyExecutionWhere(executionScope)
@@ -1040,7 +1039,8 @@ export async function deleteDailyItemConfigAction(formData: FormData) {
       where: realDailyItemHistoryWhere(itemId)
     });
 
-    if (linkedRealHistory === 0) {
+    const auditedHistory = await prisma.exclusaoRegistroOperacional.count({ where: { modulo: "limpeza_diaria", dadosOriginais: { path: ["itemId"], equals: itemId } } });
+    if (linkedRealHistory === 0 && auditedHistory === 0) {
       await prisma.$transaction(async (tx) => {
         await tx.planoLimpezaDiarioRegistro.deleteMany({
           where: pendingUnsignedDailyItemExecutionWhere(itemId)
@@ -1261,6 +1261,10 @@ export async function updateWeeklyRecordAction(formData: FormData) {
 
     ensureCanSignResponsible(actor);
     const signedAt = getCurrentSystemDateTime();
+    const executionDate = validateWeeklyExecutionDate(formData, getWeekDateRangeForDate(existing.dataExecucao));
+    const executionTime = readExecutionTime(formData, executionDate);
+    const executionPeriod = getMonthYear(executionDate);
+    if (await isMonthSigned(TipoPlanoLimpeza.SEMANAL, executionPeriod.mes, executionPeriod.ano)) throw new Error("A data de execução pertence a um mês fechado.");
     const isHistoricalRecord = isHistoricalWeeklySignature(
       getWeekDateRangeForDate(existing.dataExecucao).start,
       signedAt
@@ -1279,12 +1283,14 @@ export async function updateWeeklyRecordAction(formData: FormData) {
     await prisma.planoLimpezaSemanalExecucao.update({
       where: { id },
       data: {
+        ...executionTime,
+        dataExecucao: executionDate,
         assinaturaResponsavel: actor.nomeCompleto,
         assinaturaResponsavelUsuarioId: actor.id,
         assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
         assinaturaResponsavelPerfil: actor.perfil,
         assinaturaResponsavelDataHora: signedAt,
-        quando: formatWeeklySignatureDateTime(signedAt),
+        quando: executionTime.horarioNaoInformado ? "Horário não informado" : `${formatDateInput(executionDate)} ${executionTime.horarioExecucao}`,
         status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
         observacaoResponsavel: observacaoAssinatura || null
       }
@@ -1298,10 +1304,10 @@ export async function updateWeeklyRecordAction(formData: FormData) {
     });
 
     revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Item semanal assinado como responsável pela limpeza.");
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData), "success", "Item semanal assinado como responsável pela limpeza.");
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData), "error", getErrorMessage(error));
   }
 }
 
@@ -1323,6 +1329,8 @@ export async function signWeeklyAreaPendingItemsAction(formData: FormData) {
 
     const weekRange = getWeekDateRangeForDate(weekStart);
     const signedAt = getCurrentSystemDateTime();
+    const executionDate = validateWeeklyExecutionDate(formData, weekRange);
+    const executionTime = readExecutionTime(formData, executionDate);
     const isHistoricalWeek = isHistoricalWeeklySignature(weekRange.start, signedAt);
     ensurePermission(
       actor,
@@ -1381,12 +1389,14 @@ export async function signWeeklyAreaPendingItemsAction(formData: FormData) {
     await prisma.planoLimpezaSemanalExecucao.updateMany({
       where: { id: { in: pendingResponsibleRecords.map((record) => record.id) } },
       data: {
+        ...executionTime,
+        dataExecucao: executionDate,
         assinaturaResponsavel: actor.nomeCompleto,
         assinaturaResponsavelUsuarioId: actor.id,
         assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
         assinaturaResponsavelPerfil: actor.perfil,
         assinaturaResponsavelDataHora: signedAt,
-        quando: formatWeeklySignatureDateTime(signedAt),
+        quando: executionTime.horarioNaoInformado ? "Horário não informado" : `${formatDateInput(executionDate)} ${executionTime.horarioExecucao}`,
         status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
         observacaoResponsavel: observacaoAssinatura || null
       }
@@ -1403,14 +1413,13 @@ export async function signWeeklyAreaPendingItemsAction(formData: FormData) {
     });
 
     revalidateModulePaths();
-    redirectWithFeedback(
-      returnTo,
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData),
       "success",
       `${pendingResponsibleRecords.length} item(ns) da área foram assinados com sucesso.`
     );
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData), "error", getErrorMessage(error));
   }
 }
 
@@ -1488,6 +1497,8 @@ export async function signWeeklyAreaSupervisorAction(formData: FormData) {
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
     const signedAt = getCurrentSystemDateTime();
+    const executionDate = pendingResponsibleRecords.length ? validateWeeklyExecutionDate(formData, weekRange) : weekRange.start;
+    const executionTime = pendingResponsibleRecords.length ? readExecutionTime(formData, executionDate) : { horarioExecucao: null, horarioNaoInformado: false, justificativaHorario: null };
     const supervisorUpdateData: Prisma.PlanoLimpezaSemanalExecucaoUpdateManyMutationInput = {
       assinaturaSupervisor: actor.nomeCompleto,
       assinaturaSupervisorUsuarioId: actor.id,
@@ -1505,12 +1516,14 @@ export async function signWeeklyAreaSupervisorAction(formData: FormData) {
         await tx.planoLimpezaSemanalExecucao.update({
           where: { id: record.id },
           data: {
-            assinaturaResponsavel: actor.nomeCompleto,
+            ...executionTime,
+        dataExecucao: executionDate,
+        assinaturaResponsavel: actor.nomeCompleto,
             assinaturaResponsavelUsuarioId: actor.id,
             assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
             assinaturaResponsavelPerfil: actor.perfil,
             assinaturaResponsavelDataHora: signedAt,
-            quando: formatWeeklySignatureDateTime(signedAt),
+            quando: executionTime.horarioNaoInformado ? "Horário não informado" : `${formatDateInput(executionDate)} ${executionTime.horarioExecucao}`,
             observacaoResponsavel: record.observacaoResponsavel?.trim()
               ? record.observacaoResponsavel
               : "Assumido durante assinatura do supervisor da área/semana."
@@ -1547,8 +1560,7 @@ export async function signWeeklyAreaSupervisorAction(formData: FormData) {
     });
 
     revalidateModulePaths();
-    redirectWithFeedback(
-      returnTo,
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData),
       "success",
       pendingResponsibleRecords.length > 0
         ? `Área da semana assinada pelo supervisor com regularização de ${pendingResponsibleRecords.length} item(ns).`
@@ -1556,7 +1568,7 @@ export async function signWeeklyAreaSupervisorAction(formData: FormData) {
     );
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
+    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData), "error", getErrorMessage(error));
   }
 }
 
@@ -1850,7 +1862,8 @@ export async function deleteWeeklyAreaConfigAction(formData: FormData) {
       where: realWeeklyHistoryWhere(executionScope)
     });
 
-    if (linkedRealHistory === 0) {
+    const auditedHistory = await prisma.exclusaoRegistroOperacional.count({ where: { modulo: "limpeza_semanal", dadosOriginais: { path: ["area"], equals: existing.nome } } });
+    if (linkedRealHistory === 0 && auditedHistory === 0) {
       await prisma.$transaction(async (tx) => {
         await tx.planoLimpezaSemanalExecucao.deleteMany({
           where: disposableWeeklyExecutionWhere(executionScope)
@@ -2062,7 +2075,8 @@ export async function deleteWeeklyConfigItemAction(formData: FormData) {
       where: realWeeklyHistoryWhere(executionScope)
     });
 
-    if (linkedRealHistory === 0) {
+    const auditedHistory = await prisma.exclusaoRegistroOperacional.count({ where: { modulo: "limpeza_semanal", dadosOriginais: { path: ["itemId"], equals: itemId } } });
+    if (linkedRealHistory === 0 && auditedHistory === 0) {
       await prisma.$transaction(async (tx) => {
         await tx.planoLimpezaSemanalExecucao.deleteMany({
           where: disposableWeeklyExecutionWhere(executionScope)
@@ -2309,3 +2323,16 @@ export async function reopenWeeklyMonthAction(formData: FormData) {
 }
 
 
+
+function validateWeeklyExecutionDate(form: FormData, range: { start: Date; end: Date }) {
+ const date = parseDateInput(getInputValue(form, "dataExecucao"));
+ if (!date || date < range.start || date > range.end) throw new Error("Informe a data real de execução dentro da semana selecionada.");
+ assertProcedureDate(date); return date;
+}
+
+function weeklyExecutionReturnTo(returnTo: string, form: FormData) {
+ const url = new URL(returnTo, "http://localhost");
+ const date = getInputValue(form, "dataExecucao");
+ if (/^\d{4}-\d{2}-\d{2}$/.test(date)) url.searchParams.set("dataExecucaoRegistro", date);
+ return url.pathname + url.search;
+}

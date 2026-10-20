@@ -4,9 +4,10 @@ import { useState } from "react";
 
 type DeleteNoteModalProps = {
   formId: string;
+  description: string;
 };
 
-export function DeleteNoteModal({ formId }: DeleteNoteModalProps) {
+export function DeleteNoteModal({ formId, description }: DeleteNoteModalProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -22,10 +23,10 @@ export function DeleteNoteModal({ formId }: DeleteNoteModalProps) {
               Confirmar Exclusão
             </h3>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Deseja excluir esta nota importada? Esta ação removerá a nota e os produtos
-              vinculados que ainda não foram conferidos.
+              {description} Os dados serão preservados para auditoria.
             </p>
 
+            <label className="block text-sm">Justificativa da exclusão *<textarea form={formId} name="justificativaExclusao" required maxLength={4000} className="bpma-input" /></label>
             <div className="mt-5 btn-group">
               <button type="button" onClick={() => setIsOpen(false)} className="btn-secondary">
                 Cancelar

@@ -1,7 +1,8 @@
 "use server";
+import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
-import { assertProcedureDate } from "@/lib/procedure-time";
+import { assertProcedureDate, readExecutionTime } from "@/lib/procedure-time";
 
 import {
   StatusQualidadeOleo,
@@ -217,12 +218,15 @@ export async function createRegistroAction(formData: FormData) {
     await prisma.controleQualidadeOleoRegistro.create({
       data: {
         ...payload,
+        ...readExecutionTime(formData, data, "", !payload.semUtilizacao),
         data
       }
     });
 
     revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Criado com Sucesso.");
+    const next = new URL(returnTo, "http://localhost");
+    next.searchParams.set("dataRegistro", data.toISOString().slice(0, 10));
+    redirectWithFeedback(next.pathname + "?" + next.searchParams.toString(), "success", "Registro Criado com Sucesso.");
   } catch (error) {
     rethrowIfRedirectError(error);
     redirectWithFeedback(
@@ -283,46 +287,12 @@ export async function updateRegistroAction(formData: FormData) {
 
 export async function deleteRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
-
   try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.oleo.excluir_registro", "Seu perfil não pode excluir registros de óleo.");
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro inválido para exclusão.");
-    }
-
-    const existing = await prisma.controleQualidadeOleoRegistro.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (!canEditRecordDate(actor, "modulo.oleo", existing.data, getTodaySystemDate())) {
-      throw new Error(
-        "Registros históricos não podem ser editados. Apenas registros do dia atual podem ser ajustados."
-      );
-    }
-
-    const { mes, ano } = getMonthYear(existing.data);
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error("O mês deste registro já foi fechado e o item não pode ser excluído.");
-    }
-
-    await prisma.controleQualidadeOleoRegistro.delete({ where: { id } });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Excluído com Sucesso.");
+    await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "oleo", id: Number(getInputValue(formData, "id")), reason: getInputValue(formData, "justificativaExclusao") });
+    redirectWithFeedback(returnTo, "success", "Registro excluído com justificativa e auditoria.");
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível processar a operação.")
-    );
+    redirectWithFeedback(returnTo, "error", getErrorMessage(error, "Não foi possível excluir o registro."));
   }
 }
 

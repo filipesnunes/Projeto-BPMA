@@ -1,8 +1,9 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
-  StatusFechamentoTemperaturaEquipamento,
   StatusOperacionalEquipamento,
   StatusTemperaturaEquipamento,
   TipoOpcaoTemperaturaEquipamento,
@@ -142,9 +143,7 @@ export default async function ControleTemperaturaEquipamentosPage({
   const podeVerGestao = authUser
     ? hasPermission(authUser, "modulo.temperatura.acessar_historico") || podeGerenciarOpcoes
     : false;
-  const podeExcluirRegistros = authUser
-    ? hasPermission(authUser, "modulo.temperatura.excluir_registro")
-    : false;
+  const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "temperatura");
 
   const params = await searchParams;
   const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
@@ -299,21 +298,8 @@ export default async function ControleTemperaturaEquipamentosPage({
     ano: fechamentoAno
   });
 
-  const periodosAssinados = periodos.size
-    ? await prisma.controleTemperaturaEquipamentoFechamento.findMany({
-        where: {
-          status: StatusFechamentoTemperaturaEquipamento.ASSINADO,
-          OR: Array.from(periodos.values()).map((periodo) => ({
-            mes: periodo.mes,
-            ano: periodo.ano
-          }))
-        }
-      })
-    : [];
-
-  const assinadosSet = new Set(
-    periodosAssinados.map((item) => periodKey(item.mes, item.ano))
-  );
+  const closedPeriods = await Promise.all(Array.from(periodos.values()).map(async period => ({ ...period, closed: await isOperationalMonthClosed("temperatura", period.mes, period.ano) })));
+  const assinadosSet = new Set(closedPeriods.filter(p => p.closed).map(p => periodKey(p.mes, p.ano)));
   const periodoEdicao = registroEmEdicao ? getMonthYear(registroEmEdicao.data) : null;
   const registroEmEdicaoBloqueado = periodoEdicao
     ? assinadosSet.has(periodKey(periodoEdicao.mes, periodoEdicao.ano))
@@ -324,6 +310,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     : false;
 
   const parametrosRetorno = new URLSearchParams();
+  if (firstParam(params.formDataReferencia)) parametrosRetorno.set("formDataReferencia", firstParam(params.formDataReferencia));
   if (dataRegistro) parametrosRetorno.set("dataRegistro", formatDateInput(dataRegistro));
   if (turnoRegistro) parametrosRetorno.set("turnoRegistro", turnoRegistro);
   if (filtroData) parametrosRetorno.set("filtroData", filtroData);
@@ -823,7 +810,7 @@ export default async function ControleTemperaturaEquipamentosPage({
                               Editar
                             </Link>
                           )}
-                          {podeExcluirRegistros ? (
+                          {podeExcluirRegistros && !bloqueado ? (
                             bloqueado ? (
                               <button type="button" disabled className="btn-danger">
                                 Excluir
@@ -874,6 +861,8 @@ export default async function ControleTemperaturaEquipamentosPage({
             </p>
           ) : (
             <form action={deleteRegistroAction}>
+              <p className="mb-3 text-sm">Responsável pelo registro: {registroParaExcluir.responsavel}</p>
+              <label className="block text-sm">Justificativa da exclusão *<textarea name="justificativaExclusao" required maxLength={4000} className="bpma-input" /></label>
               <input type="hidden" name="id" value={registroParaExcluir.id} />
               <input type="hidden" name="returnTo" value={deleteReturnTo} />
               <p className="text-sm text-slate-600 dark:text-slate-300">

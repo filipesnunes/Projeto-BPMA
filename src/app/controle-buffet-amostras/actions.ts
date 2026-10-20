@@ -1,4 +1,7 @@
 "use server";
+import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
+import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
+
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
@@ -18,7 +21,7 @@ import {
   ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
-import { canEditRecordDate } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
@@ -69,6 +72,7 @@ const FORM_ACTION_INITIAL_STATE: FormActionState = {
 };
 
 type RegistroTemperaturaInput = {
+  execution?: ReturnType<typeof readExecutionTime>;
   tcEquipamentoInput: string;
   primeiraTcInput: string;
   temperaturaTipo: string;
@@ -84,6 +88,9 @@ type RegistroItemSource = {
 };
 
 type RegistroItemPayload = {
+  horarioExecucao?: string | null;
+  horarioNaoInformado?: boolean;
+  justificativaHorario?: string | null;
   itemNome: string;
   classificacao: ClassificacaoItemBuffetAmostra;
   tcEquipamento: number | null;
@@ -180,6 +187,7 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
 }
 
 async function ensurePeriodIsOpen(date: Date) {
+  assertProcedureDate(date);
   const period = getMonthYear(date);
   if (await isMonthSigned(period.mes, period.ano)) {
     throw new Error(
@@ -322,7 +330,8 @@ async function buildRegistroPayload(params: {
 
   if (temperaturaAmbiente) {
     return {
-      itemNome: params.item.nome,
+      ...params.input.execution,
+    itemNome: params.item.nome,
       classificacao: params.item.classificacao,
       tcEquipamento: null,
       primeiraTc: null,
@@ -366,6 +375,7 @@ async function buildRegistroPayload(params: {
   }
 
   return {
+    ...params.input.execution,
     itemNome: params.item.nome,
     classificacao: params.item.classificacao,
     tcEquipamento,
@@ -437,6 +447,7 @@ function buildNaoServidoPayload(params: {
   observacao?: string;
 }): RegistroItemPayload {
   return {
+    horarioExecucao: null, horarioNaoInformado: false, justificativaHorario: null,
     itemNome: params.item.nome,
     classificacao: params.item.classificacao,
     tcEquipamento: null,
@@ -570,7 +581,7 @@ export async function saveRegistroItemAction(formData: FormData) {
     }
 
     await ensurePeriodIsOpen(data);
-    if (!canEditRecordDate(actor, "modulo.amostras", data, getTodaySystemDate())) {
+    if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
     }
 
@@ -587,15 +598,11 @@ export async function saveRegistroItemAction(formData: FormData) {
     }
     ensureServicoPrevistoNaData(servico, data);
 
-    const existing = await prisma.controleBuffetAmostraRegistro.findUnique({
-      where: {
-        data_servicoId_itemId: {
+    const existing = await prisma.controleBuffetAmostraRegistro.findFirst({ where: {
           data,
           servicoId,
           itemId
-        }
-      }
-    });
+        } });
 
     if (existing?.status === StatusItemBuffetAmostra.ASSINADO) {
       throw new Error("Este item já está assinado e não pode ser alterado.");
@@ -607,6 +614,7 @@ export async function saveRegistroItemAction(formData: FormData) {
           actor,
           item,
           input: {
+            execution: readExecutionTime(formData, data, "", !naoServido),
             tcEquipamentoInput,
             primeiraTcInput,
             temperaturaTipo,
@@ -616,22 +624,16 @@ export async function saveRegistroItemAction(formData: FormData) {
           }
         });
 
-    await prisma.controleBuffetAmostraRegistro.upsert({
-      where: {
-        data_servicoId_itemId: {
+    await saveActiveBuffetRecord(prisma, {
           data,
           servicoId,
           itemId
-        }
-      },
-      create: {
+        }, {
         data,
         servicoId,
         itemId,
         ...payload
-      },
-      update: payload
-    });
+      }, payload);
 
     revalidateModulePaths(servicoId);
     redirectWithFeedback(returnTo, "success", "Registro do Item Salvo com Sucesso.");
@@ -674,7 +676,7 @@ export async function saveServicoItemsStateAction(
     }
 
     await ensurePeriodIsOpen(data);
-    if (!canEditRecordDate(actor, "modulo.amostras", data, getTodaySystemDate())) {
+    if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
     }
 
@@ -725,7 +727,7 @@ export async function saveServicoItemsStateAction(
 
     for (const rowKey of rowKeys) {
       try {
-        const input = {
+        const input: RegistroTemperaturaInput = {
           tcEquipamentoInput: getRowInputValue(formData, rowKey, "tcEquipamento"),
           primeiraTcInput: getRowInputValue(formData, rowKey, "primeiraTc"),
           temperaturaTipo: getRowInputValue(formData, rowKey, "temperaturaTipo"),
@@ -788,7 +790,7 @@ export async function saveServicoItemsStateAction(
           updates.push({
             type: "fixed",
             itemId,
-            payload: await buildRegistroPayload({ actor, item, input })
+            payload: await buildRegistroPayload({ actor, item, input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") } })
           });
           continue;
         }
@@ -855,7 +857,7 @@ export async function saveServicoItemsStateAction(
             payload: await buildRegistroPayload({
               actor,
               item,
-              input
+              input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") }
             })
           });
           continue;
@@ -877,23 +879,17 @@ export async function saveServicoItemsStateAction(
     await prisma.$transaction(async (tx) => {
       for (const update of updates) {
         if (update.type === "fixed") {
-          await tx.controleBuffetAmostraRegistro.upsert({
-            where: {
-              data_servicoId_itemId: {
+          await saveActiveBuffetRecord(tx, {
                 data,
                 servicoId,
                 itemId: update.itemId
-              }
-            },
-            create: {
+              }, {
               data,
               servicoId,
               itemId: update.itemId,
               itemExtra: false,
               ...update.payload
-            },
-            update: update.payload
-          });
+            }, update.payload);
         } else {
           await tx.controleBuffetAmostraRegistro.update({
             where: { id: update.registroId },
@@ -1067,7 +1063,7 @@ export async function createExtraItemStateAction(
     }
 
     await ensurePeriodIsOpen(data);
-    if (!canEditRecordDate(actor, "modulo.amostras", data, getTodaySystemDate())) {
+    if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
     }
 

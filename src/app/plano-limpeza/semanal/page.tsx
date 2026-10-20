@@ -1,3 +1,4 @@
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
@@ -216,8 +217,8 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
     prisma.planoLimpezaSemanalExecucao.findMany({
       where,
       select: {
-        id: true,
-        dataExecucao: true,
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true,
+          id: true,
         area: true,
         itemDescricao: true,
         quando: true,
@@ -243,7 +244,8 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     }),
     prisma.planoLimpezaSemanalExecucao.findMany({
-      select: { area: true },
+      select: {
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true, area: true },
       distinct: ["area"],
       orderBy: { area: "asc" }
     })
@@ -298,6 +300,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
           id: { in: executionParaAssinatura.recordIds }
         },
         select: {
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true,
           id: true,
           itemDescricao: true,
           quando: true,
@@ -375,6 +378,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
     !assinaturaBloqueadaPorFechamento;
 
   const paramsRetorno = new URLSearchParams();
+  if (firstParam(params.dataExecucaoRegistro)) paramsRetorno.set("dataExecucaoRegistro", firstParam(params.dataExecucaoRegistro));
   if (filtroData) paramsRetorno.set("filtroData", filtroData);
   if (filtroMes) paramsRetorno.set("filtroMes", String(filtroMes));
   if (filtroAno) paramsRetorno.set("filtroAno", String(filtroAno));
@@ -629,6 +633,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
       executionItemsParaAssinatura.length > 0 &&
       !assinaturaBloqueadaPorFechamento ? (
         <WeeklySignChecklistModal
+          selectedDate={firstParam(params.dataExecucaoRegistro)}
           closeHref={returnTo}
           returnTo={returnTo}
           usuarioAssinando={responsavelLogado}
@@ -653,6 +658,7 @@ export default async function PlanoLimpezaSemanalPage({ searchParams }: PageProp
           }))}
         />
       ) : null}
+      <OperationalDeletionPanel target="limpeza_semanal" selectedDate={params.exclusaoData} />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { formatAppDateInput, getAppDate } from "@/lib/date-time";
 
 import Link from "next/link";
 import { useId, useState } from "react";
@@ -28,6 +29,7 @@ export function XmlImportForm({ returnTo, cancelHref }: XmlImportFormProps) {
   return (
     <form action={importXmlAction} className="mt-4 grid gap-4">
       <input type="hidden" name="returnTo" value={returnTo} />
+      <label className="block text-sm">Data do recebimento *<input type="date" name="data" required defaultValue={formatAppDateInput(getAppDate())} max={formatAppDateInput(getAppDate())} className="bpma-input" /></label>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
         <p className="text-sm font-medium text-slate-800 dark:text-slate-100">

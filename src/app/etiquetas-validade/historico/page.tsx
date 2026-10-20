@@ -1,3 +1,4 @@
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -14,8 +15,6 @@ import {
 import { prisma } from "@/lib/prisma";
 import { canAccessValidityLabels } from "@/lib/rbac";
 
-import { deleteEtiquetaGeradaAction } from "../actions";
-import { ConfirmSubmitButton } from "../confirm-submit-button";
 import {
   CARD_CLASS,
   DEFAULT_PRINT_CONFIG,
@@ -263,16 +262,7 @@ export default async function EtiquetasValidadeHistoricoPage({
                           <Link href={buildHistoryPath(viewParams)} scroll={false} className="btn-secondary">
                             Visualizar/Reimprimir
                           </Link>
-                          <form action={deleteEtiquetaGeradaAction}>
-                            <input type="hidden" name="returnTo" value={closeModalHref} />
-                            <input type="hidden" name="id" value={etiqueta.id} />
-                            <ConfirmSubmitButton
-                              message="Deseja excluir esta etiqueta gerada? Esta ação removerá o registro do histórico."
-                              className="btn-danger"
-                            >
-                              Excluir
-                            </ConfirmSubmitButton>
-                          </form>
+
                         </div>
                       </td>
                     </tr>
@@ -296,6 +286,7 @@ export default async function EtiquetasValidadeHistoricoPage({
           <EtiquetaCard etiqueta={etiquetaSelecionada} config={configuracao} />
         </ActionModal>
       ) : null}
+      <OperationalDeletionPanel target="etiquetas" selectedDate={params.exclusaoData} />
     </div>
   );
 }

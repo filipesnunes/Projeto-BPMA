@@ -1,3 +1,4 @@
+import { renderExecutionReportNotes } from "@/lib/execution-report-notes";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -680,6 +681,7 @@ async function getMonthlyDailyRecords(month: number, year: number) {
       }
     },
     select: {
+      horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, createdAt: true,
       id: true,
       data: true,
       turno: true,
@@ -788,7 +790,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report), {
+  return new NextResponse(renderReportDocument(report).replace("</body>", renderExecutionReportNotes(records) + "</body>"), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

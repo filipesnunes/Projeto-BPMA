@@ -424,6 +424,8 @@ model FechamentoMensalModulo {
 }
 
 model HigienizacaoHortifruti {
+  excluidoEm DateTime?
+
   id               Int      @id @default(autoincrement())
   data             DateTime @db.Date
   hortifruti       String
@@ -472,6 +474,8 @@ model HigienizacaoHortifrutiOpcao {
 }
 
 model ControleTemperaturaEquipamento {
+  excluidoEm DateTime?
+
   id                               Int                             @id @default(autoincrement())
   data                             DateTime                        @db.Date
   equipamento                      String
@@ -582,6 +586,12 @@ model ControleTemperaturaCategoriaRegra {
 }
 
 model ControleQualidadeOleoRegistro {
+  horarioExecucao String? @db.VarChar(5)
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
+
+  excluidoEm DateTime?
+
   id                            Int                 @id @default(autoincrement())
   data                          DateTime            @db.Date
   fitaOleo                      String?
@@ -651,14 +661,16 @@ model RastreabilidadeRecebimentoCategoria {
 }
 
 model RastreabilidadeRecebimentoNota {
+  excluidoEm DateTime?
+
   id                  Int                                  @id @default(autoincrement())
   data                DateTime                             @db.Date
   fornecedor          String
   notaFiscal          String
-  chaveNfe            String?                              @unique
+  chaveNfe            String?
   cnpjFornecedor      String?
   serieNota           String?
-  identificadorFiscal String?                              @unique
+  identificadorFiscal String?
   statusNota          StatusNotaRecebimento                @default(PENDENTE)
   responsavelGeral    String?
   origemXml           Boolean                              @default(false)
@@ -677,6 +689,12 @@ model RastreabilidadeRecebimentoNota {
 }
 
 model RastreabilidadeRecebimentoRegistro {
+  horarioExecucao String? @db.VarChar(5)
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
+
+  excluidoEm DateTime?
+
   id                      Int                                  @id @default(autoincrement())
   notaId                  Int?
   nota                    RastreabilidadeRecebimentoNota?      @relation(fields: [notaId], references: [id], onDelete: Cascade)
@@ -742,6 +760,12 @@ model RastreabilidadeRecebimentoFechamento {
 }
 
 model PlanoLimpezaDiarioRegistro {
+  horarioExecucao String? @db.VarChar(5)
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
+
+  excluidoEm DateTime?
+
   id                               Int                     @id @default(autoincrement())
   data                             DateTime                @db.Date
   turno                            TurnoPlanoLimpeza
@@ -769,7 +793,7 @@ model PlanoLimpezaDiarioRegistro {
   createdAt                        DateTime                @default(now())
   updatedAt                        DateTime                @updatedAt
 
-  @@unique([data, turno, itemId])
+  @@index([data, turno, itemId])
   @@index([data])
   @@index([turno])
   @@index([area])
@@ -855,6 +879,12 @@ model PlanoLimpezaSemanalArea {
 }
 
 model PlanoLimpezaSemanalExecucao {
+  horarioExecucao String? @db.VarChar(5)
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
+
+  excluidoEm DateTime?
+
   id                               Int                     @id @default(autoincrement())
   dataExecucao                     DateTime                @db.Date
   area                             String
@@ -970,6 +1000,12 @@ model ControleBuffetAmostraAcaoCorretiva {
 }
 
 model ControleBuffetAmostraRegistro {
+  horarioExecucao String? @db.VarChar(5)
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
+
+  excluidoEm DateTime?
+
   id                               Int                             @id @default(autoincrement())
   data                             DateTime                        @db.Date
   servicoId                        Int
@@ -1003,7 +1039,7 @@ model ControleBuffetAmostraRegistro {
   createdAt                        DateTime                        @default(now())
   updatedAt                        DateTime                        @updatedAt
 
-  @@unique([data, servicoId, itemId])
+  @@index([data, servicoId, itemId])
   @@index([data, servicoId])
   @@index([status])
   @@index([responsavelUsuarioId])
@@ -1028,6 +1064,7 @@ model ControleBuffetAmostraFechamento {
 }
 
 model ChamadoManutencao {
+  excluidoEm DateTime?
   id                            Int                         @id @default(autoincrement())
   titulo                        String
   descricao                     String
@@ -1301,6 +1338,7 @@ model EtiquetaValidadeRegra {
 }
 
 model EtiquetaValidadeEmissao {
+  excluidoEm DateTime?
   id                            Int                         @id @default(autoincrement())
   codigoEtiqueta                String                      @unique
   produtoId                     Int?
@@ -1348,4 +1386,19 @@ model EtiquetaValidadeEmissao {
   @@index([criadoEm])
   @@index([origem])
   @@map("etiqueta_validade_emissao")
+}
+
+model ExclusaoRegistroOperacional {
+  id Int @id @default(autoincrement())
+  modulo String
+  modelo String
+  registroId Int
+  dadosOriginais Json
+  usuarioId Int
+  usuarioNome String
+  usuarioPerfil PerfilUsuario
+  excluidoEm DateTime @default(now())
+  justificativa String
+  @@index([modulo, registroId])
+  @@map("exclusao_registro_operacional")
 }

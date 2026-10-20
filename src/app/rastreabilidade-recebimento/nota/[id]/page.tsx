@@ -1,9 +1,10 @@
+import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { StatusNotaRecebimento } from "@prisma/client";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth-session";
-import { canEditRecordDate, hasPermission } from "@/lib/permissions";
+import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 
 import {
@@ -190,13 +191,13 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
     : false;
   const xmlProductLocked = note.origemXml && !canEditImportedXmlFields(authUser?.perfil);
   const canDeleteNote =
-    Boolean(authUser && hasPermission(authUser, "modulo.rastreabilidade.excluir_registro")) &&
+    Boolean(authUser && canDeleteOperationalRecord(authUser, "rastreabilidade")) &&
     !monthSigned &&
     !daySigned &&
     !noteFinalizada &&
     canDeleteImportedReceivingNote(note);
   const canDeleteItems =
-    Boolean(authUser && hasPermission(authUser, "modulo.rastreabilidade.excluir_registro")) &&
+    Boolean(authUser && canDeleteOperationalRecord(authUser, "rastreabilidade")) &&
     !readOnlyMode &&
     canDeleteByDate;
   const returnTo = `/rastreabilidade-recebimento/nota/${note.id}`;
@@ -260,7 +261,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
             <Link href="/rastreabilidade-recebimento" className="btn-secondary">
               ← Voltar ao Módulo
             </Link>
-            {canDeleteNote ? <DeleteNoteModal formId={`delete-note-from-note-${note.id}`} /> : null}
+            {canDeleteNote ? <DeleteNoteModal description={`Rastreabilidade — Nota ${note.notaFiscal} — ${formatDateDisplay(note.data)} — ${note.fornecedor} — Responsável: ${note.responsavelGeral ?? "Não informado"}`} formId={`delete-note-from-note-${note.id}`} /> : null}
           </div>
         </div>
       </section>
@@ -356,6 +357,7 @@ export default async function NotaRecebimentoPage({ params, searchParams }: Page
         ) : (
           <>
             <NoteItemsForm
+              referenceDate={formatDateInput(note.data)}
               notaId={note.id}
               returnTo={returnTo}
               rows={noteItemRows}

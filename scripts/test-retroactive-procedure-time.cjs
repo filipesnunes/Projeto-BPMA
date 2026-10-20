@@ -162,9 +162,9 @@ async function main() {
   }
   await action(hort.createRegistroAction,{...horticulture,inicioProcesso:'15:01'},'error');
   assert.equal(tables.higienizacaoHortifruti.length,hortCount);
-  await action(oil.createRegistroAction,{data:'2026-10-18',temperatura:170});
+  await action(oil.createRegistroAction,{data:'2026-10-18',temperatura:170,horarioExecucao:'09:40'});
   assert.equal(dates.formatAppDateInput(tables.controleQualidadeOleoRegistro[0].data),'2026-10-18');
-  assert(!('horarioAfericao' in tables.controleQualidadeOleoRegistro[0]),'Oil has no new time field');
+  assert.equal(tables.controleQualidadeOleoRegistro[0].horarioExecucao,'09:40');
   const legacyHort={id:99,data:date('2026-10-16'),hortifruti:'Alface',produtoUtilizado:'Sanitizante',inicioProcesso:'07:00',terminoProcesso:'07:15',duracaoMinutos:15,responsavel:'Responsável anterior',horarioNaoInformado:false,createdAt:new Date('2026-10-16T11:00:00Z'),updatedAt:new Date('2026-10-16T11:00:00Z')};
   tables.higienizacaoHortifruti.push(legacyHort);
   tables.controleTemperaturaEquipamento.push({...current,id:90,equipamento:'C',data:date('2026-10-16'),horarioAfericao:null,createdAt:new Date('2026-10-16T11:23:00Z')});
@@ -188,7 +188,7 @@ async function main() {
     const result=await action(fn,{...values,data:'2026-10-17'},'error');assert(result.get('feedback').includes('fechado'));
   }
   tables.fechamentoMensalModulo=[];
-  console.log('PASS actual actions/reports: automatic today, morning 07:35, afternoon 14:47, explicit unknown with reason, manual horticulture interval, no oil time field, duplicates, future/invalid values, closed months and untampered audit metadata.');
+  console.log('PASS actual actions/reports: automatic today, morning 07:35, afternoon 14:47, explicit unknown with reason, manual horticulture interval, oil execution time, duplicates, future/invalid values, closed months and untampered audit metadata.');
 
   const React=require('react');let states=[],cursor=0;
   mocks.set('react',{...React,useState(initial){const index=cursor++;if(!(index in states))states[index]=initial;return[states[index],value=>{states[index]=value}]}});

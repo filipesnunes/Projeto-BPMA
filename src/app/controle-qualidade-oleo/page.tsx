@@ -1,8 +1,10 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
+import { ReferenceExecutionFields } from "@/components/forms/execution-time-fields";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
-  StatusFechamentoQualidadeOleo,
   StatusQualidadeOleo
 } from "@prisma/client";
 import Link from "next/link";
@@ -104,9 +106,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const podeVerGestao = authUser
     ? hasPermission(authUser, "modulo.oleo.acessar_historico") || podeGerenciarOpcoes
     : false;
-  const podeExcluirRegistros = authUser
-    ? hasPermission(authUser, "modulo.oleo.excluir_registro")
-    : false;
+  const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "oleo");
 
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
@@ -115,9 +115,9 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const now = getCurrentSystemDateTime();
   const currentPeriod = getMonthYear(getTodaySystemDate());
   const todayInput = formatDateInput(now);
-  const submittedDate = firstParam(params.formDataReferencia);
+  const submittedDate = firstParam(params.formDataReferencia) || firstParam(params.dataRegistro);
   const validSubmittedDate = /^\d{4}-\d{2}-\d{2}$/.test(submittedDate) ? parseDateInput(submittedDate) : null;
-  const defaultRecordDate = feedbackType === "error" && params.formDataReferencia !== undefined
+  const defaultRecordDate = params.formDataReferencia !== undefined || params.dataRegistro !== undefined
     ? validSubmittedDate ? formatDateInput(validSubmittedDate) : ""
     : todayInput;
 
@@ -243,19 +243,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     ano: fechamentoAno
   });
 
-  const periodosAssinados = periodos.size
-    ? await prisma.controleQualidadeOleoFechamento.findMany({
-        where: {
-          status: StatusFechamentoQualidadeOleo.ASSINADO,
-          OR: Array.from(periodos.values()).map((periodo) => ({
-            mes: periodo.mes,
-            ano: periodo.ano
-          }))
-        }
-      })
-    : [];
-
-  const assinadosSet = new Set(periodosAssinados.map((item) => periodKey(item.mes, item.ano)));
+  const closedPeriods = await Promise.all(Array.from(periodos.values()).map(async period => ({ ...period, closed: await isOperationalMonthClosed("oleo", period.mes, period.ano) })));
+  const assinadosSet = new Set(closedPeriods.filter(p => p.closed).map(p => periodKey(p.mes, p.ano)));
   const periodoEdicao = registroEmEdicao ? getMonthYear(registroEmEdicao.data) : null;
   const registroEmEdicaoBloqueado = periodoEdicao
     ? assinadosSet.has(periodKey(periodoEdicao.mes, periodoEdicao.ano))
@@ -266,6 +255,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     : false;
 
   const parametrosRetorno = new URLSearchParams();
+  if (firstParam(params.dataRegistro)) parametrosRetorno.set("dataRegistro", firstParam(params.dataRegistro));
   if (filtroData) parametrosRetorno.set("filtroData", filtroData);
   if (filtroMes) parametrosRetorno.set("filtroMes", String(filtroMes));
   if (filtroAno) parametrosRetorno.set("filtroAno", String(filtroAno));
@@ -400,10 +390,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {formatDateDisplay(registroEmEdicao.data)}
               </p>
-            </div> : <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
-              Data do Procedimento *
-              <input type="date" name="data" required defaultValue={defaultRecordDate} max={todayInput} className={INPUT_CLASS} />
-            </label>}
+            </div> : <ReferenceExecutionFields skipWhen="semUtilizacao" defaultDate={defaultRecordDate} today={todayInput} />}
 
             <OilRegisterFields
               previsaoFita={ultimaAfericaoFita
@@ -615,7 +602,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
                               Editar
                             </Link>
                           )}
-                          {podeExcluirRegistros ? (
+                          {podeExcluirRegistros && !bloqueado ? (
                             bloqueado ? (
                               <button type="button" disabled className="btn-danger">
                                 Excluir
@@ -665,6 +652,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
             </p>
           ) : (
             <form action={deleteRegistroAction}>
+              <p className="mb-3 text-sm">Responsável pelo registro: {registroParaExcluir.responsavel}</p>
+              <label className="block text-sm">Justificativa da exclusão *<textarea name="justificativaExclusao" required maxLength={4000} className="bpma-input" /></label>
               <input type="hidden" name="id" value={registroParaExcluir.id} />
               <input type="hidden" name="returnTo" value={deleteReturnTo} />
               <p className="text-sm text-slate-600 dark:text-slate-300">

@@ -1,3 +1,4 @@
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { ModuloDocumento,  StatusItemBuffetAmostra } from "@prisma/client";
 import Link from "next/link";
@@ -231,6 +232,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
           </table>
         </div>
       </section>
+      <OperationalDeletionPanel target="amostras" selectedDate={params.exclusaoData} />
     </div>
   );
 }

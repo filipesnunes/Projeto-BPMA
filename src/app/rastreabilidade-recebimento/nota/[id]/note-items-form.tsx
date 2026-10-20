@@ -1,4 +1,6 @@
 "use client";
+import { OperationalDeleteButton } from "@/components/operational-delete-button";
+import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -46,6 +48,7 @@ export type NoteItemFormRow = {
 };
 
 type NoteItemsFormProps = {
+  referenceDate: string;
   notaId: number;
   returnTo: string;
   rows: NoteItemFormRow[];
@@ -155,6 +158,7 @@ function normalizeTemperatureOnBlur(value: string | null | undefined): string {
 }
 
 export function NoteItemsForm({
+  referenceDate,
   notaId,
   returnTo,
   rows,
@@ -222,6 +226,7 @@ export function NoteItemsForm({
       ) : null}
 
       <form id={formId} action={formAction}>
+        {!readOnlyMode && <ExecutionTimeFields date={referenceDate} />}
         <input type="hidden" name="notaId" value={String(notaId)} />
         <input type="hidden" name="returnTo" value={returnTo} />
 
@@ -568,13 +573,7 @@ export function NoteItemsForm({
                           {readOnlyMode ? "Somente consulta" : "Sem exclusão"}
                         </span>
                       ) : (
-                        <button
-                          type="submit"
-                          form={`delete-item-form-${item.id}`}
-                          className="btn-danger"
-                        >
-                          Excluir
-                        </button>
+                        <OperationalDeleteButton target="rastreabilidade" id={item.id} date={referenceDate} description={`Rastreabilidade — Nota ${noteNumber} — ${referenceDate} — ${item.produto} — Responsável: ${item.responsavelRecebimento ?? "Não informado"}`} />
                       )}
                     </td>
                   </tr>

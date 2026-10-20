@@ -187,19 +187,19 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     modulo: "limpeza_diaria",
     grupo: "Plano de Limpeza Diário",
     prefixo: "modulo.limpeza_diaria",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
   }),
   ...buildModulePermissions({
     modulo: "limpeza_semanal",
     grupo: "Plano de Limpeza Semanal",
     prefixo: "modulo.limpeza_semanal",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
   }),
   ...buildModulePermissions({
     modulo: "chamados",
     grupo: "Chamados de Manutenção",
     prefixo: "modulo.chamados",
-    acoes: ["acessar", "criar_registro", "editar_registro_do_dia", "editar_historico", "gerenciar_cadastros"]
+    acoes: ["acessar", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_cadastros"]
   }),
   ...buildModulePermissions({
     modulo: "documentos",
@@ -217,7 +217,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     modulo: "etiquetas",
     grupo: "Etiquetas de Validade / StayLabel",
     prefixo: "modulo.etiquetas",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "gerenciar_cadastros"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_cadastros"]
   })
 ];
 
@@ -260,7 +260,11 @@ const COLABORADOR_PERMISSIONS = new Set([
 ]);
 
 const NUTRICIONISTA_PERMISSIONS = new Set([
+  "modulo.chamados.excluir_registro",
   ...COLABORADOR_PERMISSIONS,
+  "modulo.rastreabilidade.excluir_registro",
+  "modulo.limpeza_diaria.excluir_registro",
+  "modulo.limpeza_semanal.excluir_registro",
   "usuarios.responsavel_tecnico",
   "modulo.hortifruti.excluir_registro",
   "modulo.hortifruti.assinar_dia",

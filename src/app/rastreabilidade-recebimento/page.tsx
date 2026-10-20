@@ -1,3 +1,5 @@
+import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import {
   ModuloDocumento,
   Prisma,
@@ -129,7 +131,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
     ? hasPermission(authUser, "modulo.rastreabilidade.acessar_historico") || podeGerenciarOpcoes
     : false;
   const podeExcluirNotas = authUser
-    ? hasPermission(authUser, "modulo.rastreabilidade.excluir_registro")
+    ? canDeleteOperationalRecord(authUser, "rastreabilidade")
     : false;
 
   const params = await searchParams;
@@ -633,7 +635,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
                             {periodoFechado ? "Consultar nota" : actionLabel}
                           </Link>
                           {podeExcluirNota ? (
-                            <DeleteNoteModal formId={`delete-note-day-${nota.id}`} />
+                            <DeleteNoteModal description={`Rastreabilidade — Nota ${nota.notaFiscal} — ${formatDateDisplay(nota.data)} — ${nota.fornecedor} — Responsável: ${nota.responsavelGeral ?? "Não informado"}`} formId={`delete-note-day-${nota.id}`} />
                           ) : null}
                         </div>
                         {podeExcluirNota ? (
@@ -803,6 +805,8 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
           ))}
         </ul>
       </section>
+      <OperationalDeletionPanel target="rastreabilidade" selectedDate={params.exclusaoData} />
+      <OperationalDeletionPanel target="nota" selectedDate={params.exclusaoData} />
     </div>
   );
 }

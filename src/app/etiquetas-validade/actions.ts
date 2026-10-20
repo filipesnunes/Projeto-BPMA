@@ -1,4 +1,5 @@
 "use server";
+import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { EtiquetaValidadeOrigemRegra } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -889,10 +890,10 @@ export async function deleteEtiquetaGeradaAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
 
   try {
-    await ensureDevAction();
+    const actor = await ensureDevAction();
     const id = parsePositiveInt(getInputValue(formData, "id"));
     if (!id) throw new Error("Etiqueta inválida para exclusão.");
-    await prisma.etiquetaValidadeEmissao.delete({ where: { id } });
+    await deleteOperationalRecord({ user: actor, target: "etiquetas", id, reason: getInputValue(formData, "justificativaExclusao") });
     revalidateEtiquetaPaths();
     redirectWithFeedback(returnTo, "success", "Etiqueta excluída do histórico.");
   } catch (error) {

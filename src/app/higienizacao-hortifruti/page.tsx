@@ -1,10 +1,11 @@
+import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
+import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
 import { UNKNOWN_PROCEDURE_TIME } from "@/lib/procedure-time";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
   Prisma,
-  StatusFechamentoHortifruti,
   TipoOpcaoHigienizacao
 } from "@prisma/client";
 import Link from "next/link";
@@ -15,7 +16,6 @@ import { ActionModal, ModalActions } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { prisma } from "@/lib/prisma";
 import {
-  canDeleteOperationalRecords,
   canManageModuleOptions,
   canViewManagementSections
 } from "@/lib/rbac";
@@ -81,7 +81,7 @@ export default async function HigienizacaoHortifrutiPage({
   const isColaborador = authUser?.perfil === "COLABORADOR";
   const podeVerGestao = authUser ? canViewManagementSections(authUser) : false;
   const podeGerenciarOpcoes = authUser ? canManageModuleOptions(authUser) : false;
-  const podeExcluirRegistros = authUser ? canDeleteOperationalRecords(authUser) : false;
+  const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "hortifruti");
 
   const params = await searchParams;
   const feedback = firstParam(params.feedback).trim();
@@ -165,21 +165,8 @@ export default async function HigienizacaoHortifrutiPage({
     const periodo = getMonthYear(registroParaExcluir.data);
     periodos.set(periodKey(periodo.mes, periodo.ano), periodo);
   }
-  const periodosAssinados = periodos.size
-    ? await prisma.higienizacaoHortifrutiFechamento.findMany({
-        where: {
-          status: StatusFechamentoHortifruti.ASSINADO,
-          OR: Array.from(periodos.values()).map((periodo) => ({
-            mes: periodo.mes,
-            ano: periodo.ano
-          }))
-        }
-      })
-    : [];
-
-  const assinadosSet = new Set(
-    periodosAssinados.map((item) => periodKey(item.mes, item.ano))
-  );
+  const closedPeriods = await Promise.all(Array.from(periodos.values()).map(async period => ({ ...period, closed: await isOperationalMonthClosed("hortifruti", period.mes, period.ano) })));
+  const assinadosSet = new Set(closedPeriods.filter(p => p.closed).map(p => periodKey(p.mes, p.ano)));
   const periodoEdicao = registroEmEdicao ? getMonthYear(registroEmEdicao.data) : null;
   const registroEmEdicaoBloqueado = periodoEdicao
     ? assinadosSet.has(periodKey(periodoEdicao.mes, periodoEdicao.ano))
@@ -191,6 +178,7 @@ export default async function HigienizacaoHortifrutiPage({
     : false;
 
   const parametrosRetorno = new URLSearchParams();
+  if (firstParam(params.dataRegistro)) parametrosRetorno.set("dataRegistro", firstParam(params.dataRegistro));
   if (filtroData) parametrosRetorno.set("filtroData", filtroData);
   if (filtroMes) parametrosRetorno.set("filtroMes", String(filtroMes));
   if (filtroAno) parametrosRetorno.set("filtroAno", String(filtroAno));
@@ -305,7 +293,7 @@ export default async function HigienizacaoHortifrutiPage({
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             <ProcessTimeFields key={registroEmEdicao?.id ?? "new"}
-              defaultDate={registroEmEdicao ? formatDateInput(registroEmEdicao.data) : todayInput} todayDate={todayInput}
+              defaultDate={registroEmEdicao ? formatDateInput(registroEmEdicao.data) : firstParam(params.dataRegistro) || todayInput} todayDate={todayInput}
               editableDate={!registroEmEdicao} defaultUnknown={registroEmEdicao?.horarioNaoInformado ?? false}
               defaultJustification={registroEmEdicao?.justificativaHorario}
               defaultInicio={registroEmEdicao?.inicioProcesso} defaultTermino={registroEmEdicao?.terminoProcesso} inputClassName={INPUT_CLASS}>
@@ -423,7 +411,7 @@ export default async function HigienizacaoHortifrutiPage({
                               Editar
                             </Link>
                           ) : null}
-                          {podeExcluirRegistros ? (
+                          {podeExcluirRegistros && !bloqueado ? (
                             bloqueado ? (
                               <button type="button" disabled className="btn-danger">
                                 Excluir
@@ -474,6 +462,8 @@ export default async function HigienizacaoHortifrutiPage({
             </p>
           ) : (
             <form action={deleteRegistroAction}>
+              <p className="mb-3 text-sm">Responsável pelo registro: {registroParaExcluir.responsavel}</p>
+              <label className="block text-sm">Justificativa da exclusão *<textarea name="justificativaExclusao" required maxLength={4000} className="bpma-input" /></label>
               <input type="hidden" name="id" value={registroParaExcluir.id} />
               <input type="hidden" name="returnTo" value={deleteReturnTo} />
               <p className="text-sm text-slate-600 dark:text-slate-300">

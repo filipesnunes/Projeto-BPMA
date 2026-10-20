@@ -1,3 +1,4 @@
+import { WeeklyExecutionFields } from "@/components/forms/weekly-execution-fields";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
@@ -141,8 +142,8 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
     prisma.planoLimpezaSemanalExecucao.findMany({
       where,
       select: {
-        id: true,
-        dataExecucao: true,
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true,
+          id: true,
         area: true,
         assinaturaResponsavel: true,
         assinaturaResponsavelUsuarioId: true,
@@ -174,8 +175,8 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
         }
       },
       select: {
-        id: true,
-        dataExecucao: true,
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true,
+          id: true,
         area: true,
         assinaturaResponsavel: true,
         assinaturaResponsavelUsuarioId: true,
@@ -206,7 +207,8 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     }),
     prisma.planoLimpezaSemanalExecucao.findMany({
-      select: { area: true },
+      select: {
+          horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, dataExecucao: true, area: true },
       distinct: ["area"],
       orderBy: { area: "asc" }
     }),
@@ -763,6 +765,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                     name="weekStart"
                     value={formatDateInput(selectedSummary.weekStart)}
                   />
+{selectedSummary.pendingItems > 0 && <WeeklyExecutionFields defaultDate={firstParam(params.dataExecucaoRegistro)} weekStart={formatDateInput(selectedSummary.weekStart)} />}
                   <input
                     type="hidden"
                     name="returnTo"
@@ -817,6 +820,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                     name="weekStart"
                     value={formatDateInput(selectedSummary.weekStart)}
                   />
+<WeeklyExecutionFields defaultDate={firstParam(params.dataExecucaoRegistro)} weekStart={formatDateInput(selectedSummary.weekStart)} />
                   <input
                     type="hidden"
                     name="returnTo"
@@ -889,6 +893,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                           </td>
                           <td className="px-3 py-2">
                             {formatWeeklyExecutionQuando({
+                              ...record,
                               assinaturaResponsavel: record.assinaturaResponsavel,
                               assinaturaResponsavelDataHora:
                                 record.assinaturaResponsavelDataHora,
@@ -911,6 +916,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
                                   value={buildOpenSummaryHref(selectedSummary)}
                                 />
                                 <input type="hidden" name="etapa" value="responsavel" />
+<WeeklyExecutionFields defaultDate={firstParam(params.dataExecucaoRegistro)} weekStart={formatDateInput(selectedSummary.weekStart)} />
                                 <input
                                   type="password"
                                   name="senhaConfirmacao"

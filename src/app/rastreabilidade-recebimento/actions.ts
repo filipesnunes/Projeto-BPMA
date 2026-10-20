@@ -1,4 +1,6 @@
 "use server";
+import { assertProcedureDate, readExecutionTime } from "@/lib/procedure-time";
+import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
@@ -17,10 +19,9 @@ import { getCurrentUserForAction, type AuthenticatedUser } from "@/lib/auth-sess
 import {
   ensureCanCloseMonth,
   ensureCanManageOptions,
-  ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
-import { canEditRecordDate, hasPermission } from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 import type { UserRole } from "@/lib/rbac";
@@ -29,7 +30,6 @@ import {
   hasCategoryWithSameName,
   sanitizeCategoryName
 } from "./catalog";
-import { canDeleteImportedReceivingNote } from "./note-permissions";
 import { parseRecebimentoXml } from "./xml-parser";
 import {
   calculateOverallStatus,
@@ -52,7 +52,6 @@ import {
 import { getReceivingNoteEditAccessReason } from "./note-permissions";
 
 const MODULE_PATH = "/rastreabilidade-recebimento";
-const MODULE_CODE = "rastreabilidade";
 const DUPLICATE_NFE_MESSAGE =
   "Esta nota fiscal já foi importada anteriormente e não pode ser cadastrada novamente.";
 
@@ -620,7 +619,10 @@ export async function importXmlAction(formData: FormData) {
     const parsed = parseRecebimentoXml(content);
     const categories = await getActiveCategories();
 
-    const data = getTodaySystemDate();
+    const dataRaw = formData.get("data");
+    const data = dataRaw === null ? getTodaySystemDate() : typeof dataRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataRaw) ? parseDateInput(dataRaw) : null;
+    if (!data) throw new Error("Informe uma data de recebimento válida.");
+    assertProcedureDate(data);
     const { mes, ano } = getMonthYear(data);
     if (await isMonthSigned(mes, ano)) {
       throw new Error(
@@ -716,7 +718,10 @@ async function createManualNoteFromForm(formData: FormData): Promise<number> {
     throw new Error("Fornecedor e Nota Fiscal são obrigatórios.");
   }
 
-  const data = getTodaySystemDate();
+  const dataRaw = formData.get("data");
+    const data = dataRaw === null ? getTodaySystemDate() : typeof dataRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataRaw) ? parseDateInput(dataRaw) : null;
+    if (!data) throw new Error("Informe uma data de recebimento válida.");
+    assertProcedureDate(data);
   const { mes, ano } = getMonthYear(data);
   if (await isMonthSigned(mes, ano)) {
     throw new Error(
@@ -762,6 +767,7 @@ async function createManualNoteFromForm(formData: FormData): Promise<number> {
   await prisma.rastreabilidadeRecebimentoRegistro.create({
     data: {
       ...itemPayload,
+      ...readExecutionTime(formData, data),
       notaId: note.id,
       data,
       fornecedor,
@@ -866,6 +872,7 @@ export async function saveNotaItemsAction(formData: FormData) {
         id: item.id,
         data: {
           ...payload,
+          ...readExecutionTime(formData, note.data),
           fornecedor: note.fornecedor,
           notaFiscal: note.notaFiscal
         }
@@ -973,6 +980,7 @@ export async function saveNotaItemsStateAction(
           id: item.id,
           data: {
             ...payload,
+          ...readExecutionTime(formData, note.data),
             fornecedor: note.fornecedor,
             notaFiscal: note.notaFiscal
           }
@@ -1126,139 +1134,21 @@ export async function finalizeNotaAction(formData: FormData) {
 }
 
 export async function deleteItemAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(
-      actor,
-      "modulo.rastreabilidade.excluir_registro",
-      "Seu perfil não pode excluir itens de recebimento."
-    );
-
-    const itemId = parsePositiveInt(getInputValue(formData, "itemId"));
-    if (!itemId) {
-      throw new Error("Item inválido para exclusão.");
-    }
-
-    const item = await prisma.rastreabilidadeRecebimentoRegistro.findUnique({
-      where: { id: itemId }
-    });
-
-    if (!item || !item.notaId) {
-      throw new Error("Item não encontrado.");
-    }
-
-    if (!canEditRecordDate(actor, "modulo.rastreabilidade", item.data, getTodaySystemDate())) {
-      throw new Error(
-        "Registros históricos não podem ser editados. Apenas registros do dia atual podem ser ajustados."
-      );
-    }
-
-    const period = getMonthYear(item.data);
-    if (await isMonthSigned(period.mes, period.ano)) {
-      throw new Error("O mês deste item já foi fechado e não pode ser excluído.");
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.rastreabilidadeRecebimentoRegistro.delete({
-        where: { id: item.id }
-      });
-
-      const remaining = await tx.rastreabilidadeRecebimentoRegistro.count({
-        where: { notaId: item.notaId }
-      });
-
-      if (remaining === 0) {
-        await tx.rastreabilidadeRecebimentoNota.delete({
-          where: { id: item.notaId! }
-        });
-      }
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Item Excluído com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
+ const returnTo = getReturnToPath(formData);
+ try {
+ await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "rastreabilidade", id: Number(getInputValue(formData,"itemId")), reason: getInputValue(formData,"justificativaExclusao") });
+ revalidateModulePaths();
+ redirectWithFeedback(returnTo,"success","Registro excluído com auditoria.");
+ } catch(error) { rethrowIfRedirectError(error); redirectWithFeedback(returnTo,"error",getErrorMessage(error)); }
 }
 
 export async function deleteNoteAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(
-      actor,
-      "modulo.rastreabilidade.excluir_registro",
-      "Seu perfil não pode excluir notas de recebimento."
-    );
-
-    const notaId = parsePositiveInt(getInputValue(formData, "notaId"));
-    if (!notaId) {
-      throw new Error("Nota inválida para exclusão.");
-    }
-
-    const note = await prisma.rastreabilidadeRecebimentoNota.findUnique({
-      where: { id: notaId },
-      include: { itens: true }
-    });
-
-    if (!note) {
-      throw new Error("Nota não encontrada.");
-    }
-
-    const period = getMonthYear(note.data);
-    const [legacyMonthSigned, monthlyClosure, dailySignature] = await Promise.all([
-      isMonthSigned(period.mes, period.ano),
-      prisma.fechamentoMensalModulo.findUnique({
-      where: { status: "FECHADO",
-          moduloCodigo_ano_mes: {
-            moduloCodigo: MODULE_CODE,
-            ano: period.ano,
-            mes: period.mes
-          }
-        }
-      }),
-      prisma.assinaturaDiariaModulo.findUnique({
-        where: {
-          moduloCodigo_dataReferencia: {
-            moduloCodigo: MODULE_CODE,
-            dataReferencia: note.data
-          }
-        }
-      })
-    ]);
-
-    if (legacyMonthSigned || monthlyClosure) {
-      throw new Error("Esta nota pertence a um período já fechado e não pode ser excluída.");
-    }
-
-    if (dailySignature) {
-      throw new Error("Esta nota pertence a um dia já assinado e não pode ser excluída.");
-    }
-
-    if (!canDeleteImportedReceivingNote(note)) {
-      throw new Error("Somente notas importadas e ainda não conferidas podem ser excluídas.");
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.rastreabilidadeRecebimentoRegistro.deleteMany({
-        where: { notaId: note.id }
-      });
-
-      await tx.rastreabilidadeRecebimentoNota.delete({
-        where: { id: note.id }
-      });
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Nota excluída com sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
+ const returnTo = getReturnToPath(formData);
+ try {
+ await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "nota", id: Number(getInputValue(formData,"notaId")), reason: getInputValue(formData,"justificativaExclusao") });
+ revalidateModulePaths();
+ redirectWithFeedback(returnTo,"success","Registro excluído com auditoria.");
+ } catch(error) { rethrowIfRedirectError(error); redirectWithFeedback(returnTo,"error",getErrorMessage(error)); }
 }
 
 export async function closeMonthAction(formData: FormData) {

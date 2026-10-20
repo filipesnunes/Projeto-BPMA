@@ -1,3 +1,5 @@
+import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
+import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
@@ -843,6 +845,7 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
           ) : (
             <form action={signDailyAreaPendingItemsAction} className="space-y-4">
               <input type="hidden" name="data" value={formatDateInput(openedSummary.data)} />
+<ExecutionTimeFields date={formatDateInput(openedSummary.data)} />
               <input type="hidden" name="area" value={openedSummary.area} />
               <input type="hidden" name="returnTo" value={openSummaryReturnTo} />
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -869,6 +872,7 @@ export default async function PlanoLimpezaDiarioPage({ searchParams }: PageProps
           )}
         </ActionModal>
       ) : null}
+      <OperationalDeletionPanel target="limpeza_diaria" selectedDate={params.exclusaoData} />
     </div>
   );
 }

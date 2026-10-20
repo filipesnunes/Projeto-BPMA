@@ -139,12 +139,18 @@ export function formatWeeklySignatureDateTime(date: Date): string {
 
 export function formatWeeklyExecutionQuando(params: {
   assinaturaResponsavel: string;
+  dataExecucao?: Date;
+  horarioExecucao?: string | null;
+  horarioNaoInformado?: boolean;
   assinaturaResponsavelDataHora?: Date | null;
   quando?: string | null;
 }): string {
   if (params.assinaturaResponsavel.trim().length === 0) {
     return "Ainda não assinado";
   }
+
+  if (params.horarioNaoInformado) return "Horário não informado";
+  if (params.horarioExecucao && params.dataExecucao) return `${formatDateDisplay(params.dataExecucao)} ${params.horarioExecucao}`;
 
   if (params.assinaturaResponsavelDataHora) {
     return formatWeeklySignatureDateTime(params.assinaturaResponsavelDataHora);

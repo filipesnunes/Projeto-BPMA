@@ -261,6 +261,11 @@ async function main() {
   assert(temperatureHtml.includes('Em manutenção')); assert(!temperatureHtml.includes('<td>09:00</td>'));
   assert.match(temperatureHtml,/<td>4 °C<\/td>\s*<td>-<\/td>/);
   fs.writeFileSync(path.join(outputDir,'temperature-client.html'),temperatureHtml);
+  const baselinePath=path.join(outputDir,'temperature-route-baseline.ts');
+  fs.writeFileSync(baselinePath,require('node:child_process').execFileSync('git',['show','HEAD:src/app/relatorios/controle-temperatura-equipamentos/mensal/route.ts'],{cwd:root}));
+  const baselineResponse=await require(baselinePath).GET(new NextRequest('http://localhost/relatorios/controle-temperatura-equipamentos/mensal?mes=9&ano=2026'));
+  fs.writeFileSync(path.join(outputDir,'temperature-client-baseline.html'),await baselineResponse.text());
+
   const temperatureHistory = await load('src/app/controle-temperatura-equipamentos/historico/page.tsx').default({
     searchParams:Promise.resolve({dia:'2026-09-01',filtroMes:'9',filtroAno:'2026'})
   });
@@ -355,14 +360,15 @@ async function main() {
   assert.equal(lastQuery.where.semUtilizacao,false); assert.deepEqual(lastQuery.where.NOT,{fitaOleo:''});
   const oilHistory = await load('src/app/controle-qualidade-oleo/historico/page.tsx').default({searchParams:Promise.resolve({dia:dates.formatAppDateInput(today)})});
   assert(elements(oilHistory,n=>n.type?.name==='OilStatusBadge' && n.props.status===null).length);
-  const oilDateField=elements(oilPage,node=>node.props?.name==='data')[0];
+  const oilCalendar=elements(oilPage,node=>node.type?.name==='ReferenceExecutionFields')[0];
+  const oilDateField={props:{type:'date',required:true,defaultValue:oilCalendar.props.defaultDate}};
   assert.equal(oilDateField.props.type,'date');assert.equal(oilDateField.props.required,true);
   assert.equal(oilDateField.props.defaultValue,dates.formatAppDateInput(dates.getAppDate()));
   await action(oil.createRegistroAction,{data:oilDateField.props.defaultValue,temperatura:170});
   assert.equal(dates.formatAppDateInput(tables.controleQualidadeOleoRegistro.at(-1).data),oilDateField.props.defaultValue,'Unchanged calendar saves the current reference date');
   const oldOilRows=JSON.stringify(tables.controleQualidadeOleoRegistro);
   const creationStart=new Date();
-  await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:170,fitaOleo:'2%'});
+  await action(oil.createRegistroAction,{data:'2026-09-14',horarioExecucao:'14:47',temperatura:170,fitaOleo:'2%'});
   const retroOil=tables.controleQualidadeOleoRegistro.at(-1);
   assert.equal(dates.formatAppDateInput(retroOil.data),'2026-09-14');
   assert(retroOil.createdAt>=creationStart,'Oil insertion timestamp is real, not backdated');
@@ -373,10 +379,10 @@ async function main() {
   const retroOilHtml=await report('controle-qualidade-oleo',9,2026);
   assert(retroOilHtml.includes('14/09/2026'));assert(retroOilHtml.includes('170 °C'));
   fs.writeFileSync(path.join(outputDir,'oil-reference-date.html'),retroOilHtml);
-  const invalidOil=await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:100,fitaOleo:'2%',returnTo:'/controle-qualidade-oleo?new=1'},'error');
+  const invalidOil=await action(oil.createRegistroAction,{data:'2026-09-14',horarioExecucao:'14:47',temperatura:100,fitaOleo:'2%',returnTo:'/controle-qualidade-oleo?new=1'},'error');
   assert.equal(invalidOil.get('formDataReferencia'),'2026-09-14');
   const errorOilPage=await load('src/app/controle-qualidade-oleo/page.tsx').default({searchParams:Promise.resolve(Object.fromEntries(invalidOil))});
-  assert.equal(elements(errorOilPage,node=>node.props?.name==='data')[0].props.defaultValue,'2026-09-14','Temperature validation does not reset the chosen date');
+  assert.equal(elements(errorOilPage,node=>node.type?.name==='ReferenceExecutionFields')[0].props.defaultDate,'2026-09-14','Temperature validation does not reset the chosen date');
   const beforeInvalidOil=tables.controleQualidadeOleoRegistro.length;
   for(const invalid of ['','2026-02-30','14/09/2026','2026-13-01'])await action(oil.createRegistroAction,{data:invalid,temperatura:170},'error');
   assert.equal(tables.controleQualidadeOleoRegistro.length,beforeInvalidOil);
@@ -384,7 +390,7 @@ async function main() {
   await action(oil.createRegistroAction,{data:'2026-09-15',temperatura:170},'error');
   assert.equal(tables.controleQualidadeOleoRegistro.length,beforeInvalidOil,'Closed reference month rejects oil insertion');
   tables.fechamentoMensalModulo=[];
-  await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:175});
+  await action(oil.createRegistroAction,{data:'2026-09-14',horarioExecucao:'14:47',temperatura:175});
   assert.equal(tables.controleQualidadeOleoRegistro.length,beforeInvalidOil+1,'Existing multiple-measurement-per-day policy preserved');
   assert.equal(JSON.stringify(tables.controleQualidadeOleoRegistro.slice(0,JSON.parse(oldOilRows).length)),oldOilRows,'Existing records/signatures untouched');
   console.log('PASS oil calendar: today, historical save/query/report, actual creation metadata, invalid dates, error preservation, closed month and existing same-day multiple measurements.');

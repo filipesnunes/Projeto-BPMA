@@ -1,4 +1,5 @@
 "use server";
+import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
@@ -665,48 +666,12 @@ export async function updatePhotoRequirementAction(formData: FormData) {
 
 export async function deleteRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
-
   try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.temperatura.excluir_registro", "Seu perfil não pode excluir registros de temperatura.");
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro inválido para exclusão.");
-    }
-
-    const existing = await prisma.controleTemperaturaEquipamento.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (!canEditRecordDate(actor, "modulo.temperatura", existing.data, getTodaySystemDate())) {
-      throw new Error(
-        "Registros históricos não podem ser editados. Apenas registros do dia atual podem ser ajustados."
-      );
-    }
-
-    const { mes, ano } = getMonthYear(existing.data);
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error(
-        "O mês deste registro já foi fechado e o item não pode ser excluído."
-      );
-    }
-
-    await prisma.controleTemperaturaEquipamento.delete({ where: { id } });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Excluído com Sucesso.");
+    await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "temperatura", id: Number(getInputValue(formData, "id")), reason: getInputValue(formData, "justificativaExclusao") });
+    redirectWithFeedback(returnTo, "success", "Registro excluído com justificativa e auditoria.");
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível processar a operação.")
-    );
+    redirectWithFeedback(returnTo, "error", getErrorMessage(error, "Não foi possível excluir o registro."));
   }
 }
 

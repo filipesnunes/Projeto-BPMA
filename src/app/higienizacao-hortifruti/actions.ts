@@ -1,4 +1,5 @@
 "use server";
+import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 import { assertProcedureDate, assertProcedureTime, readUnreportedTime } from "@/lib/procedure-time";
@@ -12,7 +13,6 @@ import { rethrowIfRedirectError } from "@/lib/redirect-error";
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
   ensureCanCloseMonth,
-  ensureCanDeleteOperationalRecords,
   ensureCanManageOptions,
   validateSignaturePassword
 } from "@/lib/authz";
@@ -186,7 +186,9 @@ export async function createRegistroAction(formData: FormData) {
     });
 
     revalidatePath(MODULE_PATH);
-    redirectWithFeedback(returnTo, "success", "Registro Criado com Sucesso.");
+    const next = new URL(returnTo, "http://localhost");
+    next.searchParams.set("dataRegistro", formatAppDateInput(data));
+    redirectWithFeedback(next.pathname + next.search, "success", "Registro Criado com Sucesso.");
   } catch (error) {
     rethrowIfRedirectError(error);
     redirectWithFeedback(
@@ -246,42 +248,12 @@ export async function updateRegistroAction(formData: FormData) {
 
 export async function deleteRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
-
   try {
-    const actor = await getCurrentUserForAction();
-    ensureCanDeleteOperationalRecords(actor);
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro inválido para exclusão.");
-    }
-
-    const existing = await prisma.higienizacaoHortifruti.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    const { mes, ano } = getMonthYear(existing.data);
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error(
-        "O mês deste registro já foi fechado e o item não pode ser excluído."
-      );
-    }
-
-    await prisma.higienizacaoHortifruti.delete({ where: { id } });
-
-    revalidatePath(MODULE_PATH);
-    redirectWithFeedback(returnTo, "success", "Registro Excluído com Sucesso.");
+    await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "hortifruti", id: Number(getInputValue(formData, "id")), reason: getInputValue(formData, "justificativaExclusao") });
+    redirectWithFeedback(returnTo, "success", "Registro excluído com justificativa e auditoria.");
   } catch (error) {
     rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível processar a operação.")
-    );
+    redirectWithFeedback(returnTo, "error", getErrorMessage(error, "Não foi possível excluir o registro."));
   }
 }
 

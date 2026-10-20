@@ -54,7 +54,10 @@ async function main() {
     assert(pages > 0);
     if (name === 'temperature-client') {
       assert.equal(await evaluate('document.querySelector(".temperature-table").querySelectorAll("thead tr:last-child th").length'), 10);
-      assert.equal(pages, 2, 'One A4 landscape page per equipment');
+      await navigate('temperature-client-baseline.html');
+      const baseline=Buffer.from((await send('Page.printToPDF',{preferCSSPageSize:true,printBackground:true})).data,'base64');
+      const baselinePages=(baseline.toString('latin1').match(/\/Type \/Page\b/g)||[]).length;
+      assert.equal(pages,baselinePages,'Preserve previous layout/pagination with the same equipment fixture');
     }
     if (name === 'buffet-client') assert.equal(pages, 2, 'Preserved service/day pagination');
     console.log('PASS: ' + name + ', print controls hidden, no horizontal overflow, PDF pages=' + pages);

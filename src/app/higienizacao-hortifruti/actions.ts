@@ -1,6 +1,8 @@
 "use server";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
+import { assertProcedureDate, assertProcedureTime, readUnreportedTime } from "@/lib/procedure-time";
+import { formatAppDateInput, getAppDate, getAppNow } from "@/lib/date-time";
 
 import { TipoOpcaoHigienizacao } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -25,6 +27,7 @@ import {
 } from "./catalog";
 import {
   calculateProcessEnd,
+  getDurationInMinutes,
   getMonthDateRange,
   getMonthYear,
   parseDateInput,
@@ -84,14 +87,14 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return isOperationalMonthClosed("hortifruti", mes, ano);
 }
 
-async function getRegistroPayload(formData: FormData, responsavelLogado: string, existing?: {
-  hortifruti: string; produtoUtilizado: string; inicioProcesso: string; terminoProcesso: string; duracaoMinutos: number;
+async function getRegistroPayload(formData: FormData, responsavelLogado: string, data: Date, existing?: {
+  hortifruti: string; produtoUtilizado: string; inicioProcesso: string | null; terminoProcesso: string | null; duracaoMinutos: number | null;
+  horarioNaoInformado?: boolean; justificativaHorario?: string | null;
 }) {
   const hortifrutiInput = getInputValue(formData, "hortifruti");
   const produtoInput = getInputValue(formData, "produtoUtilizado");
   const inicioProcesso = getInputValue(formData, "inicioProcesso");
-  const preserveTimes = existing?.inicioProcesso === inicioProcesso;
-  const terminoProcesso = preserveTimes ? existing.terminoProcesso : calculateProcessEnd(inicioProcesso);
+  const endInput = getInputValue(formData, "terminoProcesso");
   const observacoes = getInputValue(formData, "observacoes");
 
   if (!hortifrutiInput || !produtoInput) {
@@ -118,23 +121,34 @@ async function getRegistroPayload(formData: FormData, responsavelLogado: string,
     throw new Error("Selecione uma opção válida no campo Produto Utilizado.");
   }
 
-  const duracaoMinutos = preserveTimes ? existing.duracaoMinutos : 2;
-  if (!calculateProcessEnd(inicioProcesso)) {
-    throw new Error("Informe horários válidos no formato HH:MM.");
-  }
-
-  if (duracaoMinutos < 0) {
-    throw new Error(
-      "O término do processo não pode ser menor que o início do processo."
-    );
+  const now = getAppNow();
+  const retroactive = formatAppDateInput(data) < formatAppDateInput(getAppDate(now));
+  const unknownInput = formData.get("horarioNaoInformado") === "true";
+  const preserveTimes = existing && (existing.inicioProcesso ?? "") === inicioProcesso &&
+    (!retroactive || (existing.terminoProcesso ?? "") === endInput) && Boolean(existing.horarioNaoInformado) === unknownInput &&
+    (!unknownInput || existing.justificativaHorario === getInputValue(formData, "justificativaHorario"));
+  let timeData;
+  if (preserveTimes) {
+    timeData = { inicioProcesso: existing.inicioProcesso, terminoProcesso: existing.terminoProcesso,
+      duracaoMinutos: existing.duracaoMinutos, horarioNaoInformado: Boolean(existing.horarioNaoInformado), justificativaHorario: existing.justificativaHorario ?? null };
+  } else {
+    const declaration = readUnreportedTime(formData, retroactive);
+    if (declaration.horarioNaoInformado) {
+      timeData = { ...declaration, inicioProcesso: null, terminoProcesso: null, duracaoMinutos: null };
+    } else {
+      assertProcedureTime(inicioProcesso, data, now);
+      const terminoProcesso = retroactive ? endInput : calculateProcessEnd(inicioProcesso);
+      if (retroactive) assertProcedureTime(terminoProcesso, data, now);
+      const duration = retroactive ? getDurationInMinutes(inicioProcesso, terminoProcesso) : 2;
+      if (duration === null || duration < 0) throw new Error("O término do processo não pode ser menor que o início do processo.");
+      timeData = { ...declaration, inicioProcesso, terminoProcesso, duracaoMinutos: duration };
+    }
   }
 
   return {
     hortifruti,
     produtoUtilizado,
-    inicioProcesso,
-    terminoProcesso,
-    duracaoMinutos,
+    ...timeData,
     responsavel: responsavelLogado.trim(),
     observacoes: observacoes || null
   };
@@ -154,7 +168,8 @@ export async function createRegistroAction(formData: FormData) {
       throw new Error("Informe uma data válida para o registro.");
     }
 
-    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
+    assertProcedureDate(data);
+    const payload = await getRegistroPayload(formData, actor.nomeCompleto, data);
     const { mes, ano } = getMonthYear(data);
 
     if (await isMonthSigned(mes, ano)) {
@@ -210,7 +225,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
     }
 
-    const payload = await getRegistroPayload(formData, actor.nomeCompleto, existing);
+    const payload = await getRegistroPayload(formData, actor.nomeCompleto, existing.data, existing);
 
     await prisma.higienizacaoHortifruti.update({
       where: { id },

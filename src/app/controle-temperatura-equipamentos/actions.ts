@@ -3,7 +3,8 @@
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
 import { correctiveActionWithPersistence, previousScheduledShift } from "./persistence";
-import { formatAppDateInput, parseAppDateInput } from "@/lib/date-time";
+import { formatAppDateInput, getAppDate, parseAppDateInput } from "@/lib/date-time";
+import { assertProcedureDate, assertProcedureTime, operationalTime, readUnreportedTime } from "@/lib/procedure-time";
 
 import {
   ModuloDocumento,
@@ -446,6 +447,8 @@ export async function createRegistroAction(formData: FormData) {
     const data = dataInput === null ? getTodaySystemDate() :
       typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseAppDateInput(dataInput) : null;
     if (!data) throw new Error("Informe uma data válida para o registro.");
+    const procedureNow = getCurrentSystemDateTime();
+    assertProcedureDate(data, procedureNow);
     const turnoInput = getInputValue(formData, "turno");
     const turno = turnoInput ? parseShiftValue(turnoInput) : getCurrentShift();
     if (!turno) throw new Error("Selecione um turno de conferência válido.");
@@ -455,6 +458,13 @@ export async function createRegistroAction(formData: FormData) {
     returnTo = `${returnUrl.pathname}?${returnUrl.searchParams.toString()}`;
     const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data, turno });
     const { turnosConferencia, ...payload } = registroPayload;
+    const retroactive = formatAppDateInput(data) < formatAppDateInput(getAppDate(procedureNow));
+    const applicableTime = payload.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
+    const timeDeclaration = readUnreportedTime(formData, retroactive && applicableTime);
+    const rawTime = getInputValue(formData, "horarioAfericao");
+    const horarioAfericao = !applicableTime || timeDeclaration.horarioNaoInformado ? null
+      : retroactive ? rawTime : operationalTime(procedureNow);
+    if (horarioAfericao !== null) assertProcedureTime(horarioAfericao, data, procedureNow);
     const { mes, ano } = getMonthYear(data);
 
     if (await isMonthSigned(mes, ano)) {
@@ -490,6 +500,8 @@ export async function createRegistroAction(formData: FormData) {
     await prisma.controleTemperaturaEquipamento.create({
       data: {
         ...payload,
+        ...timeDeclaration,
+        horarioAfericao,
         data,
         turno,
         fotoNome: fotoDesvio?.fileName ?? null,

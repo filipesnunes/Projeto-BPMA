@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { correctiveActionWithPersistence, previousScheduledShift, type PreviousTemperatureRecord } from "./persistence";
 import { SearchableOptionField } from "./searchable-option-field";
 import { normalizeOption } from "./options";
+import { RetroactiveTemperatureTimeFields } from "./retroactive-time-fields";
 import {
   CategoriaTemperatura,
   findMatchingTemperatureRule,
@@ -41,6 +42,7 @@ type EquipamentoTurnos = {
 
 type AutomaticCorrectiveActionFieldsProps = {
   dataReferencia: string;
+  todayDate?: string;
   turnosPrevistos: EquipamentoTurnos[];
   registrosAnteriores: PreviousTemperatureRecord[];
   equipamentoOptions: string[];
@@ -73,6 +75,7 @@ const SHIFT_OPTIONS: Array<{ value: TurnoTemperatura; label: string }> = [
 
 export function AutomaticCorrectiveActionFields({
   dataReferencia,
+  todayDate,
   turnosPrevistos,
   registrosAnteriores,
   equipamentoOptions,
@@ -282,6 +285,8 @@ export function AutomaticCorrectiveActionFields({
 
   return (
     <>
+      {allowTurnoSelection && equipamentoEmOperacao && todayDate && dataReferencia < todayDate
+        ? <RetroactiveTemperatureTimeFields key={dataReferencia} /> : null}
       {allowTurnoSelection ? (
         <label className="text-sm text-slate-700 dark:text-slate-200">
           Turno *

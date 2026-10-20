@@ -428,9 +428,11 @@ model HigienizacaoHortifruti {
   data             DateTime @db.Date
   hortifruti       String
   produtoUtilizado String
-  inicioProcesso   String
-  terminoProcesso  String
-  duracaoMinutos   Int
+  inicioProcesso   String?
+  terminoProcesso  String?
+  duracaoMinutos   Int?
+  horarioNaoInformado Boolean @default(false)
+  justificativaHorario String?
   responsavel      String
   observacoes      String?
   createdAt        DateTime @default(now())
@@ -475,6 +477,9 @@ model ControleTemperaturaEquipamento {
   equipamento                      String
   categoriaEquipamento             CategoriaEquipamentoTemperatura
   turno                            TurnoTemperaturaEquipamento
+  horarioAfericao                   String?                         @db.VarChar(5)
+  horarioNaoInformado               Boolean                         @default(false)
+  justificativaHorario              String?
   statusOperacionalEquipamento     StatusOperacionalEquipamento    @default(EM_OPERACAO)
   temperaturaAferida               Float?
   status                           StatusTemperaturaEquipamento

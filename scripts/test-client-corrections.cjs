@@ -192,7 +192,7 @@ async function main() {
     assert.equal(oldFields.defaultTurno,'TARDE','Original page ignores the previously chosen morning shift');
     assert.equal(oldFields.dataReferencia,'2026-10-13','Original page ignores the requested historical date');
     const oldActions=oldModule(beforeFiles[0],'src/app/controle-temperatura-equipamentos/actions.ts');
-    const oldResult=await action(oldActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13'});
+    const oldResult=await action(oldActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13',horarioAfericao:'07:35'});
     assert.equal(oldResult.get('turnoRegistro'),null,'Original redirect loses selected shift');
     assert.equal(dates.formatAppDateInput(tables.controleTemperaturaEquipamento.at(-1).data),'2026-10-13','Original action forces today');
     tables.controleTemperaturaEquipamento.pop(); // Synthetic diagnostic record only.
@@ -203,7 +203,7 @@ async function main() {
   assert.equal(elements(formPage,node=>node.type?.name==='TemperatureReferenceFields')[0].props.referenceDate,'2026-10-13');
   let fields=getFields(await tempPage({searchParams:Promise.resolve(historical)}));
   assert.equal(fields.dataReferencia,'2026-09-13');assert.equal(fields.defaultTurno,'MANHA');
-  const saved=await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13',returnTo:'/controle-temperatura-equipamentos?new=1'});
+  const saved=await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13',horarioAfericao:'07:35',returnTo:'/controle-temperatura-equipamentos?new=1'});
   const savedRow=tables.controleTemperaturaEquipamento.at(-1);
   assert.equal(dates.formatAppDateInput(savedRow.data),'2026-09-13');
   assert(savedRow.createdAt>new Date('2026-09-30T23:59:59Z'),'Creation timestamp remains actual insertion time');
@@ -215,9 +215,9 @@ async function main() {
   fields=getFields(await tempPage({searchParams:Promise.resolve(newParams)}));
   assert.equal(fields.defaultTurno,'MANHA');assert.equal(fields.dataReferencia,'2026-09-13');
   assert.deepEqual(fields.equipamentosTurnos.find(item=>item.nome==='C').turnos,['TARDE'],'Saved morning is excluded while afternoon stays available');
-  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13'},'error');
+  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-13',horarioAfericao:'07:35'},'error');
   assert.equal(tables.controleTemperaturaEquipamento.length,JSON.parse(originalRows).length+1,'Duplicate attempt does not insert');
-  await action(tempActions.createRegistroAction,{...tempValues('C','TARDE',4),data:'2026-09-13'});
+  await action(tempActions.createRegistroAction,{...tempValues('C','TARDE',4),data:'2026-09-13',horarioAfericao:'07:35'});
   fields=getFields(await tempPage({searchParams:Promise.resolve(historical)}));
   assert(!fields.equipamentoOptions.includes('C'),'Both completed shifts remove equipment for that date');
   fields=getFields(await tempPage({searchParams:Promise.resolve({...historical,dataRegistro:'2026-09-14'})}));
@@ -226,11 +226,11 @@ async function main() {
   for(const invalid of ['','2026-02-30','2026-13-01','13/09/2026'])await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:invalid},'error');
   assert.equal(tables.controleTemperaturaEquipamento.length,countBeforeInvalid);
   tables.fechamentoMensalModulo=[{moduloCodigo:'temperatura',mes:9,ano:2026,status:'FECHADO'}];
-  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-14'},'error');
+  await action(tempActions.createRegistroAction,{...tempValues('C','MANHA',4),data:'2026-09-14',horarioAfericao:'14:47'},'error');
   assert.equal(tables.controleTemperaturaEquipamento.length,countBeforeInvalid,'Closed historical month is still protected');
   tables.fechamentoMensalModulo=[];
   for(const equipment of ['A','B'])for(const shift of ['MANHA','TARDE']){
-    await action(tempActions.createRegistroAction,{...tempValues(equipment,shift,4),data:'2026-09-13'});
+    await action(tempActions.createRegistroAction,{...tempValues(equipment,shift,4),data:'2026-09-13',horarioAfericao:'07:35'});
   }
   const completePage=await tempPage({searchParams:Promise.resolve(historical)});
   assert.equal(getFields(completePage).equipamentoOptions.length,0);
@@ -303,7 +303,10 @@ async function main() {
   assert.equal(tables.higienizacaoHortifruti[0].duracaoMinutos,15);
   const timeUtils = load('src/app/higienizacao-hortifruti/utils.ts');
   for (const [start,end] of [['08:15','08:17'],['08:30','08:32'],['14:48','14:50'],['23:59','00:01'],['bad','']]) assert.equal(timeUtils.calculateProcessEnd(start),end);
+  const realClock=dates.getAppNow;
+  dates.getAppNow=()=>new Date(`${dates.formatAppDateInput(today)}T23:59:30-03:00`);
   await action(hort.createRegistroAction,{...hortValues,inicioProcesso:'23:59'});
+  dates.getAppNow=realClock;
   assert.equal(tables.higienizacaoHortifruti.at(-1).duracaoMinutos,2);
   const period = dates.getAppMonthYear(today);
   const hortHtml = await report('higienizacao-hortifruti',period.mes,period.ano);
@@ -359,7 +362,7 @@ async function main() {
   assert.equal(dates.formatAppDateInput(tables.controleQualidadeOleoRegistro.at(-1).data),oilDateField.props.defaultValue,'Unchanged calendar saves the current reference date');
   const oldOilRows=JSON.stringify(tables.controleQualidadeOleoRegistro);
   const creationStart=new Date();
-  await action(oil.createRegistroAction,{data:'2026-09-14',temperatura:170,fitaOleo:'2%'});
+  await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:170,fitaOleo:'2%'});
   const retroOil=tables.controleQualidadeOleoRegistro.at(-1);
   assert.equal(dates.formatAppDateInput(retroOil.data),'2026-09-14');
   assert(retroOil.createdAt>=creationStart,'Oil insertion timestamp is real, not backdated');
@@ -370,7 +373,7 @@ async function main() {
   const retroOilHtml=await report('controle-qualidade-oleo',9,2026);
   assert(retroOilHtml.includes('14/09/2026'));assert(retroOilHtml.includes('170 °C'));
   fs.writeFileSync(path.join(outputDir,'oil-reference-date.html'),retroOilHtml);
-  const invalidOil=await action(oil.createRegistroAction,{data:'2026-09-14',temperatura:100,fitaOleo:'2%',returnTo:'/controle-qualidade-oleo?new=1'},'error');
+  const invalidOil=await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:100,fitaOleo:'2%',returnTo:'/controle-qualidade-oleo?new=1'},'error');
   assert.equal(invalidOil.get('formDataReferencia'),'2026-09-14');
   const errorOilPage=await load('src/app/controle-qualidade-oleo/page.tsx').default({searchParams:Promise.resolve(Object.fromEntries(invalidOil))});
   assert.equal(elements(errorOilPage,node=>node.props?.name==='data')[0].props.defaultValue,'2026-09-14','Temperature validation does not reset the chosen date');
@@ -381,7 +384,7 @@ async function main() {
   await action(oil.createRegistroAction,{data:'2026-09-15',temperatura:170},'error');
   assert.equal(tables.controleQualidadeOleoRegistro.length,beforeInvalidOil,'Closed reference month rejects oil insertion');
   tables.fechamentoMensalModulo=[];
-  await action(oil.createRegistroAction,{data:'2026-09-14',temperatura:175});
+  await action(oil.createRegistroAction,{data:'2026-09-14',horarioAfericao:'14:47',temperatura:175});
   assert.equal(tables.controleQualidadeOleoRegistro.length,beforeInvalidOil+1,'Existing multiple-measurement-per-day policy preserved');
   assert.equal(JSON.stringify(tables.controleQualidadeOleoRegistro.slice(0,JSON.parse(oldOilRows).length)),oldOilRows,'Existing records/signatures untouched');
   console.log('PASS oil calendar: today, historical save/query/report, actual creation metadata, invalid dates, error preservation, closed month and existing same-day multiple measurements.');

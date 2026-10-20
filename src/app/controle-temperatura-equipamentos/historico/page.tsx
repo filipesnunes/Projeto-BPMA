@@ -439,7 +439,7 @@ export default async function ControleTemperaturaHistoricoPage({
 
                   return (
                     <tr key={registro.id}>
-                      <td className="px-3 py-2">{registro.equipamento}</td>
+                      <td className="px-3 py-2">{registro.equipamento}<ProcedureTimeAudit record={registro} temperature={registroEmOperacao} /></td>
                       <td className="px-3 py-2">{getShiftLabel(registro.turno)}</td>
                       <td className="px-3 py-2">{getOperationalStatusLabel(registro.statusOperacionalEquipamento)}</td>
                       <td className="px-3 py-2">{formatTemperatureDisplay(registro.temperaturaAferida)}</td>
@@ -516,3 +516,4 @@ export default async function ControleTemperaturaHistoricoPage({
     </div>
   );
 }
+import { ProcedureTimeAudit } from "@/components/procedure-time-audit";

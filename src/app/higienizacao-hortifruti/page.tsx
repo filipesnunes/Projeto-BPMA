@@ -1,3 +1,5 @@
+import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
+import { UNKNOWN_PROCEDURE_TIME } from "@/lib/procedure-time";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ModuloDocumento,
@@ -302,6 +304,11 @@ export default async function HigienizacaoHortifrutiPage({
               <input type="hidden" name="returnTo" value={formReturnTo} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
+            <ProcessTimeFields key={registroEmEdicao?.id ?? "new"}
+              defaultDate={registroEmEdicao ? formatDateInput(registroEmEdicao.data) : todayInput} todayDate={todayInput}
+              editableDate={!registroEmEdicao} defaultUnknown={registroEmEdicao?.horarioNaoInformado ?? false}
+              defaultJustification={registroEmEdicao?.justificativaHorario}
+              defaultInicio={registroEmEdicao?.inicioProcesso} defaultTermino={registroEmEdicao?.terminoProcesso} inputClassName={INPUT_CLASS}>
             {registroEmEdicao ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
                 <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Data do Procedimento</p>
@@ -309,19 +316,7 @@ export default async function HigienizacaoHortifrutiPage({
                   {formatDateDisplay(registroEmEdicao.data)}
                 </p>
               </div>
-            ) : (
-              <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
-                Data do Procedimento *
-                <input
-                  type="date"
-                  name="data"
-                  required
-                  defaultValue={todayInput}
-                  className={INPUT_CLASS}
-                />
-              </label>
-            )}
-
+            ) : null}
             <label className="text-sm text-slate-700 dark:text-slate-200">
               Hortifruti *
               <SearchableOptionField name="hortifruti" options={Array.from(new Set([...hortifrutiOptions, ...(registroEmEdicao ? [registroEmEdicao.hortifruti] : [])]))} defaultValue={registroEmEdicao?.hortifruti ?? ""} placeholder="Digite para buscar..." />
@@ -341,9 +336,7 @@ export default async function HigienizacaoHortifrutiPage({
                 Preenchido automaticamente pelo usuário logado.
               </p>
             </div>
-            <ProcessTimeFields key={registroEmEdicao?.id ?? "new"}
-              defaultInicio={registroEmEdicao?.inicioProcesso}
-              defaultTermino={registroEmEdicao?.terminoProcesso} inputClassName={INPUT_CLASS} />
+            </ProcessTimeFields>
             <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
               Observações (Opcional)
               <textarea name="observacoes" rows={3} defaultValue={registroEmEdicao?.observacoes ?? ""} className={INPUT_CLASS} />
@@ -416,12 +409,12 @@ export default async function HigienizacaoHortifrutiPage({
 
                   return (
                     <tr key={registro.id}>
-                      <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
+                      <td className="px-3 py-2">{formatDateDisplay(registro.data)}<ProcedureTimeAudit record={registro} /></td>
                       <td className="px-3 py-2">{registro.hortifruti}</td>
                       <td className="px-3 py-2">{registro.produtoUtilizado}</td>
-                      <td className="px-3 py-2">{registro.inicioProcesso}</td>
-                      <td className="px-3 py-2">{registro.terminoProcesso}</td>
-                      <td className="px-3 py-2">{registro.duracaoMinutos} min</td>
+                      <td className="px-3 py-2">{registro.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : registro.inicioProcesso}</td>
+                      <td className="px-3 py-2">{registro.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : registro.terminoProcesso}</td>
+                      <td className="px-3 py-2">{registro.duracaoMinutos === null ? "-" : `${registro.duracaoMinutos} min`}</td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                       <td className="px-3 py-2">
                         <div className="btn-group">

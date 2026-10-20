@@ -222,7 +222,7 @@ async function main() {
   const dates = load('src/lib/date-time.ts');
   const todayInput = dates.formatAppDateInput(dates.getAppDate());
   const hortifrutiNew = await load('src/app/higienizacao-hortifruti/page.tsx').default({ searchParams: Promise.resolve({ new: '1', filtroMes: '7' }) });
-  assert.equal(findElement(hortifrutiNew, node => node.props?.name === 'data').props.defaultValue, todayInput);
+  assert.equal(findElement(hortifrutiNew, node => node.type?.name === 'ProcessTimeFields').props.defaultDate, todayInput);
   const daily = await load('src/app/plano-limpeza/diario/page.tsx').default({ searchParams: Promise.resolve({}) });
   const sync = findElement(daily, node => node.type?.name === 'DailyChecklistSync');
   assert.equal(sync.props.date, todayInput, 'Today checklist creation remains separate from list filters');

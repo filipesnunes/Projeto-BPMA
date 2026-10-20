@@ -35,6 +35,7 @@ import {
 } from "./actions";
 import { AutomaticCorrectiveActionFields } from "./automatic-corrective-action-fields";
 import { TemperatureReferenceFields } from "./reference-date-fields";
+import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
 import { EvidencePhoto } from "./evidence-photo";
 import { normalizeOption } from "./options";
 import { TemperatureStatusBadge } from "./temperature-status-badge";
@@ -521,7 +522,7 @@ export default async function ControleTemperaturaEquipamentosPage({
               action={registroEmEdicao ? updateRegistroAction : createRegistroAction}
               className="grid gap-4 md:grid-cols-2"
             >
-              <TemperatureReferenceFields referenceDate={formatDateInput(dataFormulario)} editable={!registroEmEdicao}>
+              <TemperatureReferenceFields referenceDate={formatDateInput(dataFormulario)} todayDate={todayDateInput} editable={!registroEmEdicao}>
               <input type="hidden" name="returnTo" value={formReturnTo} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
@@ -541,6 +542,7 @@ export default async function ControleTemperaturaEquipamentosPage({
               equipamentosTurnos={equipamentosTurnosFormulario}
               regrasCategoria={regrasCategoriaForm}
               dataReferencia={formatDateInput(dataFormulario)}
+              todayDate={todayDateInput}
               turnosPrevistos={equipamentosTurnos}
               registrosAnteriores={registrosPersistencia.map((registro) => ({ ...registro, data: formatDateInput(registro.data) }))}
               registrosDuplicidade={registrosDuplicidadeForm}
@@ -774,7 +776,7 @@ export default async function ControleTemperaturaEquipamentosPage({
                     : registro.observacaoStatusOperacional;
                   return (
                     <tr key={registro.id}>
-                      <td className="px-3 py-2">{formatDateDisplay(registro.data)}</td>
+                      <td className="px-3 py-2">{formatDateDisplay(registro.data)}<ProcedureTimeAudit record={registro} temperature={isOperationalRecord(registro)} /></td>
                       <td className="px-3 py-2">{registro.equipamento}</td>
                       <td className="px-3 py-2">{getShiftLabel(registro.turno)}</td>
                       <td className="px-3 py-2">

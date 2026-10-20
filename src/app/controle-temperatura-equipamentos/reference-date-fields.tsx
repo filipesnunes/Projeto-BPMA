@@ -3,8 +3,8 @@
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
-export function TemperatureReferenceFields({ referenceDate, editable, children }: {
-  referenceDate: string; editable: boolean; children: ReactNode;
+export function TemperatureReferenceFields({ referenceDate, todayDate, editable, children }: {
+  referenceDate: string; todayDate?: string; editable: boolean; children: ReactNode;
 }) {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(referenceDate);
@@ -13,7 +13,7 @@ export function TemperatureReferenceFields({ referenceDate, editable, children }
   return <fieldset disabled={pending} className="contents">
     {editable ? <label className="text-sm text-slate-700 dark:text-slate-200">
       Data do Procedimento *
-      <input type="date" name="data" required value={selectedDate} className="bpma-input"
+      <input type="date" name="data" required value={selectedDate} max={todayDate} className="bpma-input"
         onChange={event => {
           const value = event.currentTarget.value;
           setSelectedDate(value);

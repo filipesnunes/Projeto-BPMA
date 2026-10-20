@@ -9,11 +9,11 @@ import {
 } from "@prisma/client";
 
 import { getReportIdentity } from "@/lib/visual-personalization";
+import { temperatureMeasurementTime } from "@/lib/procedure-time";
 import { REPORT_IDENTITY_CSS, REPORT_PRINT_SCRIPT } from "@/lib/report-identity";
 import { renderReportHeader } from "@/lib/report-header";
 import { getCurrentUser } from "@/lib/auth-session";
 import {
-  APP_TIME_ZONE,
   formatAppDateInput,
   formatAppDateTime,
   getAppDate,
@@ -45,6 +45,7 @@ type ShiftCell = {
   correctiveAction: string;
   responsible: string;
   supervisor: string;
+  timeJustification?: string | null;
 };
 
 type EquipmentReport = {
@@ -185,7 +186,10 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       temperaturaAferida: true,
       acaoCorretiva: true,
       responsavel: true,
-      createdAt: true
+      createdAt: true,
+      horarioAfericao: true,
+      horarioNaoInformado: true,
+      justificativaHorario: true
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
@@ -253,9 +257,8 @@ function buildEquipmentReports(params: {
         const inOperation =
           record.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
         cellsByDayShift.set(getCellKey(turno, day), {
-          measurementTime: inOperation && record.createdAt && Number.isFinite(record.createdAt.getTime()) && getAppDate(record.createdAt).getTime() === record.data.getTime()
-            ? new Intl.DateTimeFormat("pt-BR", { timeZone: APP_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(record.createdAt)
-            : "-",
+          measurementTime: inOperation ? temperatureMeasurementTime(record) : "-",
+          timeJustification: record.horarioNaoInformado ? record.justificativaHorario : null,
           temperature: inOperation ? formatTemperature(record.temperaturaAferida) : "",
           correctiveAction: inOperation
             ? valueOrEmpty(record.acaoCorretiva)
@@ -525,6 +528,11 @@ function renderShiftCells(equipment: EquipmentReport, day: number, turno: TurnoT
 }
 
 function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTemperatureReport): string {
+  const notes = Array.from(equipment.cellsByDayShift.entries()).filter(([,cell]) => cell.timeJustification)
+    .map(([key,cell]) => {
+      const [shift,day] = key.split("|");
+      return `<p style="margin-top:4px;overflow-wrap:anywhere"><strong>Dia ${escapeHtml(day)} — ${escapeHtml(labelTurno(shift as TurnoTemperaturaEquipamento))}:</strong> Horário não informado. Justificativa: ${escapeHtml(cell.timeJustification)}</p>`;
+    }).join("");
   const rows = report.days
     .map(
       (day) => `
@@ -550,7 +558,7 @@ function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTempera
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>${notes ? `<div class="time-notes">${notes}</div>` : ""}`;
 }
 
 function renderCorrectiveActionBlock(): string {

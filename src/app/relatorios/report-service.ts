@@ -1,4 +1,5 @@
 ﻿import "server-only";
+import { UNKNOWN_PROCEDURE_TIME, procedureObservation, temperatureMeasurementTime } from "@/lib/procedure-time";
 
 import { formatManufacturingDateDisplay } from "../rastreabilidade-recebimento/utils";
 
@@ -349,7 +350,7 @@ async function generateHortifrutiReport(moduleId: ReportModuleId, reportId: stri
     orderBy: [{ data: "asc" }, { inicioProcesso: "asc" }]
   });
   const filtered = records.filter((item) => {
-    const completo = hasText(item.hortifruti) && hasText(item.produtoUtilizado) && hasText(item.inicioProcesso) && hasText(item.terminoProcesso);
+    const completo = hasText(item.hortifruti) && hasText(item.produtoUtilizado) && (item.horarioNaoInformado || (hasText(item.inicioProcesso) && hasText(item.terminoProcesso)));
     if (reportId === "registros-observacao" && !hasText(item.observacoes)) return false;
     if (reportId === "pendencias-incompletos" && completo) return false;
     if (!includesText(item.hortifruti, getParam(params, "hortifruti"))) return false;
@@ -366,10 +367,10 @@ async function generateHortifrutiReport(moduleId: ReportModuleId, reportId: stri
     summary: [
       { label: "Total de registros", value: filtered.length },
       { label: "Com observação", value: filtered.filter((item) => hasText(item.observacoes)).length },
-      { label: "Incompletos", value: filtered.filter((item) => !hasText(item.inicioProcesso) || !hasText(item.terminoProcesso)).length }
+      { label: "Incompletos", value: filtered.filter((item) => !item.horarioNaoInformado && (!hasText(item.inicioProcesso) || !hasText(item.terminoProcesso))).length }
     ],
     columns: columns([["data", "Data"], ["hortifruti", "Hortifruti"], ["produtoUtilizado", "Produto utilizado"], ["inicioProcesso", "Início"], ["terminoProcesso", "Término"], ["responsavel", "Responsável"], ["status", "Status"], ["observacao", "Observação"]]),
-    rows: filtered.map((item) => ({ data: formatDateDisplay(item.data), hortifruti: item.hortifruti, produtoUtilizado: item.produtoUtilizado, inicioProcesso: item.inicioProcesso, terminoProcesso: item.terminoProcesso, responsavel: item.responsavel, status: hasText(item.inicioProcesso) && hasText(item.terminoProcesso) ? "Concluído" : "Incompleto", observacao: valueOrDash(item.observacoes) }))
+    rows: filtered.map((item) => ({ data: formatDateDisplay(item.data), hortifruti: item.hortifruti, produtoUtilizado: item.produtoUtilizado, inicioProcesso: item.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : item.inicioProcesso, terminoProcesso: item.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : item.terminoProcesso, responsavel: item.responsavel, status: (item.horarioNaoInformado || (hasText(item.inicioProcesso) && hasText(item.terminoProcesso))) ? "Concluído" : "Incompleto", observacao: valueOrDash(procedureObservation(item.observacoes, item)) }))
   });
 }
 
@@ -433,7 +434,7 @@ async function generateTemperaturaReport(moduleId: ReportModuleId, reportId: str
         mimeType: item.fotoMimeType,
         base64: item.fotoBase64
       });
-      return { data: formatDateDisplay(item.data), equipamento: item.equipamento, turno: labelTurnoTemperatura(item.turno), statusOperacional: labelStatusOperacionalTemperatura(item.statusOperacionalEquipamento), temperatura: operacional ? formatTemperature(item.temperaturaAferida) : "Não aplicável", status: operacional ? labelStatusTemperatura(item.status) : "Não aplicável", acaoCorretiva: operacional ? valueOrDash(item.acaoCorretiva) : item.statusOperacionalEquipamento === StatusOperacionalEquipamento.MANUTENCAO ? "Em manutenção" : "-", foto: operacional && temFoto ? "Foto anexada" : "-", responsavel: item.responsavel, dataHoraRegistro: formatDateTimeDisplay(item.createdAt) };
+      return { data: formatDateDisplay(item.data), equipamento: item.equipamento, turno: labelTurnoTemperatura(item.turno), statusOperacional: labelStatusOperacionalTemperatura(item.statusOperacionalEquipamento), temperatura: operacional ? formatTemperature(item.temperaturaAferida) : "Não aplicável", status: operacional ? labelStatusTemperatura(item.status) : "Não aplicável", acaoCorretiva: operacional ? valueOrDash(item.acaoCorretiva) : item.statusOperacionalEquipamento === StatusOperacionalEquipamento.MANUTENCAO ? "Em manutenção" : "-", foto: operacional && temFoto ? "Foto anexada" : "-", responsavel: item.responsavel, dataHoraRegistro: [formatDateTimeDisplay(item.createdAt), item.horarioAfericao || item.horarioNaoInformado ? `Aferição: ${temperatureMeasurementTime(item)}` : "", item.horarioNaoInformado ? `Justificativa: ${item.justificativaHorario}` : ""].filter(Boolean).join("\n") };
     })
   });
 }
@@ -680,7 +681,7 @@ async function countGeneralModuleRows(range: DateRange) {
     (item) => item.status !== StatusItemBuffetAmostra.NAO_SERVIDO
   );
   return [
-    { id: "higienizacao-hortifruti", modulo: "Higienização de Hortifruti", total: hort.length, pendencias: hort.filter((item) => !hasText(item.inicioProcesso) || !hasText(item.terminoProcesso)).length, concluidos: hort.length, naoConformidades: 0, acoesCorretivas: 0, semAssinatura: 0, chamadosAbertos: 0, chamadosConcluidos: 0 },
+    { id: "higienizacao-hortifruti", modulo: "Higienização de Hortifruti", total: hort.length, pendencias: hort.filter((item) => !item.horarioNaoInformado && (!hasText(item.inicioProcesso) || !hasText(item.terminoProcesso))).length, concluidos: hort.length, naoConformidades: 0, acoesCorretivas: 0, semAssinatura: 0, chamadosAbertos: 0, chamadosConcluidos: 0 },
     { id: "controle-temperatura-equipamentos", modulo: "Controle de Temperatura", total: temp.length, pendencias: tempOperacionais.filter((item) => (item.status === StatusTemperaturaEquipamento.ALERTA || item.status === StatusTemperaturaEquipamento.CRITICO) && !hasImageEvidence({ url: item.fotoUrl, mimeType: item.fotoMimeType, base64: item.fotoBase64 })).length, concluidos: temp.filter((item) => !isTemperaturaOperacional(item.statusOperacionalEquipamento) || item.status === StatusTemperaturaEquipamento.CONFORME).length, naoConformidades: tempOperacionais.filter((item) => item.status !== StatusTemperaturaEquipamento.CONFORME).length, acoesCorretivas: tempOperacionais.filter((item) => hasText(item.acaoCorretiva)).length, semAssinatura: 0, chamadosAbertos: 0, chamadosConcluidos: 0 },
     { id: "controle-qualidade-oleo", modulo: "Controle de Qualidade do Óleo", total: oleo.length, pendencias: oleo.filter((item) => item.status === StatusQualidadeOleo.DESCARTAR || item.status === StatusQualidadeOleo.ULTIMA_UTILIZACAO).length, concluidos: oleo.filter((item) => item.status === StatusQualidadeOleo.ADEQUADO || item.status === StatusQualidadeOleo.SEM_UTILIZACAO).length, naoConformidades: oleo.filter((item) => item.status !== null && item.status !== StatusQualidadeOleo.ADEQUADO && item.status !== StatusQualidadeOleo.SEM_UTILIZACAO).length, acoesCorretivas: oleo.filter((item) => item.status === StatusQualidadeOleo.DESCARTAR || item.status === StatusQualidadeOleo.ATENCAO || item.status === StatusQualidadeOleo.ULTIMA_UTILIZACAO).length, semAssinatura: 0, chamadosAbertos: 0, chamadosConcluidos: 0 },
     { id: "rastreabilidade-recebimento", modulo: "Rastreabilidade de Recebimento", total: receb.length, pendencias: receb.filter((item) => item.statusGeral === StatusRecebimento.PENDENTE).length, concluidos: receb.filter((item) => item.statusGeral === StatusRecebimento.CONFORME).length, naoConformidades: receb.filter((item) => item.statusGeral === StatusRecebimento.NAO_CONFORME).length, acoesCorretivas: receb.filter((item) => hasText(item.acaoCorretiva)).length, semAssinatura: receb.filter((item) => !hasText(item.responsavelRecebimento)).length, chamadosAbertos: 0, chamadosConcluidos: 0 },

@@ -1,3 +1,5 @@
+import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
+import { UNKNOWN_PROCEDURE_TIME } from "@/lib/procedure-time";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma } from "@prisma/client";
 import Link from "next/link";
@@ -195,7 +197,7 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
     registrosMensais.map((registro) => registro.produtoUtilizado.trim()).filter(Boolean)
   );
   const totalMinutos = registrosMensais.reduce(
-    (total, registro) => total + registro.duracaoMinutos,
+    (total, registro) => total + (registro.duracaoMinutos ?? 0),
     0
   );
   const indicadoresMensais = {
@@ -203,7 +205,9 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
     "Registros realizados": registrosMensais.length,
     "Hortifrutis higienizados": hortifrutisDistintos.size,
     "Produtos utilizados": produtosDistintos.size,
-    "Tempo total": `${totalMinutos} min`,
+    "Tempo total": registrosMensais.some(record => record.horarioNaoInformado)
+      ? registrosMensais.some(record => record.duracaoMinutos != null) ? `${totalMinutos} min conhecidos` : "Não informado"
+      : `${totalMinutos} min`,
     "Dias com registro": diasComRegistro.size,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(
@@ -382,11 +386,11 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {grupoSelecionado.registros.map((registro) => (
                   <tr key={registro.id}>
-                    <td className="px-3 py-2">{registro.hortifruti}</td>
+                    <td className="px-3 py-2">{registro.hortifruti}<ProcedureTimeAudit record={registro} /></td>
                     <td className="px-3 py-2">{registro.produtoUtilizado}</td>
-                    <td className="px-3 py-2">{registro.inicioProcesso}</td>
-                    <td className="px-3 py-2">{registro.terminoProcesso}</td>
-                    <td className="px-3 py-2">{registro.duracaoMinutos} min</td>
+                    <td className="px-3 py-2">{registro.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : registro.inicioProcesso}</td>
+                    <td className="px-3 py-2">{registro.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : registro.terminoProcesso}</td>
+                    <td className="px-3 py-2">{registro.duracaoMinutos === null ? "-" : `${registro.duracaoMinutos} min`}</td>
                     <td className="px-3 py-2">{registro.responsavel}</td>
                     <td className="px-3 py-2 max-w-80 whitespace-normal break-words">
                       {registro.observacoes ?? "-"}

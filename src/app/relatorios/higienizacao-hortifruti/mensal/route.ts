@@ -1,3 +1,4 @@
+import { UNKNOWN_PROCEDURE_TIME, procedureObservation } from "@/lib/procedure-time";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -179,11 +180,11 @@ export async function GET(request: NextRequest) {
         data: formatAppDate(record.data),
         hortifruti: record.hortifruti,
         produtoUtilizado: record.produtoUtilizado,
-        inicioProcesso: record.inicioProcesso,
-        terminoProcesso: record.terminoProcesso,
+        inicioProcesso: record.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : record.inicioProcesso,
+        terminoProcesso: record.horarioNaoInformado ? UNKNOWN_PROCEDURE_TIME : record.terminoProcesso,
         responsavel: record.responsavel,
         supervisor: dailySignaturesByDate.get(dateKey) ?? "-",
-        observacoes: record.observacoes
+        observacoes: procedureObservation(record.observacoes, record)
       };
     })
   };

@@ -1,6 +1,7 @@
 "use server";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
+import { assertProcedureDate } from "@/lib/procedure-time";
 
 import {
   StatusQualidadeOleo,
@@ -203,6 +204,7 @@ export async function createRegistroAction(formData: FormData) {
     const data = dataInput === null ? getTodaySystemDate() :
       typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseDateInput(dataInput) : null;
     if (!data) throw new Error("Informe uma data válida para o registro.");
+    assertProcedureDate(data);
     const payload = await getRegistroPayload(formData, actor.nomeCompleto);
     const { mes, ano } = getMonthYear(data);
 

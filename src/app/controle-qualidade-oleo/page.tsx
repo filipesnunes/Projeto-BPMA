@@ -402,7 +402,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               </p>
             </div> : <label className="text-sm text-slate-700 md:col-span-2 dark:text-slate-200">
               Data do Procedimento *
-              <input type="date" name="data" required defaultValue={defaultRecordDate} className={INPUT_CLASS} />
+              <input type="date" name="data" required defaultValue={defaultRecordDate} max={todayInput} className={INPUT_CLASS} />
             </label>}
 
             <OilRegisterFields

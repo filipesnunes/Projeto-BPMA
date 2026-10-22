@@ -259,12 +259,15 @@ function buildEquipmentReports(params: {
         cellsByDayShift.set(getCellKey(turno, day), {
           measurementTime: inOperation ? temperatureMeasurementTime(record) : "-",
           timeJustification: record.horarioNaoInformado ? record.justificativaHorario : null,
-          temperature: inOperation ? formatTemperature(record.temperaturaAferida) : "",
+          temperature: inOperation ? formatTemperature(record.temperaturaAferida)
+            : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.INATIVO ? "INATIVO" : "",
           correctiveAction: inOperation
             ? valueOrEmpty(record.acaoCorretiva)
             : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.MANUTENCAO
               ? "Em manutenção"
-              : "",
+              : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.INATIVO
+                ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
+                : "",
           responsible: valueOrEmpty(record.responsavel),
           supervisor: valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
         });

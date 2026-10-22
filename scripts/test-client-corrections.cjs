@@ -253,6 +253,22 @@ async function main() {
   ].map(row=>({equipamento:'A',responsavel:'Responsável',statusOperacionalEquipamento:'EM_OPERACAO',
     status:row.temperaturaAferida > 8 ? 'CRITICO' : row.temperaturaAferida > 4 ? 'ALERTA' : 'CONFORME',...row}));
   tables.assinaturaDiariaModulo = [{dataReferencia:date('2026-09-01'),moduloCodigo:'temperatura',usuarioNomeSnapshot:'Supervisor'}];
+  const activeFixtures = tables.controleTemperaturaEquipamento;
+  tables.controleTemperaturaEquipamento = [
+    {...activeFixtures[0], id:101, statusOperacionalEquipamento:'INATIVO', temperaturaAferida:null, acaoCorretiva:null},
+    {...activeFixtures[1], id:102, statusOperacionalEquipamento:'INATIVO', temperaturaAferida:null, acaoCorretiva:'Desligado para limpeza'},
+    activeFixtures[2]
+  ];
+  const inactiveSnapshot = JSON.stringify(tables.controleTemperaturaEquipamento);
+  const inactiveHtml = await report('controle-temperatura-equipamentos');
+  assert.equal((inactiveHtml.match(/<td>INATIVO<\/td>/g)||[]).length,2);
+  assert.match(inactiveHtml,/<td>INATIVO<\/td>\s*<td>-<\/td>\s*<td>Equipamento inativo — aferição não aplicável<\/td>\s*<td>Responsável<\/td>\s*<td>Supervisor<\/td>/);
+  assert.match(inactiveHtml,/<td>INATIVO<\/td>\s*<td>-<\/td>\s*<td>Desligado para limpeza<\/td>/);
+  assert(inactiveHtml.includes('<td>4 °C</td>'),'Return to operation remains numeric');
+  assert.equal(JSON.stringify(tables.controleTemperaturaEquipamento),inactiveSnapshot);
+  fs.writeFileSync(path.join(outputDir,'temperature-inactive.html'),inactiveHtml);
+  tables.controleTemperaturaEquipamento = activeFixtures;
+  console.log('PASS inactive monthly report: morning/afternoon, explicit status only, no fictitious time, specific action preserved, responsible/supervisor, return to operation and immutable records.');
   const temperatureHtml = await report('controle-temperatura-equipamentos');
   assert(temperatureHtml.includes(warning));
   assert(temperatureHtml.includes(persistence.PERSISTENT_TEMPERATURE_ACTION));

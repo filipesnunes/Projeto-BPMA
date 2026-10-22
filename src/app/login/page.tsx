@@ -29,7 +29,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <div className={styles.card}>
         <header className={styles.header}>
           <h1 className={styles.brand}>
-            <Image src="/logo-staysafe.webp" alt="StaySafe" width={384} height={216}
+            <Image src="/logo-staysafe.webp" alt="StaySafe" width={384} height={216} unoptimized
               className={styles.logo} sizes="(max-width: 380px) calc(100vw - 80px), 330px" priority />
           </h1>
           <p className={styles.slogan}>

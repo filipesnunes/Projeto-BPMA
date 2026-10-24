@@ -106,6 +106,10 @@ export async function signModuleDayAction(formData: FormData) {
       throw new Error("Data inválida para assinatura do dia.");
     }
 
+    if (moduleConfig.codigo === "temperatura" && await prisma.fluxoOperacional.findFirst({ where: { modulo: "temperatura", dataReferencia, excluidoEm: null } })) {
+      throw new Error("Selecione as aferições e suas versões no histórico de temperatura para assinar.");
+    }
+
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
     const existing = await prisma.assinaturaDiariaModulo.findUnique({

@@ -45,7 +45,7 @@ const tx = new Proxy({}, { get(_, name) {
     async findMany({where}) { return structuredClone(db[name].filter(row => matches(row, where))); },
     async create({data}) {
       if (failAudit && name === 'fluxoEvento') throw Error('audit failed');
-      const row = { id: String(++sequence), versao: 1, assinaturaVigenteId: null, ...structuredClone(data) };
+      const row = { id: String(++sequence), versao: 1, estado: "PENDENTE", excluidoEm: null, assinaturaVigenteId: null, ...structuredClone(data) };
       db[name].push(row); return structuredClone(row);
     },
     async update({where, data}) {

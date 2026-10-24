@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, FluxoOperacional } from "@prisma/client";
 import type { AuthenticatedUser } from "@/lib/auth-session";
 import type { OperationalSignatureModuleCode } from "@/lib/module-signatures";
 
@@ -19,7 +19,7 @@ export type WorkflowAdapter = {
   load(tx: Prisma.TransactionClient, key: string): Promise<{
     date: Date; content: WorkflowContent; legacy: boolean;
   }>;
-  save(tx: Prisma.TransactionClient, key: string, input: unknown, user: AuthenticatedUser): Promise<WorkflowContent>;
+  save(tx: Prisma.TransactionClient, key: string, input: unknown, user: AuthenticatedUser, unit: FluxoOperacional): Promise<WorkflowContent>;
 };
 
 export function assertWorkflowContent(content: WorkflowContent) {

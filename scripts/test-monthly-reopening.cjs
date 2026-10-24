@@ -24,6 +24,7 @@ const actor = { id: 1, nomeCompleto: 'Responsável Teste', perfil: 'DEV', nomeUs
 let signedIn = true;
 class Redirect extends Error { constructor(url) { super('redirect'); this.url = url; } }
 const revalidated = [];
+mocks.set('@/app/controle-temperatura-equipamentos/workflow-adapter', { refreshWorkflowActor: async (_tx, user) => user });
 mocks.set('next/cache', { revalidatePath(value) {revalidated.push(value);} });
 mocks.set('next/navigation', { redirect(url) { throw new Redirect(url); } });
 mocks.set('@/lib/redirect-error', { rethrowIfRedirectError(e) { if (e instanceof Redirect) throw e; } });

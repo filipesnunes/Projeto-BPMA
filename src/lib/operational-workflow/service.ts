@@ -57,6 +57,7 @@ export async function saveWorkflow(params: {
     assertWorkflowAccess(user, adapter.module);
     const original = await tx.fluxoOperacional.findUnique({ where: { modulo_chave: { modulo: adapter.module, chave: key } } });
     assertWorkflowVersion(original?.versao ?? 0, params.expectedVersion);
+    if (original?.excluidoEm) throw new Error("Registro excluído.");
     const source = await adapter.load(tx, key);
     // Enrolling an existing record needs a separately reviewed legacy adapter;
     // do not silently infer a signed version from its current content.
@@ -66,12 +67,13 @@ export async function saveWorkflow(params: {
     await openPeriod(tx, adapter.module, date);
     assertWorkflowEdit({ user, module: adapter.module, date, today: getAppDate(), creating: !original });
     if (original?.estado === "FECHADO") throw new Error("Registro fechado. Confirme a reabertura antes de editar.");
-    const content = await adapter.save(tx, key, params.input, user);
+    const initial = original ?? await tx.fluxoOperacional.create({ data: { modulo: adapter.module, chave: key, dataReferencia: date } });
+    const content = await adapter.save(tx, key, params.input, user, initial);
     assertWorkflowContent(content);
     const nextState = stateAfterSave(original ? state(original.estado) : "PENDENTE", content.complete);
-    const unit = original
-      ? await tx.fluxoOperacional.update({ where: { id: original.id, versao: original.versao }, data: { versao: { increment: 1 }, estado: nextState } })
-      : await tx.fluxoOperacional.create({ data: { modulo: adapter.module, chave: key, dataReferencia: date, estado: nextState } });
+    const unit = await tx.fluxoOperacional.update({ where: { id: initial.id, versao: initial.versao }, data: {
+      ...(original ? { versao: { increment: 1 } } : {}), estado: nextState, preenchimentoCompleto: content.complete
+    } });
     await revision(tx, unit, content, user);
     await event(tx, unit, user, original ? "SALVAMENTO" : "CRIACAO", original);
     if (content.complete && (!original || original.estado === "PENDENTE")) {
@@ -90,7 +92,7 @@ export async function reopenWorkflow(params: {
     const user = await params.actor(tx);
     assertWorkflowAccess(user, params.module);
     const original = await tx.fluxoOperacional.findUnique({ where: { id: params.id, modulo: params.module } });
-    if (!original) throw new Error("Registro operacional não encontrado.");
+    if (!original || original.excluidoEm) throw new Error("Registro operacional não encontrado.");
     assertWorkflowVersion(original.versao, params.expectedVersion);
     await openPeriod(tx, params.module, original.dataReferencia);
     assertWorkflowReopen({ user, module: params.module, date: original.dataReferencia, today: getAppDate(),
@@ -130,7 +132,7 @@ export async function signWorkflow(params: {
     const originals: FluxoOperacional[] = [];
     for (const item of scope) {
       const unit = await tx.fluxoOperacional.findUnique({ where: { id: item.id, modulo: bridge.module } });
-      if (!unit) throw new Error("Registro operacional não encontrado.");
+      if (!unit || unit.excluidoEm) throw new Error("Registro operacional não encontrado.");
       assertWorkflowVersion(unit.versao, item.version);
       if (!["COMPLETO", "REABERTO"].includes(unit.estado)) throw new Error("O registro não está disponível para assinatura.");
       await openPeriod(tx, bridge.module, unit.dataReferencia);
@@ -168,7 +170,7 @@ function canonical(value: unknown): string {
 
 export async function assertNoReopenedWorkflow(tx: Tx, module: OperationalSignatureModuleCode, start: Date, end: Date) {
   const pending = await tx.fluxoOperacional.findMany({ where: {
-    modulo: module, estado: "REABERTO", dataReferencia: { gte: start, lt: end }
+    modulo: module, estado: "REABERTO", excluidoEm: null, dataReferencia: { gte: start, lt: end }
   }, select: { chave: true }, take: 20 });
   if (pending.length) throw new Error(`Existem registros reabertos aguardando nova assinatura: ${pending.map(item => item.chave).join(", ")}.`);
 }

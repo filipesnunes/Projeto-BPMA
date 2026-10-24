@@ -30,9 +30,10 @@ export async function operationalRecordMonthClosed(code: OperationalRecordModule
 // All hotel data belongs to this single-unit application. No submitted tenant or
 // module/table name is trusted; only the server-owned allowlist is used.
 export async function deleteOperationalRecord(params: {
-  user: AuthenticatedUser; target: DeletionTarget; id: number; reason: string;
+  user: AuthenticatedUser; target: DeletionTarget; id: number; reason: string; expectedVersion?: number;
 }) {
-  const { user, target, id } = params;
+  const { target, id } = params;
+  let user = params.user;
   const moduleCode: OperationalRecordModuleCode = target === "nota" ? "rastreabilidade" : target;
   if (!canDeleteOperationalRecord(user, moduleCode)) throw new Error("Seu perfil não pode excluir registros deste módulo.");
   const reason = params.reason.trim();
@@ -40,6 +41,11 @@ export async function deleteOperationalRecord(params: {
   if (!Number.isSafeInteger(id) || id < 1 || !Object.hasOwn(operationalDeletionModels, target)) throw new Error("Registro inválido.");
   await prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
+    if (target === "temperatura") {
+      const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
+      user = await refreshWorkflowActor(tx, user);
+      if (!canDeleteOperationalRecord(user, moduleCode)) throw new Error("Seu perfil não pode excluir registros deste módulo.");
+    }
     const delegate = tx[operationalDeletionModels[target]];
     // The allowlisted delegates share these operations; generated overloads differ.
     const records = delegate as unknown as {
@@ -47,6 +53,15 @@ export async function deleteOperationalRecord(params: {
       updateMany(args: { where: { id: number; excluidoEm: null }; data: { excluidoEm: Date } }): Promise<{ count: number }>;
     };
     const original = await records.findFirst({ where: { id, excluidoEm: null } });
+    if (target === "temperatura" && original?.fluxoId) {
+      const flow = await tx.fluxoOperacional.findUniqueOrThrow({ where: { id: String(original.fluxoId) } });
+      if (flow.estado === "FECHADO") throw new Error("Reabra a aferição antes de excluir um registro fechado.");
+      if (flow.versao !== params.expectedVersion) throw new Error("A aferição foi atualizada. Recarregue antes de excluir.");
+      await tx.fluxoOperacional.update({ where: { id: flow.id, versao: flow.versao }, data: { excluidoEm: getAppNow() } });
+      await tx.fluxoEvento.create({ data: { fluxoId: flow.id, operacao: "EXCLUSAO", estadoAnterior: flow.estado,
+        estadoNovo: flow.estado, versaoAnterior: flow.versao, versaoNova: flow.versao, justificativa: reason,
+        usuarioId: user.id, usuarioNome: user.nomeCompleto, usuarioPerfil: user.perfil } });
+    }
     if (!original) throw new Error("Registro não encontrado ou já excluído.");
     const reference = original.data ?? original.dataExecucao ?? original.dataManipulacao;
     const date = reference ?? (original.dataHoraCriacao instanceof Date ? getAppDate(original.dataHoraCriacao) : null);

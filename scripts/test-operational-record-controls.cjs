@@ -26,6 +26,7 @@ mocks.set('next/cache', { revalidatePath() {} });
 mocks.set('next/navigation', { redirect(url) { throw new Redirect(url); } });
 mocks.set('@/lib/redirect-error', { rethrowIfRedirectError(e) { if (e instanceof Redirect) throw e; } });
 mocks.set('@/lib/auth-session', { getCurrentUser: async () => actor, getCurrentUserForAction: async () => actor });
+mocks.set('@/app/controle-temperatura-equipamentos/workflow-adapter', { refreshWorkflowActor: async (_tx, user) => user });
 mocks.set('@/lib/authz', new Proxy({}, { get: () => async () => {} }));
 
 mocks.set('@/lib/rbac', { canAccessReports: () => true, canViewManagementSections: () => true, canManageModuleOptions: () => true, canDeleteOperationalRecords: () => true });
@@ -53,7 +54,7 @@ function matches(row, where = {}) {
       if ('contains' in value && !String(row[key]).toLowerCase().includes(value.contains.toLowerCase())) return false;
       return true;
     }
-    return row[key] === value;
+    return (row[key] ?? null) === value;
   });
 }
 function selected(row, select) {
@@ -153,7 +154,7 @@ async function testPreviousDayDeletionControls() {
   return elements(node,n=>typeof n.props?.href==='string' && new URL(n.props.href,'http://localhost').searchParams.get('deleteId')===String(id) && n.props.children==='Excluir');
  }
  for(const [target,route] of scenarios) {
-  const pageFile='src/app/'+route+'/page.tsx', page=load(pageFile).default;
+  const pageFile='src/app/'+route+(target==='temperatura'?'/legacy-records.tsx':'/page.tsx'), page=load(pageFile).default;
   for(const role of ['DEV','GERENTE','NUTRICIONISTA']) {
    seed(target);actor.perfil=role;
    const tree=await page({searchParams:Promise.resolve({})});

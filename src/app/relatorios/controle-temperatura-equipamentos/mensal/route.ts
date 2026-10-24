@@ -189,6 +189,7 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       createdAt: true,
       horarioAfericao: true,
       horarioNaoInformado: true,
+      fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true } } } },
       justificativaHorario: true
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }]
@@ -269,7 +270,7 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }

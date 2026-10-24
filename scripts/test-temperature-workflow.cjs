@@ -1,0 +1,142 @@
+﻿// Integration against a disposable local PostgreSQL container, never DATABASE_URL.
+// Start: docker run --name bpma-temperature-workflow-test -e POSTGRES_PASSWORD=isolated_test_only -e POSTGRES_DB=workflow_test -p 127.0.0.1:55479:5432 -d postgres:16
+const assert = require('node:assert/strict');
+const fs = require('node:fs'); const path = require('node:path'); const Module = require('node:module');
+const { execFileSync } = require('node:child_process'); const ts = require('typescript');
+const root = path.resolve(__dirname, '..'); const database = 'workflow_' + Date.now();
+execFileSync('docker',['exec','bpma-temperature-workflow-test','psql','-U','postgres','-d','workflow_test','-c',`CREATE DATABASE ${database}`],{stdio:'pipe'});
+const url = `postgresql://postgres:isolated_test_only@127.0.0.1:55479/${database}`;
+execFileSync(process.execPath,[path.join(root,'node_modules/prisma/build/index.js'),'migrate','deploy'],{cwd:root,env:{...process.env,DATABASE_URL:url,DIRECT_URL:url},stdio:'pipe'});
+const mocks = new Map(); const originalLoad = Module._load;
+Module._load = function(name,parent,main){if(mocks.has(name))return mocks.get(name);if(name==='server-only')return {};if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return originalLoad.call(this,name,parent,main);};
+for(const ext of ['.ts','.tsx'])require.extensions[ext]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,f);
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient({datasources:{db:{url}}});
+prisma.$use(require('../src/lib/active-operational-records.ts').activeOperationalRecords);
+mocks.set('@/lib/prisma',{prisma}); mocks.set('next/cache',{revalidatePath(){}});
+class Redirect extends Error {constructor(url){super('redirect');this.url=url;}}
+mocks.set('next/navigation',{redirect(url){throw new Redirect(url);}});
+mocks.set('@/lib/redirect-error',{rethrowIfRedirectError(e){if(e instanceof Redirect)throw e;}});
+let user; mocks.set('@/lib/auth-session',{getCurrentUser:async()=>user,getCurrentUserForAction:async()=>user});
+const dates=require('../src/lib/date-time.ts');let today=new Date('2026-10-24T00:00:00Z');dates.getAppDate=()=>today;dates.getAppNow=()=>new Date('2026-10-24T20:00:00Z');
+const service=require('../src/lib/operational-workflow/service.ts');
+const adapter=require('../src/app/controle-temperatura-equipamentos/workflow-adapter.ts');
+const actions=require('../src/app/controle-temperatura-equipamentos/workflow-actions.ts');
+const {deleteOperationalRecord}=require('../src/lib/operational-deletion.ts');
+const monthly=require('../src/lib/monthly-periods.ts');
+const {hashPassword}=require('../src/lib/password.ts');
+const actor=tx=>adapter.refreshWorkflowActor(tx,user);
+const form=(extra={})=>{const f=new FormData();for(const [k,v] of Object.entries({statusOperacionalEquipamento:'EM_OPERACAO',temperaturaAferida:'4',horarioAfericao:'10:00',intent:'draft',...extra}))f.set(k,v);return f;};
+const save=(key,version=0,extra={})=>service.saveWorkflow({actor,adapter:adapter.temperatureAdapter,key,expectedVersion:version,input:form(extra)});
+const sign=(units,daily=false)=>service.signWorkflow({actor,bridge:adapter.temperatureSignatureBridge('test-password',daily),scope:units.map(u=>({id:u.id,version:u.versao}))});
+const reopen=(u,extra={})=>service.reopenWorkflow({actor,module:'temperatura',id:u.id,expectedVersion:u.versao,reason:'Correção documentada',fromEdit:false,...extra});
+const latest=id=>prisma.fluxoOperacional.findUniqueOrThrow({where:{id}});
+const React=require('react');const {renderToStaticMarkup}=require('react-dom/server');
+mocks.set('next/link',({href,children,...props})=>React.createElement('a',{...props,href},children));
+mocks.set('@/components/forms/image-upload-field',{ImageUploadField:()=>React.createElement('input',{type:'file',name:'fotoDesvio'})});
+const view=require('../src/app/controle-temperatura-equipamentos/workflow-view.tsx');
+const html=async(history=false,query={})=>renderToStaticMarkup(await view.TemperatureWorkflowList({history,query}));
+const edit=async(key,query={})=>renderToStaticMarkup(await view.TemperatureWorkflowEditor({query:{chave:key,...query}}));
+(async()=>{
+ assert.equal((await prisma.$queryRaw`select current_database() name`)[0].name,database);
+ const account=await prisma.usuario.create({data:{nomeCompleto:'Supervisor Teste',nomeUsuario:'workflow-test',senhaHash:hashPassword('test-password'),perfil:'DEV'}});
+ const session=await prisma.usuarioSessao.create({data:{usuarioId:account.id,tokenHash:'isolated-session',expiraEm:new Date('2030-01-01')}});
+ user={...account,sessaoId:session.id,permissoes:[]};
+ fs.mkdirSync(path.join(root,'.data/validation/temperature-workflow'),{recursive:true});
+ fs.writeFileSync(path.join(root,'.data/validation/temperature-workflow/database.txt'),database);
+ const category=await prisma.controleTemperaturaCategoriaParametro.create({data:{categoria:'REFRIGERACAO',nome:'Teste',orientacaoCorretivaPadrao:'Verificar'}});
+ await prisma.controleTemperaturaCategoriaRegra.createMany({data:[{categoriaId:category.id,temperaturaMin:-10,temperaturaMax:5,status:'CONFORME',acaoCorretiva:'Conforme',ordem:1},{categoriaId:category.id,temperaturaMin:5.1,temperaturaMax:100,status:'CRITICO',acaoCorretiva:'Ajustar e verificar',ordem:2}]});
+ const equipment=await prisma.controleTemperaturaEquipamentoOpcao.create({data:{tipo:'EQUIPAMENTO',nome:'Câmara piloto',categoriaEquipamento:'REFRIGERACAO'}});
+ const key=shift=>`${equipment.id}:2026-10-24:${shift}`;
+ assert.match(await html(),/PENDENTE/);
+ let morning=await save(key('MANHA'),0,{temperaturaAferida:'',observacaoStatusOperacional:'Rascunho recuperável'});
+ assert.equal(morning.estado,'PENDENTE');assert.equal(await prisma.controleTemperaturaEquipamento.count(),0);
+ assert.match(await edit(key('MANHA')),/Rascunho recuperável/);
+ morning=await save(key('MANHA'),morning.versao);assert.equal(morning.estado,'COMPLETO');
+ const originalProjection=await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:morning.id}});
+ assert.equal(originalProjection.horarioAfericao,'17:00');
+ assert.equal(await prisma.controleTemperaturaEquipamento.count({where:{AND:[{fluxoId:morning.id},{excluidoEm:null}]}}),1);
+ assert.doesNotMatch(await html(),/COMPLETO/);assert.match(await html(true),/COMPLETO/);
+ morning=await save(key('MANHA'),morning.versao,{temperaturaAferida:''});assert.equal(morning.estado,'PENDENTE');assert.equal(await prisma.controleTemperaturaEquipamento.count(),0);
+ morning=await save(key('MANHA'),morning.versao);assert.equal((await prisma.controleTemperaturaEquipamento.findFirstOrThrow()).id,originalProjection.id);
+ let afternoon=await save(key('TARDE'));
+ await sign([morning,afternoon],true);morning=await latest(morning.id);afternoon=await latest(afternoon.id);
+ assert.equal(morning.estado,'FECHADO');assert.equal(afternoon.estado,'FECHADO');assert.equal(morning.assinaturaVigenteId,afternoon.assinaturaVigenteId);
+ assert.equal(await prisma.fluxoAssinaturaVinculo.count(),2);assert.equal(await prisma.assinaturaDiariaModulo.count(),0);
+ await assert.rejects(()=>save(key('MANHA'),morning.versao),/fechado/i);
+ await assert.rejects(()=>deleteOperationalRecord({user,target:'temperatura',id:originalProjection.id,reason:'teste',expectedVersion:morning.versao}),/Reabra/);
+ const eventCount=await prisma.fluxoEvento.count();assert.match(await edit(key('MANHA'),{confirmar:'reabrir'}),/Cancelar/);assert.equal(await prisma.fluxoEvento.count(),eventCount);
+ await assert.rejects(()=>reopen(morning,{reason:''}),/justificativa/);
+ const oldSignature=morning.assinaturaVigenteId;
+ morning=await reopen(morning);assert.equal(morning.estado,'REABERTO');assert.equal(morning.assinaturaVigenteId,null);
+ assert.match(await html(),/REABERTO/);assert.equal((await latest(afternoon.id)).estado,'FECHADO');
+ await assert.rejects(()=>monthly.closeOperationalMonth({user,moduleCode:'temperatura',mes:10,ano:2026}),/reabertos/);
+ await sign([morning]);morning=await latest(morning.id);assert.equal(morning.estado,'FECHADO');assert.notEqual(morning.assinaturaVigenteId,oldSignature);assert.equal(await prisma.fluxoAssinatura.count(),2);
+ assert.doesNotMatch(await html(),/REABERTO/);
+ // Actual PostgreSQL concurrency: one winner; loser either sees stale version/state or serialization failure.
+ morning=await reopen(morning);
+ const competing=await Promise.allSettled([save(key('MANHA'),morning.versao,{temperaturaAferida:'3'}),save(key('MANHA'),morning.versao,{temperaturaAferida:'2'})]);
+ assert.equal(competing.filter(r=>r.status==='fulfilled').length,1);morning=await latest(morning.id);
+ const competition=await Promise.allSettled([sign([morning]),save(key('MANHA'),morning.versao,{temperaturaAferida:'1'})]);assert.equal(competition.filter(r=>r.status==='fulfilled').length,1);
+ morning=await latest(morning.id);if(morning.estado!=='FECHADO'){await sign([morning]);morning=await latest(morning.id);}
+ // Independent retroactive unit, unknown time with explanation, no artificial clock.
+ let past=await save(`${equipment.id}:2026-10-23:MANHA`,0,{horarioAfericao:'',horarioNaoInformado:'true',justificativaHorario:'Horário original indisponível'});
+ const pastRow=await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:past.id}});assert.equal(pastRow.horarioAfericao,null);assert.equal(pastRow.horarioNaoInformado,true);
+ const knownMorning=await save(`${equipment.id}:2026-10-20:MANHA`,0,{horarioAfericao:'07:35'});
+ const knownAfternoon=await save(`${equipment.id}:2026-10-20:TARDE`,0,{horarioAfericao:'14:47'});
+ const retroFixtures={current:originalProjection,morning:await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:knownMorning.id}}),afternoon:await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:knownAfternoon.id}}),unknown:pastRow};
+ retroFixtures.unknown.justificativaHorario='Anotação original sem horário legível.';
+ await sign([past]);past=await reopen(await latest(past.id));assert.match(await html(),/2026-10-23/);
+ let inactive=await save(`${equipment.id}:2026-10-22:MANHA`,0,{statusOperacionalEquipamento:'INATIVO',temperaturaAferida:'',horarioAfericao:''});assert.equal(inactive.estado,'COMPLETO');
+ let maintenance=await save(`${equipment.id}:2026-10-22:TARDE`,0,{statusOperacionalEquipamento:'MANUTENCAO',temperaturaAferida:'',horarioAfericao:''});assert.equal(maintenance.estado,'COMPLETO');
+ const inactiveRow=await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:inactive.id}});assert.equal(inactiveRow.temperaturaAferida,null);assert.equal(inactiveRow.horarioAfericao,null);
+ await assert.rejects(()=>save(`${equipment.id}:2026-10-21:MANHA`,0,{temperaturaAferida:'número inválido'}),/temperatura válida/);
+ let critical=await save(`${equipment.id}:2026-10-21:MANHA`,0,{temperaturaAferida:'20'});assert.equal(critical.estado,'PENDENTE');
+ await prisma.moduloConfiguracao.upsert({where:{modulo:'CONTROLE_TEMPERATURA'},create:{modulo:'CONTROLE_TEMPERATURA',exigirFotoEmAlertaCritico:false},update:{exigirFotoEmAlertaCritico:false}});
+ critical=await save(critical.chave,critical.versao,{temperaturaAferida:'20'});assert.equal(critical.estado,'COMPLETO');
+ await prisma.moduloConfiguracao.update({where:{modulo:'CONTROLE_TEMPERATURA'},data:{exigirFotoEmAlertaCritico:true}});
+ const png=await require('sharp')({create:{width:3,height:3,channels:4,background:'#123456'}}).png().toBuffer();
+ critical=await save(critical.chave,critical.versao,{temperaturaAferida:'20',fotoDesvio:new File([png],'evidence.png',{type:'image/png'})});
+ const photoRecord=await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{fluxoId:critical.id}});assert.equal(photoRecord.fotoBase64,png.toString('base64'));assert.equal(photoRecord.status,'CRITICO');assert.equal(photoRecord.acaoCorretiva,'Ajustar e verificar');
+ critical=await save(critical.chave,critical.versao,{temperaturaAferida:'20'});assert.equal(critical.estado,'COMPLETO');
+ await assert.rejects(()=>save(`${equipment.id}:2026-10-26:MANHA`),/futuro/);
+ for(const invalidTime of ['7:35','24:00','12:60'])await assert.rejects(()=>save(`${equipment.id}:2026-10-19:MANHA`,0,{horarioAfericao:invalidTime}),/horário|Horário/);
+ // Permission check reads the real account inside every transaction, not the stale session object.
+ const editable=await save(`${equipment.id}:2026-10-24:MANHA:00000000-0000-0000-0000-000000000003`).then(()=>assert.fail('duplicate accepted'),()=>null);void editable;
+ const other=await prisma.controleTemperaturaEquipamentoOpcao.create({data:{tipo:'EQUIPAMENTO',nome:'Câmara colaborador',categoriaEquipamento:'REFRIGERACAO'}});
+ const otherKey=`${other.id}:2026-10-24:MANHA`;
+ let collaboratorUnit=await save(otherKey);
+ await prisma.usuario.update({where:{id:account.id},data:{perfil:'COLABORADOR'}});
+ collaboratorUnit=await save(otherKey,collaboratorUnit.versao,{temperaturaAferida:'2'});assert.equal(collaboratorUnit.estado,'COMPLETO');
+ await assert.rejects(()=>reopen(morning),/permissão/);await assert.rejects(()=>save(past.chave,past.versao),/permissão/);
+ await save(inactive.chave,inactive.versao).then(()=>assert.fail('retro edit accepted'),()=>{});
+ await prisma.usuario.update({where:{id:account.id},data:{perfil:'DEV'}});
+ // Monthly report executes the actual GET and uses current version signature, preserving legacy evidence.
+ const legacy=await prisma.controleTemperaturaEquipamento.create({data:{data:new Date('2026-09-19'),equipamento:'Legado',categoriaEquipamento:'REFRIGERACAO',turno:'MANHA',temperaturaAferida:4,status:'CONFORME',responsavel:'Original',assinaturaNutricionistaNome:'Antigo',assinaturaNutricionistaDataHora:new Date('2026-09-19T13:00Z')}});
+ const beforeLegacy=JSON.stringify(legacy);await assert.rejects(()=>save(`${equipment.id}:2026-10-24:MANHA:00000000-0000-0000-0000-000000000000`),/já possui/);
+ const route=require('../src/app/relatorios/controle-temperatura-equipamentos/mensal/route.ts');
+ const report=await route.GET({url:'http://localhost/relatorios/controle-temperatura-equipamentos/mensal?mes=10&ano=2026',nextUrl:new URL('http://localhost/?mes=10&ano=2026')});assert.equal(report.status,200);const reportHtml=await report.text();assert.match(reportHtml,/Reaberto/);assert.match(reportHtml,/INATIVO/);assert.match(reportHtml,/Imprimir/);
+ assert.equal(JSON.stringify(await prisma.controleTemperaturaEquipamento.findUnique({where:{id:legacy.id}})),beforeLegacy);
+ // Deletion has immutable audit and never changes another shift.
+ await deleteOperationalRecord({user,target:'temperatura',id:inactiveRow.id,reason:'Aferição incorreta',expectedVersion:inactive.versao});assert.equal(await prisma.controleTemperaturaEquipamento.findUnique({where:{id:inactiveRow.id}}),null);assert.equal(await prisma.exclusaoRegistroOperacional.count(),1);
+ assert.equal((await latest(maintenance.id)).estado,'COMPLETO');
+ const replacement=await save(`${equipment.id}:2026-10-22:MANHA:00000000-0000-0000-0000-000000000001`,0,{statusOperacionalEquipamento:'INATIVO'});assert.equal(replacement.estado,'COMPLETO');
+ // Atomic rollback if audit insertion fails, using a test-only trigger in this disposable database.
+ await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_workflow_test_event() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit unavailable'; END $$`);
+ await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_test_event BEFORE INSERT ON fluxo_evento FOR EACH ROW EXECUTE FUNCTION reject_workflow_test_event()`);
+ const versions=await prisma.fluxoVersao.count();await assert.rejects(()=>reopen(morning));assert.equal((await latest(morning.id)).estado,'FECHADO');assert.equal(await prisma.fluxoVersao.count(),versions);
+ await prisma.$executeRawUnsafe('DROP TRIGGER reject_test_event ON fluxo_evento');
+ // Direct action validates version before any mutation; no navigation GET reopens.
+ const bad=form({chave:key('MANHA'),versao:'0'});let redirected;try{await actions.saveTemperatureWorkflowAction(bad);}catch(e){assert(e instanceof Redirect);redirected=e.url;}assert.match(redirected,/feedbackType=error/);
+ // Close versus reopen race: cannot end with a closed month and reopened unit.
+ await sign([past]);
+ const race=await Promise.allSettled([monthly.closeOperationalMonth({user,moduleCode:'temperatura',mes:10,ano:2026}),reopen(morning)]);
+ assert.equal(race.filter(r=>r.status==='fulfilled').length,1);
+ const month=await prisma.fechamentoMensalModulo.findUnique({where:{moduloCodigo_ano_mes:{moduloCodigo:'temperatura',ano:2026,mes:10}}});
+ assert(!(month && month.status!=='REABERTO' && (await latest(morning.id)).estado==='REABERTO'));
+ if(month && month.status!=='REABERTO')await require('../src/lib/monthly-reopening.ts').reopenOperationalMonth({user,moduleCode:'temperatura',mes:10,ano:2026});
+ today=new Date('2026-10-25');assert.equal((await latest(afternoon.id)).estado,'FECHADO');
+ fs.mkdirSync(path.join(root,'.data/validation/temperature-workflow'),{recursive:true});
+ fs.writeFileSync(path.join(root,'.data/validation/temperature-workflow/report.html'),reportHtml);
+ fs.writeFileSync(path.join(root,'.data/validation/temperature-workflow/retro-fixtures.json'),JSON.stringify(retroFixtures));
+ console.log('PASS real PostgreSQL: migrations, draft recovery, projections, four states, signatures/scopes, stale writes, concurrent save/sign and close/reopen, retroactive time, permissions, inactive/maintenance, report GET, legacy integrity, deletion/replacement, atomic audit rollback, action and rendered pages. Database: '+database);
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>prisma.$disconnect());

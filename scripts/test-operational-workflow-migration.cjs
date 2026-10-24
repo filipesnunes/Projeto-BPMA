@@ -43,6 +43,15 @@ const { PGlite } = require('../.data/validation/pg-test/node_modules/@electric-s
     await db.exec('UPDATE fluxo_operacional SET estado=\'REABERTO\', "assinaturaVigenteId"=NULL');
     await db.exec('ROLLBACK');
     assert.deepEqual((await db.query('SELECT * FROM fluxo_operacional')).rows, before);
+    await db.exec(`INSERT INTO controle_temperatura_equipamentos (data,equipamento,"categoriaEquipamento",turno,"temperaturaAferida",status,responsavel,"updatedAt","assinaturaNutricionistaNome") VALUES ('2026-09-18','Câmara antiga','REFRIGERACAO','MANHA',4,'CONFORME','Original','2026-09-18','Supervisor original')`);
+    const oldTemperature = (await db.query('SELECT * FROM controle_temperatura_equipamentos')).rows;
+    await db.exec(fs.readFileSync(path.join(root, '20261024000200_temperatura_fluxo_operacional', 'migration.sql'),'utf8'));
+    const afterTemperature = (await db.query('SELECT * FROM controle_temperatura_equipamentos')).rows;
+    assert.equal(afterTemperature[0].fluxoId,null);
+    delete afterTemperature[0].fluxoId;
+    assert.deepEqual(afterTemperature,oldTemperature);
+    assert.equal((await db.query("SELECT \"preenchimentoCompleto\" FROM fluxo_operacional WHERE id='A'")).rows[0].preenchimentoCompleto,true);
+    console.log('PASS pilot migration: nullable legacy link, original measurements/signatures intact, current-version completeness metadata.');
     console.log('PASS isolated PostgreSQL: additive migration, historical records/signatures intact, zero profile grants, unique identity, state/progress/version constraints, signature-to-version FK and rollback.');
   } finally { await db.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

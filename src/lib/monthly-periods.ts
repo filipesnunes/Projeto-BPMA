@@ -7,6 +7,7 @@ import { canSignModuleMonthlyClosure } from "@/lib/module-signatures";
 import { canCloseMonthlyPeriod } from "@/lib/monthly-period-permissions";
 import { findLegacyMonthlyClosure, revalidateMonthlyPeriod, validateMonthlyPeriod } from "@/lib/monthly-reopening";
 import { prisma } from "@/lib/prisma";
+import { assertNoReopenedWorkflow } from "@/lib/operational-workflow/service";
 
 export async function listLegacyMonthlyClosures(code: OperationalSignatureModuleCode) {
   const where = { status: "ASSINADO" as const };
@@ -48,6 +49,10 @@ export async function monthlyPeriodCounts(code: OperationalSignatureModuleCode, 
 }
 
 export async function validateMonthlyClosing(code: OperationalSignatureModuleCode, mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
+  if (code === "temperatura") {
+    const range = monthlyDateRange(mes, ano);
+    await assertNoReopenedWorkflow(db, code, range.gte, range.lt);
+  }
   const counts = await monthlyPeriodCounts(code, mes, ano, db);
   if (!counts.records) throw new Error("Não há registros no período selecionado para fechamento.");
   if (counts.pending) throw new Error(code === "rastreabilidade"
@@ -74,12 +79,18 @@ export async function closeReopenedOperationalMonth(params: { user: Authenticate
 
 // This context is chosen by server code, never by a submitted form field.
 export async function closeOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string }, context: "history" | "legacy" | "management" = "history") {
-  const { user, moduleCode, mes, ano } = params;
+  const { moduleCode, mes, ano } = params;
+  let user = params.user;
   const management = context === "management";
   validateMonthlyPeriod(mes, ano);
   if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
+    if (moduleCode === "temperatura") {
+      const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
+      user = await refreshWorkflowActor(tx, user);
+      if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
+    }
     const period = await tx.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes, ano } } });
     if (management && period?.status !== "REABERTO") throw new Error("Este período não está reaberto. Atualize a página.");
     if (!management && period?.status === "REABERTO") throw new Error("Feche este mês reaberto pela área Gerenciamento de Períodos.");

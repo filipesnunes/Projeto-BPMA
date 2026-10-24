@@ -119,32 +119,16 @@ async function main() {
   tables.controleTemperaturaCategoriaRegra=[{id:1,categoriaId:1,categoria:{categoria:'REFRIGERACAO'},temperaturaMin:null,temperaturaMax:4,status:'CONFORME',acaoCorretiva:'Regra preservada',ordem:1,isActive:true}];
   tables.moduloConfiguracao=[{modulo:'CONTROLE_TEMPERATURA_EQUIPAMENTOS',exigirFotoEmAlertaCritico:false}];
   tables.higienizacaoHortifrutiOpcao=[{id:1,tipo:'HORTIFRUTI',nome:'Alface',ativo:true},{id:2,tipo:'PRODUTO_UTILIZADO',nome:'Sanitizante',ativo:true}];
-  const temperature=load('src/app/controle-temperatura-equipamentos/actions.ts');
   const hort=load('src/app/higienizacao-hortifruti/actions.ts');
   const oil=load('src/app/controle-qualidade-oleo/actions.ts');
-  const temp={equipamento:'A',turno:'MANHA',temperaturaAferida:4,data:'2026-10-19'};
+  // Temperature writes now require workflow identity/version and transaction-bound auth.
+  // Exercise them with the real isolated PostgreSQL suite, then reuse its resulting
+  // measurements here to retain the report/time regression checks alongside other modules.
   const freshBefore=new Date();
-  await action(temperature.createRegistroAction,{...temp,horarioAfericao:'23:59',createdAt:'2000-01-01',responsavel:'Falso'});
-  const current=tables.controleTemperaturaEquipamento[0];
-  assert.equal(current.horarioAfericao,'15:00','Current-day time remains automatic');
-  assert(current.createdAt>=freshBefore);assert.equal(current.responsavel,actor.nomeCompleto);
-  await action(temperature.createRegistroAction,{...temp,data:'2026-10-18',horarioAfericao:'07:35'});
-  await action(temperature.createRegistroAction,{...temp,data:'2026-10-18',turno:'TARDE',horarioAfericao:'14:47'});
-  const morning=tables.controleTemperaturaEquipamento[1],afternoon=tables.controleTemperaturaEquipamento[2];
-  assert.equal(morning.horarioAfericao,'07:35');assert.equal(afternoon.horarioAfericao,'14:47');
-  assert.equal(dates.formatAppDateInput(morning.data),'2026-10-18');assert(morning.createdAt>=freshBefore);
-  await action(temperature.createRegistroAction,{...temp,equipamento:'B',data:'2026-10-18',horarioNaoInformado:true,justificativaHorario:'Anotação original sem horário legível.'});
-  const unknown=tables.controleTemperaturaEquipamento[3];assert.equal(unknown.horarioAfericao,null);assert.equal(unknown.horarioNaoInformado,true);
-  assert(unknown.justificativaHorario.includes('Anotação'));
-  const tempCount=tables.controleTemperaturaEquipamento.length;
-  for(const extra of [{},{horarioAfericao:'7:35'},{horarioAfericao:'24:00'},{horarioAfericao:'12:60'},{horarioNaoInformado:true},{horarioNaoInformado:true,justificativaHorario:'   '}]){
-    await action(temperature.createRegistroAction,{...temp,equipamento:'C',data:'2026-10-18',...extra},'error');
-  }
-  await action(temperature.createRegistroAction,{...temp,data:'2026-10-18',horarioAfericao:'08:35'},'error');
-  await action(temperature.createRegistroAction,{...temp,equipamento:'C',horarioNaoInformado:true,justificativaHorario:'Não permitido hoje'},'error');
-  assert.equal(tables.controleTemperaturaEquipamento.length,tempCount);
-  await action(temperature.createRegistroAction,{...temp,equipamento:'D',data:'2026-10-18',statusOperacionalEquipamento:'MANUTENCAO',observacaoStatusOperacional:'Em manutenção'});
-  assert.equal(tables.controleTemperaturaEquipamento.at(-1).horarioAfericao,null,'Maintenance never invents a measurement time');
+  require('node:child_process').execFileSync(process.execPath,[path.join(__dirname,'test-temperature-workflow.cjs')],{stdio:'inherit'});
+  const fixtures=JSON.parse(fs.readFileSync(path.join(outputDir,'temperature-workflow/retro-fixtures.json'),'utf8'),(key,value)=>['data','createdAt','updatedAt'].includes(key)&&value?new Date(value):value);
+  const {current,morning,afternoon}=fixtures; void afternoon;
+  tables.controleTemperaturaEquipamento=Object.values(fixtures);
 
   const horticulture={data:'2026-10-19',hortifruti:'Alface',produtoUtilizado:'Sanitizante',inicioProcesso:'08:10',terminoProcesso:'08:25'};
   await action(hort.createRegistroAction,horticulture);
@@ -168,7 +152,7 @@ async function main() {
   const legacyHort={id:99,data:date('2026-10-16'),hortifruti:'Alface',produtoUtilizado:'Sanitizante',inicioProcesso:'07:00',terminoProcesso:'07:15',duracaoMinutos:15,responsavel:'Responsável anterior',horarioNaoInformado:false,createdAt:new Date('2026-10-16T11:00:00Z'),updatedAt:new Date('2026-10-16T11:00:00Z')};
   tables.higienizacaoHortifruti.push(legacyHort);
   tables.controleTemperaturaEquipamento.push({...current,id:90,equipamento:'C',data:date('2026-10-16'),horarioAfericao:null,createdAt:new Date('2026-10-16T11:23:00Z')});
-  for(const [fn,values] of [[temperature.createRegistroAction,{...temp,equipamento:'C'}],[hort.createRegistroAction,horticulture],[oil.createRegistroAction,{temperatura:170}]]){
+  for(const [fn,values] of [[hort.createRegistroAction,horticulture],[oil.createRegistroAction,{temperatura:170}]]){
     await action(fn,{...values,data:'2026-10-20'},'error');
   }
   assert.equal(utils.temperatureMeasurementTime({data:date('2026-10-18'),createdAt:now}),'-','Legacy retroactive rows do not acquire an invented time');
@@ -183,7 +167,7 @@ async function main() {
   const auditHtml=renderToStaticMarkup(ProcedureTimeAudit({record:morning,temperature:true}));
   assert(auditHtml.includes('Lançamento retroativo'));assert(auditHtml.includes('Lançado em:'));assert(auditHtml.includes('07:35'));
   assert.equal(JSON.stringify(tables.controleTemperaturaEquipamento),temperatureSnapshot);assert.equal(JSON.stringify(tables.higienizacaoHortifruti),hortSnapshot);
-  for(const [code,fn,values] of [['temperatura',temperature.createRegistroAction,{...temp,equipamento:'C',horarioAfericao:'07:35'}],['hortifruti',hort.createRegistroAction,horticulture],['oleo',oil.createRegistroAction,{temperatura:170}]]){
+  for(const [code,fn,values] of [['hortifruti',hort.createRegistroAction,horticulture],['oleo',oil.createRegistroAction,{temperatura:170}]]){
     tables.fechamentoMensalModulo=[{moduloCodigo:code,mes:10,ano:2026,status:'FECHADO'}];
     const result=await action(fn,{...values,data:'2026-10-17'},'error');assert(result.get('feedback').includes('fechado'));
   }

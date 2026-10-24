@@ -1,11 +1,10 @@
 "use server";
+import { saveTemperatureWorkflowAction } from "./workflow-actions";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
-import { correctiveActionWithPersistence, previousScheduledShift } from "./persistence";
-import { formatAppDateInput, getAppDate, parseAppDateInput } from "@/lib/date-time";
-import { assertProcedureDate, assertProcedureTime, operationalTime, readUnreportedTime } from "@/lib/procedure-time";
+import { getRegistroPayload } from "./record-payload";
 
 import {
   ModuloDocumento,
@@ -36,17 +35,12 @@ import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMont
 import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
-  findCatalogOptionByName,
-  getCategoryParameterByCategory,
   hasCatalogOptionWithSameName,
   parseEquipmentCategory,
   parseOptionType,
   sanitizeCatalogName
 } from "./catalog";
 import {
-  findMatchingTemperatureRule,
-  getAutomaticCorrectiveAction,
-  getCurrentShift,
   getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
@@ -54,7 +48,6 @@ import {
   isCorrectiveActionRequired,
   parseNullableTemperatureInput,
   parsePositiveInt,
-  parseTemperatureInput
 } from "./utils";
 
 const MODULE_PATH = "/controle-temperatura-equipamentos";
@@ -150,37 +143,8 @@ async function ensureUniqueTemperatureMeasurement(params: {
   }
 }
 
-function parseShiftValue(value: string): TurnoTemperaturaEquipamento | null {
-  if (value === TurnoTemperaturaEquipamento.MANHA) {
-    return TurnoTemperaturaEquipamento.MANHA;
-  }
-
-  if (value === TurnoTemperaturaEquipamento.TARDE) {
-    return TurnoTemperaturaEquipamento.TARDE;
-  }
-
-  return null;
-}
-
 function getShiftLabel(turno: TurnoTemperaturaEquipamento): string {
   return turno === TurnoTemperaturaEquipamento.MANHA ? "Manhã" : "Tarde";
-}
-
-function getConfiguredEquipmentShifts(equipment: {
-  turnoManha: boolean;
-  turnoTarde: boolean;
-}): TurnoTemperaturaEquipamento[] {
-  const shifts: TurnoTemperaturaEquipamento[] = [];
-
-  if (equipment.turnoManha) {
-    shifts.push(TurnoTemperaturaEquipamento.MANHA);
-  }
-
-  if (equipment.turnoTarde) {
-    shifts.push(TurnoTemperaturaEquipamento.TARDE);
-  }
-
-  return shifts;
 }
 
 function parseConfiguredShiftsFromFormData(formData: FormData): {
@@ -213,139 +177,6 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return isOperationalMonthClosed("temperatura", mes, ano);
 }
 
-async function getRegistroPayload(formData: FormData, responsavelLogado: string, context: { data: Date; turno: TurnoTemperaturaEquipamento }) {
-  const equipamentoInput = getInputValue(formData, "equipamento");
-  const temperaturaAferidaInput = getInputValue(formData, "temperaturaAferida");
-  const observacaoInput =
-    getInputValue(formData, "observacaoStatusOperacional") ||
-    getInputValue(formData, "observacoes");
-  const statusOperacionalEquipamento = parseOperationalStatusValue(
-    getInputValue(formData, "statusOperacionalEquipamento")
-  );
-
-  if (!equipamentoInput) {
-    throw new Error("Preencha todos os campos obrigatórios do registro.");
-  }
-
-  if (!responsavelLogado.trim()) {
-    throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
-  }
-
-  const equipamentoOption = await findCatalogOptionByName(
-    TipoOpcaoTemperaturaEquipamento.EQUIPAMENTO,
-    equipamentoInput,
-    true
-  );
-  if (!equipamentoOption) {
-    throw new Error("O equipamento selecionado não existe ou está inativo.");
-  }
-
-  if (!equipamentoOption.categoriaEquipamento) {
-    throw new Error("O equipamento selecionado está sem categoria configurada.");
-  }
-
-  const turnosConferencia = getConfiguredEquipmentShifts(equipamentoOption);
-  if (turnosConferencia.length === 0) {
-    throw new Error("O equipamento selecionado está sem turnos de conferência configurados.");
-  }
-
-  if (statusOperacionalEquipamento !== StatusOperacionalEquipamento.EM_OPERACAO) {
-    return {
-      equipamento: equipamentoOption.nome,
-      categoriaEquipamento: equipamentoOption.categoriaEquipamento,
-      turnosConferencia,
-      statusOperacionalEquipamento,
-      temperaturaAferida: null,
-      status: StatusTemperaturaEquipamento.CONFORME,
-      acaoCorretiva: null,
-      responsavel: responsavelLogado.trim(),
-      observacoes: null,
-      observacaoStatusOperacional: observacaoInput || null
-    };
-  }
-
-  if (!temperaturaAferidaInput) {
-    throw new Error("Informe a temperatura aferida do equipamento em operação.");
-  }
-
-  const temperaturaAferida = parseTemperatureInput(temperaturaAferidaInput);
-  if (temperaturaAferida === null) {
-    throw new Error("Informe uma temperatura válida.");
-  }
-
-  const categoriaParametro = await getCategoryParameterByCategory(
-    equipamentoOption.categoriaEquipamento,
-    false
-  );
-
-  if (!categoriaParametro) {
-    throw new Error(
-      "A categoria deste equipamento está sem parâmetros configurados. Atualize em Gerenciar Opções."
-    );
-  }
-
-  const regrasAtivas = await prisma.controleTemperaturaCategoriaRegra.findMany({
-    where: {
-      categoriaId: categoriaParametro.id,
-      isActive: true
-    },
-    orderBy: [{ ordem: "asc" }, { id: "asc" }]
-  });
-
-  if (regrasAtivas.length === 0) {
-    throw new Error(
-      "A categoria deste equipamento está sem regras de temperatura ativas. Atualize em Gerenciar Opções."
-    );
-  }
-
-  const regraCorrespondente = findMatchingTemperatureRule(
-    temperaturaAferida,
-    regrasAtivas
-  );
-
-  if (!regraCorrespondente) {
-    throw new Error(
-      "Não existe regra de temperatura correspondente para esta categoria. Ajuste as regras em Gerenciar Opções."
-    );
-  }
-
-  const status = regraCorrespondente.status;
-  let acaoCorretiva =
-    regraCorrespondente.acaoCorretiva.trim() ||
-    getAutomaticCorrectiveAction(status, categoriaParametro);
-
-  if (status === "ALERTA" && /persistir\s+no\s+turno\s+seguinte/i.test(acaoCorretiva)) {
-    const previousShift = previousScheduledShift(formatAppDateInput(context.data), context.turno, turnosConferencia);
-    const previous = await prisma.controleTemperaturaEquipamento.findFirst({
-      where: { equipamento: equipamentoOption.nome, data: parseAppDateInput(previousShift.data)!, turno: previousShift.turno },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: { equipamento: true, categoriaEquipamento: true, data: true, turno: true, statusOperacionalEquipamento: true, temperaturaAferida: true, status: true }
-    });
-    acaoCorretiva = correctiveActionWithPersistence({ equipamento: equipamentoOption.nome,
-      categoria: equipamentoOption.categoriaEquipamento, data: formatAppDateInput(context.data), turno: context.turno,
-      shifts: turnosConferencia, rule: { ...regraCorrespondente, acaoCorretiva }, rules: regrasAtivas,
-      previous: previous ? { ...previous, data: formatAppDateInput(previous.data) } : null });
-  }
-
-  if (isCorrectiveActionRequired(status) && !acaoCorretiva) {
-    throw new Error(
-      "A Ação Corretiva é obrigatória quando a temperatura estiver em Alerta ou Crítico."
-    );
-  }
-
-  return {
-    equipamento: equipamentoOption.nome,
-    categoriaEquipamento: equipamentoOption.categoriaEquipamento,
-    turnosConferencia,
-    statusOperacionalEquipamento,
-    temperaturaAferida,
-    status,
-    acaoCorretiva,
-    responsavel: responsavelLogado.trim(),
-    observacoes: observacaoInput || null,
-    observacaoStatusOperacional: null
-  };
-}
 
 function parseTemperatureField(formData: FormData, key: string): number | null {
   const parsed = parseNullableTemperatureInput(getInputValue(formData, key));
@@ -385,18 +216,6 @@ function parseStatusValue(value: string): StatusTemperaturaEquipamento | null {
   return null;
 }
 
-function parseOperationalStatusValue(value: string): StatusOperacionalEquipamento {
-  if (value === StatusOperacionalEquipamento.MANUTENCAO) {
-    return StatusOperacionalEquipamento.MANUTENCAO;
-  }
-
-  if (value === StatusOperacionalEquipamento.INATIVO) {
-    return StatusOperacionalEquipamento.INATIVO;
-  }
-
-  return StatusOperacionalEquipamento.EM_OPERACAO;
-}
-
 async function validateRuleOrderAvailability(
   categoriaId: number,
   ordem: number,
@@ -433,98 +252,7 @@ async function ensureCategoryHasAnotherActiveRule(
 }
 
 export async function createRegistroAction(formData: FormData) {
-  let returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(
-      actor,
-      "modulo.temperatura.criar_registro",
-      "Seu perfil não pode criar registros de temperatura."
-    );
-
-    const dataInput = formData.get("data");
-    // Older callers without a date retain today's default; an explicit date must be valid.
-    const data = dataInput === null ? getTodaySystemDate() :
-      typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseAppDateInput(dataInput) : null;
-    if (!data) throw new Error("Informe uma data válida para o registro.");
-    const procedureNow = getCurrentSystemDateTime();
-    assertProcedureDate(data, procedureNow);
-    const turnoInput = getInputValue(formData, "turno");
-    const turno = turnoInput ? parseShiftValue(turnoInput) : getCurrentShift();
-    if (!turno) throw new Error("Selecione um turno de conferência válido.");
-    const returnUrl = new URL(returnTo, "http://localhost");
-    returnUrl.searchParams.set("dataRegistro", formatAppDateInput(data));
-    returnUrl.searchParams.set("turnoRegistro", turno);
-    returnTo = `${returnUrl.pathname}?${returnUrl.searchParams.toString()}`;
-    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data, turno });
-    const { turnosConferencia, ...payload } = registroPayload;
-    const retroactive = formatAppDateInput(data) < formatAppDateInput(getAppDate(procedureNow));
-    const applicableTime = payload.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
-    const timeDeclaration = readUnreportedTime(formData, retroactive && applicableTime);
-    const rawTime = getInputValue(formData, "horarioAfericao");
-    const horarioAfericao = !applicableTime || timeDeclaration.horarioNaoInformado ? null
-      : retroactive ? rawTime : operationalTime(procedureNow);
-    if (horarioAfericao !== null) assertProcedureTime(horarioAfericao, data, procedureNow);
-    const { mes, ano } = getMonthYear(data);
-
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error(
-        `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado e não aceita novos registros.`
-      );
-    }
-
-    ensureEquipmentSupportsShift(turnosConferencia, turno);
-
-    await ensureUniqueTemperatureMeasurement({
-      equipamento: payload.equipamento,
-      data,
-      turno
-    });
-
-    const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
-    const fotoDesvio =
-      payload.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO
-        ? await parseImageUploadFromFormData({
-            formData,
-            key: "fotoDesvio",
-            maxBytes: TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES,
-            required: exigirFotoEmAlertaCritico && isCorrectiveActionRequired(payload.status),
-            requiredMessage:
-              "Anexe uma foto da evidência para salvar este registro."
-          })
-        : null;
-    const fotoArmazenada = fotoDesvio
-      ? await saveTemperatureEquipmentEvidenceImage(fotoDesvio)
-      : null;
-
-    await prisma.controleTemperaturaEquipamento.create({
-      data: {
-        ...payload,
-        ...timeDeclaration,
-        horarioAfericao,
-        data,
-        turno,
-        fotoNome: fotoDesvio?.fileName ?? null,
-        fotoMimeType: fotoArmazenada?.mimeType ?? null,
-        fotoBase64: null,
-        fotoUrl: fotoArmazenada?.url ?? null,
-        fotoTamanhoBytes: fotoArmazenada?.size ?? null,
-        fotoCriadoEm: fotoArmazenada?.createdAt ?? null,
-        fotoCriadoPorUsuarioId: fotoArmazenada ? actor.id : null
-      }
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Criado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
-    );
-  }
+  return saveTemperatureWorkflowAction(formData);
 }
 
 export async function updateRegistroAction(formData: FormData) {
@@ -546,6 +274,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("Registro não encontrado.");
     }
 
+    if (existing.fluxoId) throw new Error("Abra a aferição no formulário versionado para editar.");
     const existingPeriod = getMonthYear(existing.data);
     if (await isMonthSigned(existingPeriod.mes, existingPeriod.ano)) {
       throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
@@ -780,6 +509,7 @@ export async function signRegistroNutricionistaAction(formData: FormData) {
       where: { id },
       select: {
         id: true,
+        fluxoId: true,
         assinaturaNutricionistaDataHora: true
       }
     });
@@ -788,6 +518,7 @@ export async function signRegistroNutricionistaAction(formData: FormData) {
       throw new Error("Registro não encontrado.");
     }
 
+    if (registro.fluxoId) throw new Error("Valide a versão atual pelo formulário da aferição.");
     if (registro.assinaturaNutricionistaDataHora) {
       throw new Error("Este registro já foi assinado pelo supervisor.");
     }

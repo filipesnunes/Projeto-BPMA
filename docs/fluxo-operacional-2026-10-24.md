@@ -122,3 +122,7 @@ substituem esse teste. Não foram validados fluxos novos no navegador porque
 as interfaces ainda não foram implementadas.
 
 Sem seed, reset, db push, migration em produção, commit ou push.
+
+## Continuidade — etapa 2
+
+A integração piloto de Temperatura foi implementada posteriormente. Consulte [o relatório da etapa 2](temperatura-fluxo-operacional-2026-10-24.md) para o estado atual, migrations, legados e validações. As limitações de integração acima descrevem a entrega original do núcleo.

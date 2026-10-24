@@ -7,7 +7,7 @@ const { PGlite } = require('../.data/validation/pg-test/node_modules/@electric-s
  const db = new PGlite();
  try {
   const root=path.join(__dirname,'../prisma/migrations');
-  const migrations=fs.readdirSync(root).filter(n=>fs.existsSync(path.join(root,n,'migration.sql'))).sort();
+  const migrations=fs.readdirSync(root).filter(n=>n<='20261020000100_registros_retroativos_exclusao_controlada'&&fs.existsSync(path.join(root,n,'migration.sql'))).sort();
   const last=migrations.pop(); assert.equal(last,'20261020000100_registros_retroativos_exclusao_controlada');
   for(const name of migrations) await db.exec(fs.readFileSync(path.join(root,name,'migration.sql'),'utf8'));
   await db.exec(`INSERT INTO higienizacao_hortifruti (data,hortifruti,"produtoUtilizado","inicioProcesso","terminoProcesso","duracaoMinutos",responsavel,"updatedAt") VALUES ('2026-09-18','Alface','Sanitizante','08:10','08:12',2,'Responsável antigo','2026-09-18');

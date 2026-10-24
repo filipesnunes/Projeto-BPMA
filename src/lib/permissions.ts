@@ -157,43 +157,43 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     modulo: "hortifruti",
     grupo: "Higienização de Hortifruti",
     prefixo: "modulo.hortifruti",
-    acoes: ["acessar", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_cadastros", "assinar_dia", "assinar_fechamento_mensal", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_cadastros", "assinar_dia", "assinar_fechamento_mensal", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "amostras",
     grupo: "Amostras / Controle de Buffet",
     prefixo: "modulo.amostras",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_servico", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_servico", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "temperatura",
     grupo: "Temperatura de Equipamentos",
     prefixo: "modulo.temperatura",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "oleo",
     grupo: "Qualidade do Óleo",
     prefixo: "modulo.oleo",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "rastreabilidade",
     grupo: "Rastreabilidade",
     prefixo: "modulo.rastreabilidade",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_configuracoes", "assinar_dia", "assinar_fechamento_mensal", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "gerenciar_configuracoes", "assinar_dia", "assinar_fechamento_mensal", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "limpeza_diaria",
     grupo: "Plano de Limpeza Diário",
     prefixo: "modulo.limpeza_diaria",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "limpeza_semanal",
     grupo: "Plano de Limpeza Semanal",
     prefixo: "modulo.limpeza_semanal",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_todos", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "chamados",
@@ -499,7 +499,7 @@ function buildModulePermissions(params: {
       grupo: params.grupo,
       modulo: params.modulo,
       acao,
-      sensivel: /editar_historico|excluir_registro|reabrir_mes/.test(acao)
+      sensivel: /editar_historico|excluir_registro|reabrir_mes|reabrir_registro/.test(acao)
     };
   });
 }
@@ -558,7 +558,8 @@ function getFriendlyActionName(acao: string): string {
     gerenciar_configuracoes: "Gerenciar configurações",
     gerenciar_anexos: "Gerenciar anexos",
     fechar_mes: "Fechar mês",
-    reabrir_mes: "Reabrir mês"
+    reabrir_mes: "Reabrir mês",
+    reabrir_registro: "Reabrir registro"
   };
 
   return labels[acao] ?? acao;

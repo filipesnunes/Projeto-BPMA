@@ -10,7 +10,7 @@ export const OPERATIONAL_MODELS = new Set([
 // Applied at the shared Prisma boundary, including transactions, counts and reports.
 // Catalogs, signatures, closures and immutable deletion snapshots are not filtered.
 export const activeOperationalRecords: Prisma.Middleware = async (params, next) => {
-  if (params.model === "ControleTemperaturaEquipamento" && ["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"].includes(params.action)) {
+  if (["ControleTemperaturaEquipamento", "ControleQualidadeOleoRegistro"].includes(params.model ?? "") && ["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"].includes(params.action)) {
     params.args ??= {};
     params.args.where = { ...params.args.where, AND: [...(Array.isArray(params.args.where?.AND) ? params.args.where.AND : params.args.where?.AND ? [params.args.where.AND] : []), {
       OR: [{ fluxoId: null }, { fluxo: { preenchimentoCompleto: true, excluidoEm: null } }]

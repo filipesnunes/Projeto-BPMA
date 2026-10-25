@@ -588,6 +588,8 @@ model ControleTemperaturaCategoriaRegra {
 }
 
 model ControleQualidadeOleoRegistro {
+  fluxoId String? @unique
+  fluxo FluxoOperacional? @relation(fields: [fluxoId], references: [id], onDelete: Restrict)
   horarioExecucao String? @db.VarChar(5)
   horarioNaoInformado Boolean @default(false)
   justificativaHorario String?
@@ -1407,6 +1409,7 @@ model ExclusaoRegistroOperacional {
 
 // Additive workflow metadata. Existing operational rows and signatures remain untouched.
 model FluxoOperacional {
+  oleo ControleQualidadeOleoRegistro?
   preenchimentoCompleto Boolean @default(false)
   excluidoEm DateTime?
   temperatura ControleTemperaturaEquipamento?

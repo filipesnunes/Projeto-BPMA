@@ -1,0 +1,86 @@
+﻿// Integration against a disposable local PostgreSQL container, never DATABASE_URL.
+// Start: docker run --name bpma-temperature-workflow-test -e POSTGRES_PASSWORD=isolated_test_only -e POSTGRES_DB=workflow_test -p 127.0.0.1:55479:5432 -d postgres:16
+const assert = require('node:assert/strict');
+const fs = require('node:fs'); const path = require('node:path'); const Module = require('node:module');
+const { execFileSync } = require('node:child_process'); const ts = require('typescript');
+const root = path.resolve(__dirname, '..'); const database = 'workflow_' + Date.now();
+execFileSync('docker',['exec','bpma-temperature-workflow-test','psql','-U','postgres','-d','workflow_test','-c',`CREATE DATABASE ${database}`],{stdio:'pipe'});
+const url = `postgresql://postgres:isolated_test_only@127.0.0.1:55479/${database}`;
+execFileSync(process.execPath,[path.join(root,'node_modules/prisma/build/index.js'),'migrate','deploy'],{cwd:root,env:{...process.env,DATABASE_URL:url,DIRECT_URL:url},stdio:'pipe'});
+const mocks = new Map(); const originalLoad = Module._load;
+Module._load = function(name,parent,main){if(mocks.has(name))return mocks.get(name);if(name==='server-only')return {};if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return originalLoad.call(this,name,parent,main);};
+for(const ext of ['.ts','.tsx'])require.extensions[ext]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText,f);
+const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient({datasources:{db:{url}}});
+prisma.$use(require('../src/lib/active-operational-records.ts').activeOperationalRecords);
+mocks.set('@/lib/prisma',{prisma}); mocks.set('next/cache',{revalidatePath(){}});
+class Redirect extends Error {constructor(url){super('redirect');this.url=url;}}
+mocks.set('next/navigation',{redirect(url){throw new Redirect(url);}});
+mocks.set('@/lib/redirect-error',{rethrowIfRedirectError(e){if(e instanceof Redirect)throw e;}});
+let user; mocks.set('@/lib/auth-session',{getCurrentUser:async()=>user,getCurrentUserForAction:async()=>user});
+const dates=require('../src/lib/date-time.ts');let today=new Date('2026-10-25T00:00:00Z');dates.getAppDate=()=>today;dates.getAppNow=()=>new Date('2026-10-25T20:00:00Z');
+const service=require('../src/lib/operational-workflow/service.ts');
+const adapter=require('../src/app/controle-qualidade-oleo/workflow-adapter.ts');
+const actions=require('../src/app/controle-qualidade-oleo/workflow-actions.ts');
+const {deleteOperationalRecord}=require('../src/lib/operational-deletion.ts');
+const monthly=require('../src/lib/monthly-periods.ts');
+const {hashPassword}=require('../src/lib/password.ts');
+const actor=tx=>adapter.refreshWorkflowActor(tx,user);
+const {randomUUID}=require('node:crypto');
+const key=(date='2026-10-25')=>date+':'+randomUUID();
+const form=(extra={})=>{const f=new FormData();for(const[k,v]of Object.entries({temperatura:'170',semUtilizacao:'false',horarioExecucao:'09:40',intent:'draft',...extra}))f.set(k,v);return f;};
+const save=(key,expectedVersion=0,extra={})=>service.saveWorkflow({actor,adapter:adapter.oilAdapter,key,expectedVersion,input:form(extra)});
+const sign=(units,daily=false)=>service.signWorkflow({actor,bridge:adapter.oilSignatureBridge('test-password',daily),scope:units.map(u=>({id:u.id,version:u.versao}))});
+const reopen=(u,extra={})=>service.reopenWorkflow({actor,module:'oleo',id:u.id,expectedVersion:u.versao,reason:'Correção documentada',fromEdit:false,...extra});
+const latest=id=>prisma.fluxoOperacional.findUniqueOrThrow({where:{id}});
+const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+mocks.set('next/link',({href,children,...props})=>React.createElement('a',{...props,href},children));
+const view=require('../src/app/controle-qualidade-oleo/workflow-view.tsx');
+const list=async(history=false,query={})=>renderToStaticMarkup(await view.OilWorkflowList({history,query}));
+const editor=async(chave,query={})=>renderToStaticMarkup(await view.OilWorkflowEditor({query:{chave,...query}}));
+(async()=>{
+ assert.equal((await prisma.$queryRaw`select current_database() name`)[0].name,database);
+ const account=await prisma.usuario.create({data:{nomeCompleto:'Supervisor Teste',nomeUsuario:'workflow-test',senhaHash:hashPassword('test-password'),perfil:'DEV'}});
+ const session=await prisma.usuarioSessao.create({data:{usuarioId:account.id,tokenHash:'isolated-session',expiraEm:new Date('2030-01-01')}});user={...account,sessaoId:session.id,permissoes:[]};
+ await prisma.controleQualidadeOleoOpcaoFita.createMany({data:[{rotulo:'2%',descricao:'Descrição cadastral',statusAssociado:'ADEQUADO',ordem:1},{rotulo:'7%',descricao:'Descartar',statusAssociado:'DESCARTAR',ordem:2}]});
+ assert.equal(await prisma.fluxoOperacional.count(),0);assert.match(await list(),/Nenhuma verificação/);assert.equal(await prisma.fluxoOperacional.count(),0);
+ const aKey=key();let a=await save(aKey,0,{temperatura:'',observacao:'Rascunho do óleo'});assert.equal(a.estado,'PENDENTE');assert.equal(await prisma.controleQualidadeOleoRegistro.count(),0);assert.match(await editor(aKey),/Rascunho do óleo/);
+ a=await save(aKey,a.versao,{fitaOleo:'2%',observacao:'Primeira verificação'});assert.equal(a.estado,'COMPLETO');const original=await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:a.id}});assert.equal(original.temperatura,170);assert.equal(original.fitaOleo,'2%');assert.equal(original.horarioExecucao,'17:00');assert.equal(original.status,'ADEQUADO');assert.equal(original.responsavel,'Supervisor Teste');
+ a=await save(aKey,a.versao,{temperatura:'',observacao:'Ainda incompleto'});assert.equal(a.estado,'PENDENTE');assert.equal(await prisma.controleQualidadeOleoRegistro.count(),0);
+ a=await save(aKey,a.versao,{fitaOleo:'2%'});assert.equal((await prisma.controleQualidadeOleoRegistro.findFirstOrThrow()).id,original.id);assert.equal(await prisma.controleQualidadeOleoRegistro.count(),1);
+ let b=await save(key(),0,{temperatura:'185',fitaOleo:'7%'});let c=await save(key());assert.equal(await prisma.controleQualidadeOleoRegistro.count(),3);assert.equal((await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:b.id}})).temperaturaCritica,true);
+ assert.doesNotMatch(await list(),/COMPLETO/);assert.match(await list(true),/COMPLETO/);
+ await sign([a]);a=await latest(a.id);assert.equal(a.estado,'FECHADO');assert.equal((await latest(b.id)).estado,'COMPLETO');
+ await sign([b,c],true);b=await latest(b.id);c=await latest(c.id);assert.equal(b.assinaturaVigenteId,c.assinaturaVigenteId);assert.equal(await prisma.fluxoAssinaturaVinculo.count(),3);assert.equal(await prisma.assinaturaDiariaModulo.count(),0);
+ const future=await save(key());assert.equal(future.estado,'COMPLETO');assert.equal(future.assinaturaVigenteId,null);
+ await assert.rejects(()=>save(aKey,a.versao),/fechado/i);await assert.rejects(()=>deleteOperationalRecord({user,target:'oleo',id:original.id,reason:'teste',expectedVersion:a.versao}),/Reabra/);
+ const events=await prisma.fluxoEvento.count();assert.match(await editor(aKey,{confirmar:'reabrir'}),/Cancelar/);assert.equal(await prisma.fluxoEvento.count(),events);await assert.rejects(()=>reopen(a,{reason:''}),/justificativa/);
+ const oldSignature=a.assinaturaVigenteId;a=await reopen(a);assert.equal(a.estado,'REABERTO');assert.equal(a.assinaturaVigenteId,null);assert.equal((await latest(b.id)).estado,'FECHADO');assert.match(await list(),/REABERTO/);
+ await assert.rejects(()=>monthly.closeOperationalMonth({user,moduleCode:'oleo',mes:10,ano:2026}),/reabertos/);
+ await sign([a]);a=await latest(a.id);assert.equal(a.estado,'FECHADO');assert.notEqual(a.assinaturaVigenteId,oldSignature);assert.doesNotMatch(await list(),/REABERTO/);
+ let retro=await save(key('2026-10-23'),0,{horarioExecucao:'07:35',observacao:'Retroativo original'});const retroRow=await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:retro.id}});assert.equal(retroRow.horarioExecucao,'07:35');assert.equal(retroRow.data.toISOString().slice(0,10),'2026-10-23');assert(retroRow.createdAt>=original.createdAt);
+ await sign([retro]);retro=await reopen(await latest(retro.id));assert.match(await list(),/2026-10-23/);
+ const unknown=await save(key('2026-10-22'),0,{horarioExecucao:'',horarioNaoInformado:'true',justificativaHorario:'Anotação sem horário'});assert.equal((await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:unknown.id}})).horarioExecucao,null);
+ const unused=await save(key('2026-10-21'),0,{temperatura:'',fitaOleo:'',semUtilizacao:'true',horarioExecucao:''});const unusedRow=await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:unused.id}});assert.equal(unusedRow.status,'SEM_UTILIZACAO');assert.equal(unusedRow.temperatura,null);assert.equal(unusedRow.horarioExecucao,null);
+ await assert.rejects(()=>save(key(),0,{temperatura:'119',fitaOleo:'2%'}),/120/);await assert.rejects(()=>save(key(),0,{temperatura:'errada'}),/temperatura válida/);await assert.rejects(()=>save(key(),0,{fitaOleo:'inexistente'}),/opção válida/);await assert.rejects(()=>save(key('2026-10-26')),/futuro/);
+ const withoutStrip=await save(key(),0,{temperatura:'110',fitaOleo:''});assert.equal(withoutStrip.estado,'COMPLETO');
+ await prisma.usuario.update({where:{id:account.id},data:{perfil:'COLABORADOR'}});
+ await assert.rejects(()=>reopen(b),/permissão/);await assert.rejects(()=>save(retro.chave,retro.versao),/permissão/);
+ const editable=await save(future.chave,future.versao,{temperatura:'175'});assert.equal(editable.estado,'COMPLETO');
+ await prisma.usuario.update({where:{id:account.id},data:{perfil:'DEV'}});
+ a=await reopen(a);const concurrent=await Promise.allSettled([save(aKey,a.versao,{temperatura:'160'}),save(aKey,a.versao,{temperatura:'165'})]);assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);a=await latest(a.id);
+ const competing=await Promise.allSettled([sign([a]),save(aKey,a.versao)]);assert.equal(competing.filter(r=>r.status==='fulfilled').length,1);a=await latest(a.id);if(a.estado!=='FECHADO'){await sign([a]);a=await latest(a.id);}
+ const double=await Promise.allSettled([reopen(a),reopen(a)]);assert.equal(double.filter(r=>r.status==='fulfilled').length,1);a=await latest(a.id);await sign([a]);a=await latest(a.id);
+ const legacy=await prisma.controleQualidadeOleoRegistro.create({data:{data:new Date('2026-09-18'),temperatura:170,fitaOleo:'2%',status:'ADEQUADO',orientacao:'Original',responsavel:'Responsável antigo',assinaturaSupervisorNome:'Supervisor antigo',assinaturaSupervisorEm:new Date('2026-09-18T15:00Z')}});const legacySnapshot=JSON.stringify(legacy);
+ const route=require('../src/app/relatorios/controle-qualidade-oleo/mensal/route.ts');const {NextRequest}=require('next/server');const response=await route.GET(new NextRequest('http://localhost/relatorios/controle-qualidade-oleo/mensal?mes=10&ano=2026'));assert.equal(response.status,200);const report=await response.text();assert.match(report,/Reaberto/);assert.match(report,/07:35/);assert.match(report,/Imprimir/);assert.match(report,/7%/);assert.equal(JSON.stringify(await prisma.controleQualidadeOleoRegistro.findUnique({where:{id:legacy.id}})),legacySnapshot);
+ await deleteOperationalRecord({user,target:'oleo',id:unusedRow.id,reason:'Teste de exclusão individual',expectedVersion:unused.versao});assert.equal(await prisma.controleQualidadeOleoRegistro.findUnique({where:{id:unusedRow.id}}),null);assert.equal(await prisma.exclusaoRegistroOperacional.count(),1);const replacement=await save(key('2026-10-21'),0,{temperatura:'160'});assert.notEqual(replacement.id,unused.id);assert.equal(await prisma.controleQualidadeOleoRegistro.findUnique({where:{id:unusedRow.id}}),null);assert.equal((await latest(b.id)).estado,'FECHADO');
+ await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_oil_event() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit failed'; END $$`);await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_oil BEFORE INSERT ON fluxo_evento FOR EACH ROW EXECUTE FUNCTION reject_oil_event()`);
+ const count=await prisma.fluxoVersao.count();await assert.rejects(()=>reopen(a));assert.equal((await latest(a.id)).estado,'FECHADO');assert.equal(await prisma.fluxoVersao.count(),count);await prisma.$executeRawUnsafe('DROP TRIGGER reject_oil ON fluxo_evento');
+ let redirect;try{await actions.saveOilWorkflowAction(form({chave:aKey,versao:'0'}));}catch(e){assert(e instanceof Redirect);redirect=e.url;}assert.match(redirect,/feedbackType=error/);
+ await sign([retro]);const race=await Promise.allSettled([monthly.closeOperationalMonth({user,moduleCode:'oleo',mes:10,ano:2026}),reopen(a)]);assert.equal(race.filter(r=>r.status==='fulfilled').length,1);
+ const month=await prisma.fechamentoMensalModulo.findUnique({where:{moduloCodigo_ano_mes:{moduloCodigo:'oleo',mes:10,ano:2026}}});assert(!(month&&month.status!=='REABERTO'&&(await latest(a.id)).estado==='REABERTO'));
+ if(!month){const current=await latest(a.id);if(current.estado==='REABERTO')await sign([current]);await monthly.closeOperationalMonth({user,moduleCode:'oleo',mes:10,ano:2026});await assert.rejects(()=>save(key()),/competência.*fechada/);await require('../src/lib/monthly-reopening.ts').reopenOperationalMonth({user,moduleCode:'oleo',mes:10,ano:2026});}
+ if(month&&month.status!=='REABERTO'){await assert.rejects(()=>save(key()),/competência.*fechada/);await require('../src/lib/monthly-reopening.ts').reopenOperationalMonth({user,moduleCode:'oleo',mes:10,ano:2026});}
+ today=new Date('2026-10-26');assert.equal((await latest(b.id)).estado,'FECHADO');
+ const dir=path.join(root,'.data/validation/oil-workflow');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'database.txt'),database);fs.writeFileSync(path.join(dir,'report.html'),report);fs.writeFileSync(path.join(dir,'retro-fixture.json'),JSON.stringify(retroRow));
+ console.log('PASS oil PostgreSQL: states, drafts, multiple independent verifications, rules/strip/unused, dates/hours, individual/daily scopes, permissions, reopen cycles, concurrent save/sign/reopen/close, audit rollback, deletion, report, legacy and action validation. Database: '+database);
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>prisma.$disconnect());

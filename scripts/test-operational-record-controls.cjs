@@ -154,7 +154,7 @@ async function testPreviousDayDeletionControls() {
   return elements(node,n=>typeof n.props?.href==='string' && new URL(n.props.href,'http://localhost').searchParams.get('deleteId')===String(id) && n.props.children==='Excluir');
  }
  for(const [target,route] of scenarios) {
-  const pageFile='src/app/'+route+(target==='temperatura'?'/legacy-records.tsx':'/page.tsx'), page=load(pageFile).default;
+  const pageFile='src/app/'+route+(['temperatura','oleo'].includes(target)?'/legacy-records.tsx':'/page.tsx'), page=load(pageFile).default;
   for(const role of ['DEV','GERENTE','NUTRICIONISTA']) {
    seed(target);actor.perfil=role;
    const tree=await page({searchParams:Promise.resolve({})});
@@ -191,14 +191,15 @@ async function testPreviousDayDeletionControls() {
  assert.equal(tables.controleQualidadeOleoRegistro.length,originals.length);
  for(const original of originals.filter(r=>r.id!==2))assert.deepEqual(tables.controleQualidadeOleoRegistro.find(r=>r.id===original.id),original);
  assert.equal(tables.exclusaoRegistroOperacional.length,1);assert.equal(tables.exclusaoRegistroOperacional[0].registroId,2);
- const refreshed=await load('src/app/controle-qualidade-oleo/page.tsx').default({searchParams:Promise.resolve({})});
+ const refreshed=await load('src/app/controle-qualidade-oleo/legacy-records.tsx').default({searchParams:Promise.resolve({})});
  assert.equal(deleteLink(refreshed,2).length,0);assert.equal(deleteLink(refreshed,6).length,1);assert.equal(deleteLink(refreshed,7).length,1);
  const excludedHtml=await report('controle-qualidade-oleo',referenceDates[1].getUTCMonth()+1,referenceDates[1].getUTCFullYear());
  assert(!excludedHtml.includes(originals[1].responsavel));
- const saved=await action(oil.createRegistroAction,{data:dates.formatAppDateInput(referenceDates[1]),horarioExecucao:'08:43',temperatura:170});
- assert.equal(saved.get('feedbackType'),'success');const retro=tables.controleQualidadeOleoRegistro.at(-1);
- await action(oil.deleteRegistroAction,{id:retro.id,justificativaExclusao:'Correção do lançamento retroativo'});
- assert(retro.excluidoEm instanceof Date);
+ // Old callers cannot bypass the versioned creation endpoint. Actual new creation,
+ // retroactive save and deletion are exercised by test-oil-workflow.cjs in PostgreSQL.
+ const countBefore=tables.controleQualidadeOleoRegistro.length;
+ await action(oil.createRegistroAction,{data:dates.formatAppDateInput(referenceDates[1]),horarioExecucao:'08:43',temperatura:170},'error');
+ assert.equal(tables.controleQualidadeOleoRegistro.length,countBefore);
  // Receiving deletion is independent from its readonly/finalized editing state.
  const receivingDetail=load('src/app/rastreabilidade-recebimento/nota/[id]/page.tsx').default;
  for(const role of ['DEV','GERENTE','NUTRICIONISTA'])for(const status of ['IMPORTADA','FINALIZADA']) {

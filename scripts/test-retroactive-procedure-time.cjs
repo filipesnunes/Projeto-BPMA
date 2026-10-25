@@ -120,7 +120,6 @@ async function main() {
   tables.moduloConfiguracao=[{modulo:'CONTROLE_TEMPERATURA_EQUIPAMENTOS',exigirFotoEmAlertaCritico:false}];
   tables.higienizacaoHortifrutiOpcao=[{id:1,tipo:'HORTIFRUTI',nome:'Alface',ativo:true},{id:2,tipo:'PRODUTO_UTILIZADO',nome:'Sanitizante',ativo:true}];
   const hort=load('src/app/higienizacao-hortifruti/actions.ts');
-  const oil=load('src/app/controle-qualidade-oleo/actions.ts');
   // Temperature writes now require workflow identity/version and transaction-bound auth.
   // Exercise them with the real isolated PostgreSQL suite, then reuse its resulting
   // measurements here to retain the report/time regression checks alongside other modules.
@@ -146,13 +145,15 @@ async function main() {
   }
   await action(hort.createRegistroAction,{...horticulture,inicioProcesso:'15:01'},'error');
   assert.equal(tables.higienizacaoHortifruti.length,hortCount);
-  await action(oil.createRegistroAction,{data:'2026-10-18',temperatura:170,horarioExecucao:'09:40'});
-  assert.equal(dates.formatAppDateInput(tables.controleQualidadeOleoRegistro[0].data),'2026-10-18');
-  assert.equal(tables.controleQualidadeOleoRegistro[0].horarioExecucao,'09:40');
+  // Oil writes now run through the real workflow integration suite.
+  require('node:child_process').execFileSync(process.execPath,[path.join(__dirname,'test-oil-workflow.cjs')],{stdio:'inherit'});
+  const oilFixture=JSON.parse(fs.readFileSync(path.join(outputDir,'oil-workflow/retro-fixture.json'),'utf8'),(key,value)=>['data','createdAt','updatedAt'].includes(key)&&value?new Date(value):value);
+  tables.controleQualidadeOleoRegistro=[oilFixture];
+  assert.equal(oilFixture.horarioExecucao,'07:35');
   const legacyHort={id:99,data:date('2026-10-16'),hortifruti:'Alface',produtoUtilizado:'Sanitizante',inicioProcesso:'07:00',terminoProcesso:'07:15',duracaoMinutos:15,responsavel:'Responsável anterior',horarioNaoInformado:false,createdAt:new Date('2026-10-16T11:00:00Z'),updatedAt:new Date('2026-10-16T11:00:00Z')};
   tables.higienizacaoHortifruti.push(legacyHort);
   tables.controleTemperaturaEquipamento.push({...current,id:90,equipamento:'C',data:date('2026-10-16'),horarioAfericao:null,createdAt:new Date('2026-10-16T11:23:00Z')});
-  for(const [fn,values] of [[hort.createRegistroAction,horticulture],[oil.createRegistroAction,{temperatura:170}]]){
+  for(const [fn,values] of [[hort.createRegistroAction,horticulture]]){
     await action(fn,{...values,data:'2026-10-20'},'error');
   }
   assert.equal(utils.temperatureMeasurementTime({data:date('2026-10-18'),createdAt:now}),'-','Legacy retroactive rows do not acquire an invented time');
@@ -167,7 +168,7 @@ async function main() {
   const auditHtml=renderToStaticMarkup(ProcedureTimeAudit({record:morning,temperature:true}));
   assert(auditHtml.includes('Lançamento retroativo'));assert(auditHtml.includes('Lançado em:'));assert(auditHtml.includes('07:35'));
   assert.equal(JSON.stringify(tables.controleTemperaturaEquipamento),temperatureSnapshot);assert.equal(JSON.stringify(tables.higienizacaoHortifruti),hortSnapshot);
-  for(const [code,fn,values] of [['hortifruti',hort.createRegistroAction,horticulture],['oleo',oil.createRegistroAction,{temperatura:170}]]){
+  for(const [code,fn,values] of [['hortifruti',hort.createRegistroAction,horticulture]]){
     tables.fechamentoMensalModulo=[{moduloCodigo:code,mes:10,ano:2026,status:'FECHADO'}];
     const result=await action(fn,{...values,data:'2026-10-17'},'error');assert(result.get('feedback').includes('fechado'));
   }

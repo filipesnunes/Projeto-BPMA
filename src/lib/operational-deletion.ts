@@ -41,7 +41,7 @@ export async function deleteOperationalRecord(params: {
   if (!Number.isSafeInteger(id) || id < 1 || !Object.hasOwn(operationalDeletionModels, target)) throw new Error("Registro inválido.");
   await prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
-    if (target === "temperatura") {
+    if (target === "temperatura" || target === "oleo") {
       const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
       user = await refreshWorkflowActor(tx, user);
       if (!canDeleteOperationalRecord(user, moduleCode)) throw new Error("Seu perfil não pode excluir registros deste módulo.");
@@ -53,7 +53,7 @@ export async function deleteOperationalRecord(params: {
       updateMany(args: { where: { id: number; excluidoEm: null }; data: { excluidoEm: Date } }): Promise<{ count: number }>;
     };
     const original = await records.findFirst({ where: { id, excluidoEm: null } });
-    if (target === "temperatura" && original?.fluxoId) {
+    if ((target === "temperatura" || target === "oleo") && original?.fluxoId) {
       const flow = await tx.fluxoOperacional.findUniqueOrThrow({ where: { id: String(original.fluxoId) } });
       if (flow.estado === "FECHADO") throw new Error("Reabra a aferição antes de excluir um registro fechado.");
       if (flow.versao !== params.expectedVersion) throw new Error("A aferição foi atualizada. Recarregue antes de excluir.");

@@ -389,6 +389,7 @@ export function canAccessPathWithPermissions(
 }
 
 export function getRequiredPermissionsForPath(pathname: string): string[] {
+  if (pathname === "/controle-qualidade-oleo/historico") return ["modulo.oleo.acessar"];
   if (pathname === "/controle-temperatura-equipamentos/historico") return ["modulo.temperatura.acessar"];
   if (pathname === "/") {
     return ["dashboard.acessar"];

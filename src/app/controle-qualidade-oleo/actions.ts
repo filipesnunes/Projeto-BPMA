@@ -1,12 +1,10 @@
 "use server";
+import { saveOilWorkflowAction } from "./workflow-actions";
+import { getRegistroPayload } from "./record-payload";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
-import { assertProcedureDate, readExecutionTime } from "@/lib/procedure-time";
 
-import {
-  StatusQualidadeOleo,
-  } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
@@ -22,24 +20,17 @@ import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
-  findOilOptionByLabel,
   hasOilOptionWithSameLabel,
   parseOilStatus,
   sanitizeDescription,
   sanitizeLabel
 } from "./catalog";
-import { findCanonicalOilStripRuleByLabel } from "./options";
 import {
   getCurrentSystemDateTime,
   getMonthDateRange,
   getMonthYear,
   getTodaySystemDate,
-  isTemperatureBelowOilStripMinimum,
-  isTemperatureCritical,
-  OIL_STRIP_TEMPERATURE_SAVE_MESSAGE,
   parsePositiveInt,
-  parseDateInput,
-  parseTemperatureInput
 } from "./utils";
 
 const MODULE_PATH = "/controle-qualidade-oleo";
@@ -135,108 +126,7 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return isOperationalMonthClosed("oleo", mes, ano);
 }
 
-async function getRegistroPayload(formData: FormData, responsavelLogado: string) {
-  const fitaInput = getInputValue(formData, "fitaOleo");
-  const temperaturaInput = getInputValue(formData, "temperatura");
-  const semUtilizacao = getInputValue(formData, "semUtilizacao") === "true";
-  const observacao = getInputValue(formData, "observacao");
-
-  if (!responsavelLogado.trim()) {
-    throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
-  }
-
-  if (semUtilizacao) {
-    return {
-      fitaOleo: null,
-      temperatura: null,
-      status: StatusQualidadeOleo.SEM_UTILIZACAO,
-      orientacao: "Sem utilização no período.",
-      temperaturaCritica: false,
-      semUtilizacao: true,
-      responsavel: responsavelLogado.trim(),
-      observacao: observacao || null
-    };
-  }
-
-  if (!temperaturaInput) {
-    throw new Error("Preencha todos os campos obrigatórios do registro.");
-  }
-
-  const fitaOption = fitaInput ? await findOilOptionByLabel(fitaInput, true) : null;
-  if (fitaInput && !fitaOption) {
-    throw new Error("Selecione uma opção válida no campo % da Fita do Óleo.");
-  }
-
-  const canonicalRule = fitaOption ? findCanonicalOilStripRuleByLabel(fitaOption.rotulo) : null;
-
-  const temperatura = parseTemperatureInput(temperaturaInput);
-  if (temperatura === null) {
-    throw new Error("Informe uma temperatura válida.");
-  }
-  if (fitaOption && isTemperatureBelowOilStripMinimum(temperatura)) {
-    throw new Error(OIL_STRIP_TEMPERATURE_SAVE_MESSAGE);
-  }
-
-  return {
-    fitaOleo: fitaOption?.rotulo ?? null,
-    temperatura,
-    status: canonicalRule?.statusAssociado ?? fitaOption?.statusAssociado ?? null,
-    orientacao: canonicalRule?.descricao ?? fitaOption?.descricao ?? "",
-    temperaturaCritica: isTemperatureCritical(temperatura),
-    semUtilizacao: false,
-    responsavel: responsavelLogado.trim(),
-    observacao: observacao || null
-  };
-}
-
-export async function createRegistroAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(
-      actor,
-      "modulo.oleo.criar_registro",
-      "Seu perfil não pode criar registros de óleo."
-    );
-
-    const dataInput = formData.get("data");
-    // Retain today's default for older callers; explicitly submitted dates must be valid.
-    const data = dataInput === null ? getTodaySystemDate() :
-      typeof dataInput === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataInput) ? parseDateInput(dataInput) : null;
-    if (!data) throw new Error("Informe uma data válida para o registro.");
-    assertProcedureDate(data);
-    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
-    const { mes, ano } = getMonthYear(data);
-
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error(
-        `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado e não aceita novos registros.`
-      );
-    }
-
-    await prisma.controleQualidadeOleoRegistro.create({
-      data: {
-        ...payload,
-        ...readExecutionTime(formData, data, "", !payload.semUtilizacao),
-        data
-      }
-    });
-
-    revalidateModulePaths();
-    const next = new URL(returnTo, "http://localhost");
-    next.searchParams.set("dataRegistro", data.toISOString().slice(0, 10));
-    redirectWithFeedback(next.pathname + "?" + next.searchParams.toString(), "success", "Registro Criado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios."),
-      getRegistroFormState(formData)
-    );
-  }
-}
+export async function createRegistroAction(formData: FormData) { return saveOilWorkflowAction(formData); }
 
 export async function updateRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
@@ -257,6 +147,7 @@ export async function updateRegistroAction(formData: FormData) {
       throw new Error("Registro não encontrado.");
     }
 
+    if (existing.fluxoId) throw new Error("Edite pelo formulário versionado da verificação.");
     const existingPeriod = getMonthYear(existing.data);
     if (await isMonthSigned(existingPeriod.mes, existingPeriod.ano)) {
       throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
@@ -314,6 +205,7 @@ export async function signRegistroSupervisorAction(formData: FormData) {
       where: { id },
       select: {
         id: true,
+        fluxoId: true,
         assinaturaSupervisorEm: true
       }
     });
@@ -322,6 +214,7 @@ export async function signRegistroSupervisorAction(formData: FormData) {
       throw new Error("Registro não encontrado.");
     }
 
+    if (registro.fluxoId) throw new Error("Valide a versão atual pelo formulário da verificação.");
     if (registro.assinaturaSupervisorEm) {
       throw new Error("Este registro já foi assinado pelo supervisor.");
     }

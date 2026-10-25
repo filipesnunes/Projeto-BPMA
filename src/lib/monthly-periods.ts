@@ -49,7 +49,7 @@ export async function monthlyPeriodCounts(code: OperationalSignatureModuleCode, 
 }
 
 export async function validateMonthlyClosing(code: OperationalSignatureModuleCode, mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
-  if (code === "temperatura") {
+  if (code === "temperatura" || code === "oleo") {
     const range = monthlyDateRange(mes, ano);
     await assertNoReopenedWorkflow(db, code, range.gte, range.lt);
   }
@@ -86,7 +86,7 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
   if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
-    if (moduleCode === "temperatura") {
+    if (moduleCode === "temperatura" || moduleCode === "oleo") {
       const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
       user = await refreshWorkflowActor(tx, user);
       if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");

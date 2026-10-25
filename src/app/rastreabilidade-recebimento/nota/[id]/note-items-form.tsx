@@ -48,6 +48,8 @@ export type NoteItemFormRow = {
 };
 
 type NoteItemsFormProps = {
+  workflowVersion?: number;
+  defaultExecution?: {horarioExecucao?:string;horarioNaoInformado?:boolean;justificativaHorario?:string};
   referenceDate: string;
   notaId: number;
   returnTo: string;
@@ -92,7 +94,7 @@ function SaveButton() {
   const { pending } = useFormStatus();
 
   return (
-    <button type="submit" name="intent" value="save" className="btn-primary" disabled={pending}>
+    <button type="submit" name="intent" value="save" formNoValidate className="btn-primary" disabled={pending}>
       {pending ? "Salvando..." : "Salvar Itens da Nota"}
     </button>
   );
@@ -158,6 +160,7 @@ function normalizeTemperatureOnBlur(value: string | null | undefined): string {
 }
 
 export function NoteItemsForm({
+  workflowVersion, defaultExecution,
   referenceDate,
   notaId,
   returnTo,
@@ -209,7 +212,7 @@ export function NoteItemsForm({
     if (state.status === "success") {
       router.refresh();
     }
-  }, [router, state.status]);
+  }, [router, state]);
 
   return (
     <div className="space-y-4">
@@ -226,11 +229,11 @@ export function NoteItemsForm({
       ) : null}
 
       <form id={formId} action={formAction}>
-        {!readOnlyMode && <ExecutionTimeFields date={referenceDate} />}
-        <input type="hidden" name="notaId" value={String(notaId)} />
-        <input type="hidden" name="returnTo" value={returnTo} />
+        {!readOnlyMode && <ExecutionTimeFields date={referenceDate} defaultTime={defaultExecution?.horarioExecucao} defaultUnknown={defaultExecution?.horarioNaoInformado} defaultJustification={defaultExecution?.justificativaHorario} />}
+        {workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}<input type="hidden" name="notaId" value={String(notaId)} />
+        <input type="hidden" name="returnTo" value={returnTo} />{workflowVersion!==undefined&&rows.map(item=><input key={item.id} type="hidden" name={`item-${item.id}-present`} value="true"/>)}
 
-        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+        <div className="relative overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
           <table className="min-w-[1540px] divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="bg-slate-50 text-left dark:bg-slate-800">
               <tr>

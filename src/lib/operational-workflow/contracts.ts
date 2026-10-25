@@ -14,6 +14,7 @@ export type WorkflowContent = {
 
 export type WorkflowAdapter = {
   module: OperationalSignatureModuleCode;
+  authorizeSave?(user: AuthenticatedUser, input: unknown, context: { date: Date; today: Date; creating: boolean }): void;
   // Stable identity determined from persisted records or an explicit draft UUID.
   // Display labels and mutable catalog names must not be used as primary keys.
   load(tx: Prisma.TransactionClient, key: string): Promise<{

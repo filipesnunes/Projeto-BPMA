@@ -43,13 +43,15 @@ export async function monthlyPeriodCounts(code: OperationalSignatureModuleCode, 
       pending = await db.rastreabilidadeRecebimentoNota.count({ where: { data, statusNota: { not: "FINALIZADA" } } }); break;
     case "amostras":
       records = await db.controleBuffetAmostraRegistro.count({ where: { data } });
-      pending = await db.controleBuffetAmostraRegistro.count({ where: { data, status: { notIn: ["ASSINADO", "NAO_SERVIDO"] } } }); break;
+      pending = await db.controleBuffetAmostraRegistro.count({ where: { data, fluxoId:null, status: { notIn: ["ASSINADO", "NAO_SERVIDO"] } } });
+      {const managed=await db.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:data,excluidoEm:null},include:{amostras:{where:{excluidoEm:null}}}});
+      pending+=managed.filter(u=>u.estado!=="FECHADO"&&(u.estado==="PENDENTE"||u.amostras.some(r=>!["ASSINADO","NAO_SERVIDO"].includes(r.status)))).length;} break;
   }
   return { records, pending };
 }
 
 export async function validateMonthlyClosing(code: OperationalSignatureModuleCode, mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
-  if (code === "temperatura" || code === "oleo") {
+  if (["temperatura","oleo","amostras","rastreabilidade"].includes(code)) {
     const range = monthlyDateRange(mes, ano);
     await assertNoReopenedWorkflow(db, code, range.gte, range.lt);
   }
@@ -86,7 +88,7 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
   if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
-    if (moduleCode === "temperatura" || moduleCode === "oleo") {
+    if (["temperatura","oleo","amostras","rastreabilidade"].includes(moduleCode)) {
       const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
       user = await refreshWorkflowActor(tx, user);
       if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");

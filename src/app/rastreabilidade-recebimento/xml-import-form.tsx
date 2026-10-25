@@ -8,6 +8,7 @@ import { useFormStatus } from "react-dom";
 import { importXmlAction } from "./actions";
 
 type XmlImportFormProps = {
+  workflowRequestId?:string;
   returnTo: string;
   cancelHref: string;
 };
@@ -22,12 +23,12 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function XmlImportForm({ returnTo, cancelHref }: XmlImportFormProps) {
+export function XmlImportForm({ returnTo, cancelHref, workflowRequestId }: XmlImportFormProps) {
   const inputId = useId();
   const [fileName, setFileName] = useState("");
 
   return (
-    <form action={importXmlAction} className="mt-4 grid gap-4">
+    <form action={importXmlAction} className="mt-4 grid gap-4">{workflowRequestId&&<input type="hidden" name="workflowRequestId" value={workflowRequestId}/>}
       <input type="hidden" name="returnTo" value={returnTo} />
       <label className="block text-sm">Data do recebimento *<input type="date" name="data" required defaultValue={formatAppDateInput(getAppDate())} max={formatAppDateInput(getAppDate())} className="bpma-input" /></label>
 

@@ -10,11 +10,15 @@ export const OPERATIONAL_MODELS = new Set([
 // Applied at the shared Prisma boundary, including transactions, counts and reports.
 // Catalogs, signatures, closures and immutable deletion snapshots are not filtered.
 export const activeOperationalRecords: Prisma.Middleware = async (params, next) => {
-  if (["ControleTemperaturaEquipamento", "ControleQualidadeOleoRegistro"].includes(params.model ?? "") && ["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"].includes(params.action)) {
+  if (["ControleTemperaturaEquipamento", "ControleQualidadeOleoRegistro", "ControleBuffetAmostraRegistro"].includes(params.model ?? "") && ["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"].includes(params.action)) {
     params.args ??= {};
     params.args.where = { ...params.args.where, AND: [...(Array.isArray(params.args.where?.AND) ? params.args.where.AND : params.args.where?.AND ? [params.args.where.AND] : []), {
       OR: [{ fluxoId: null }, { fluxo: { preenchimentoCompleto: true, excluidoEm: null } }]
     }] };
+  }
+  if (params.model === "RastreabilidadeRecebimentoRegistro" && ["findUnique","findUniqueOrThrow","findFirst","findMany","count","aggregate","groupBy"].includes(params.action)) {
+    params.args ??= {};const prior=params.args.where??{};
+    params.args.where={...prior,AND:[...(Array.isArray(prior.AND)?prior.AND:prior.AND?[prior.AND]:[]),{OR:[{notaId:null},{nota:{fluxoId:null}},{nota:{fluxo:{preenchimentoCompleto:true,excluidoEm:null}}}]}]};
   }
   if (params.model && OPERATIONAL_MODELS.has(params.model)) {
     if (params.action === "delete" || (params.action === "deleteMany" && !["PlanoLimpezaDiarioRegistro", "PlanoLimpezaSemanalExecucao"].includes(params.model))) {

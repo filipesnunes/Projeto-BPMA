@@ -1,3 +1,4 @@
+import type {Prisma} from "@prisma/client";
 import { ClassificacaoItemBuffetAmostra } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -62,8 +63,8 @@ export async function getItensPorServico(servicoId: number, activeOnly = true) {
   });
 }
 
-export async function getAcoesCorretivas(activeOnly = false) {
-  return prisma.controleBuffetAmostraAcaoCorretiva.findMany({
+export async function getAcoesCorretivas(activeOnly = false, db:Prisma.TransactionClient=prisma) {
+  return db.controleBuffetAmostraAcaoCorretiva.findMany({
     where: activeOnly ? { ativo: true } : undefined,
     orderBy: [{ ativo: "desc" }, { ordem: "asc" }, { nome: "asc" }]
   });
@@ -71,14 +72,14 @@ export async function getAcoesCorretivas(activeOnly = false) {
 
 export async function findAcaoCorretivaByName(
   inputName: string,
-  activeOnly = true
+  activeOnly = true, db:Prisma.TransactionClient=prisma
 ) {
   const normalizedInputName = normalizeOption(inputName);
   if (!normalizedInputName) {
     return null;
   }
 
-  const options = await getAcoesCorretivas(activeOnly);
+  const options = await getAcoesCorretivas(activeOnly,db);
 
   return (
     options.find((option) => normalizeOption(option.nome) === normalizedInputName) ??

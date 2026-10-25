@@ -1,0 +1,6 @@
+﻿import {NextResponse} from "next/server";
+import {getCurrentUser} from "@/lib/auth-session";
+import {hasPermission} from "@/lib/permissions";
+import {prisma} from "@/lib/prisma";
+import {formatAppDateInput,getAppDate} from "@/lib/date-time";
+export async function GET(_request:Request,{params}:{params:Promise<{id:string}>}){const user=await getCurrentUser();if(!user||!hasPermission(user,'modulo.rastreabilidade.acessar'))return new NextResponse('Acesso negado',{status:403});const{id}=await params;if(!/^\d+$/.test(id))return new NextResponse('Não encontrado',{status:404});const note=await prisma.rastreabilidadeRecebimentoNota.findUnique({where:{id:Number(id)},include:{fluxo:true}});if(!note?.xmlOriginal)return new NextResponse('XML original indisponível',{status:404});if(formatAppDateInput(note.data)<formatAppDateInput(getAppDate())&&note.fluxo?.estado!=='REABERTO'&&!hasPermission(user,'modulo.rastreabilidade.acessar_historico')&&!hasPermission(user,'modulo.rastreabilidade.editar_historico'))return new NextResponse('Acesso negado',{status:403});return new NextResponse(note.xmlOriginal,{headers:{'Content-Type':'application/xml; charset=utf-8','Content-Disposition':`attachment; filename="nota-${note.id}.xml"`,'Cache-Control':'private, no-store'}});}

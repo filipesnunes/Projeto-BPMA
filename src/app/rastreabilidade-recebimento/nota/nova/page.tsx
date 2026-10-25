@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -39,7 +40,7 @@ export default async function NovaNotaRecebimentoPage() {
       </section>
 
       <section className={CARD_CLASS}>
-        <ManualNoteForm
+        <ManualNoteForm workflowRequestId={randomUUID()}
           responsavelLogado={responsavelLogado}
           inputClassName={INPUT_CLASS}
         />

@@ -624,6 +624,7 @@ export async function GET(request: NextRequest) {
         responsavelRecebimento: true,
         nota: {
           select: {
+            fluxo: {select:{estado:true,assinaturaVigente:{select:{usuarioNome:true}}}},
             notaFiscal: true
           }
         }
@@ -702,7 +703,7 @@ export async function GET(request: NextRequest) {
         embalagem: labelConformidade(record.embalagem),
         acaoCorretiva: valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelRecebimento),
-        supervisor: valueOrDash(dailySignature?.usuarioNomeSnapshot)
+        supervisor: record.nota?.fluxo ? (record.nota.fluxo.estado === "FECHADO" ? valueOrDash(record.nota.fluxo.assinaturaVigente?.usuarioNome) : record.nota.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(dailySignature?.usuarioNomeSnapshot)
       };
     }),
     closureResponsible,

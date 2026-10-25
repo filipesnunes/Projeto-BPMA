@@ -100,14 +100,18 @@ export async function signModuleDayAction(formData: FormData) {
 
     const dataReferencia = parseAppDateInput(getInputValue(formData, "dataReferencia"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const observacao = getInputValue(formData, "observacao");
+    let observacao = getInputValue(formData, "observacao");
 
     if (!dataReferencia) {
       throw new Error("Data inválida para assinatura do dia.");
     }
 
-    if (["temperatura", "oleo"].includes(moduleConfig.codigo) && await prisma.fluxoOperacional.findFirst({ where: { modulo: moduleConfig.codigo, dataReferencia, excluidoEm: null } })) {
-      throw new Error("Selecione as aferições e suas versões no histórico do módulo para assinar.");
+    if (["temperatura", "oleo", "amostras", "rastreabilidade"].includes(moduleConfig.codigo) && await prisma.fluxoOperacional.findFirst({ where: { modulo: moduleConfig.codigo, dataReferencia, excluidoEm: null } })) {
+      const legacy = moduleConfig.codigo === "amostras"
+        ? await prisma.controleBuffetAmostraRegistro.count({where:{data:dataReferencia,fluxoId:null}})
+        : moduleConfig.codigo === "rastreabilidade" ? await prisma.rastreabilidadeRecebimentoNota.count({where:{data:dataReferencia,fluxoId:null}}) : 0;
+      if(!legacy)throw new Error("Selecione as unidades e suas versões no histórico do módulo para assinar.");
+      observacao=[observacao,"Revisão dos registros legados. Unidades versionadas possuem assinatura e escopo próprios."].filter(Boolean).join(" ");
     }
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });

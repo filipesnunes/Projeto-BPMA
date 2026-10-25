@@ -65,7 +65,8 @@ export async function saveWorkflow(params: {
     const date = original?.dataReferencia ?? source.date;
     if (date.getTime() !== source.date.getTime()) throw new Error("A data de referência foi alterada. Recarregue os dados.");
     await openPeriod(tx, adapter.module, date);
-    assertWorkflowEdit({ user, module: adapter.module, date, today: getAppDate(), creating: !original });
+    if (adapter.authorizeSave) adapter.authorizeSave(user, params.input, { date, today: getAppDate(), creating: !original });
+    else assertWorkflowEdit({ user, module: adapter.module, date, today: getAppDate(), creating: !original });
     if (original?.estado === "FECHADO") throw new Error("Registro fechado. Confirme a reabertura antes de editar.");
     const initial = original ?? await tx.fluxoOperacional.create({ data: { modulo: adapter.module, chave: key, dataReferencia: date } });
     const content = await adapter.save(tx, key, params.input, user, initial);

@@ -292,7 +292,7 @@ async function main(){
  console.log('PASS actions de Limpeza Diária/Semanal: execução retroativa conhecida/desconhecida, data efetiva e horário real da assinatura separado.');
  const buffet=load('src/app/controle-buffet-amostras/actions.ts');
  for(const unknown of [false,true]){
-  reset('amostras');tables.controleBuffetAmostraRegistro=[];
+  reset('amostras');tables.controleBuffetAmostraRegistro=[{id:1,servicoId:1,itemId:1,data:yesterday,fluxoId:null,excluidoEm:null,status:'PENDENTE',dataHoraRegistro:new Date(),responsavelUsuarioId:actor.id}];
   tables.controleBuffetAmostraServico=[{id:1,nome:'Serviço sintético',tipoServico:'FIXO',ativo:true}];
   tables.controleBuffetAmostraItem=[{id:1,nome:'Item sintético',classificacao:'QUENTE',usaGarrafaTermica:false,ativo:true}];
   tables.controleBuffetAmostraItemServico=[{id:1,servicoId:1,itemId:1}];
@@ -302,12 +302,15 @@ async function main(){
   const html=await report('controle-buffet-amostras',yesterday.getUTCMonth()+1,yesterday.getUTCFullYear());assert(html.includes(unknown?'anotação sem hora':'09:25'));
  }
  console.log('PASS action/relatório Buffet: horários conhecidos/desconhecidos por item, sem inferir execução do timestamp do lançamento.');
- const receiving=load('src/app/rastreabilidade-recebimento/actions.ts');
- reset('rastreabilidade');tables.rastreabilidadeRecebimentoRegistro=[];tables.rastreabilidadeRecebimentoCategoria=[{id:1,nome:'Geral',ativo:true,temperaturaMaxima:25}];
- await action(receiving.createManualNoteAction,{data:pastText,fornecedor:'Fornecedor sintético',notaFiscal:'123',produto:'Bebida sintética',lote:'L1',semDataFabricacao:true,validadeNaoAplicavel:true,sif:'NA',temperaturaTipo:'AMBIENTE',transporteEntregador:'CONFORME',aspectoSensorial:'CONFORME',embalagem:'CONFORME',horarioExecucao:'10:12'});
- assert.equal(tables.rastreabilidadeRecebimentoRegistro[0].horarioExecucao,'10:12');assert.equal(dates.formatAppDateInput(tables.rastreabilidadeRecebimentoNota[0].data),pastText);
- assert.equal(tables.rastreabilidadeRecebimentoRegistro[0].semDataFabricacao,true);assert.equal(tables.rastreabilidadeRecebimentoRegistro[0].validadeNaoAplicavel,true);
- console.log('PASS recebimento manual retroativo: data/horário reais e isenções de fabricação/validade independentes.');
+ // Managed receiving creation/finalization now runs in test-group-workflows.cjs
+ // with real PostgreSQL; retain isolated checks of the original sanitary payload.
+ const {validateAndBuildItemPayload}=load('src/app/rastreabilidade-recebimento/workflow-payload.ts');
+ const manualInput={produto:'Bebida sintética',lote:'L1',dataFabricacao:'',semDataFabricacao:true,dataValidade:'',validadeNaoAplicavel:true,sif:'NA',temperatura:'',temperaturaTipo:'AMBIENTE',transporteEntregador:'CONFORME',aspectoSensorial:'CONFORME',embalagem:'CONFORME',acaoCorretiva:'',observacoes:''};
+ const validated=validateAndBuildItemPayload(manualInput,[{id:1,nome:'Geral',ativo:true,temperaturaMaxima:25}],actor.nomeCompleto);
+ assert.equal(validated.semDataFabricacao,true);assert.equal(validated.validadeNaoAplicavel,true);
+ assert.throws(()=>validateAndBuildItemPayload({...manualInput,validadeNaoAplicavel:false},[{id:1,nome:'Geral',ativo:true,temperaturaMaxima:25}],actor.nomeCompleto),/Validade/);
+ const executionForm=new FormData();executionForm.set('horarioExecucao','10:12');assert.equal(timing.readExecutionTime(executionForm,yesterday).horarioExecucao,'10:12');
+ console.log('PASS payload de recebimento: isenções de fabricação/validade independentes e horário retroativo real. Fluxo completo validado em PostgreSQL.');
  const now=new Date('2026-10-20T15:00:00Z');const past=date('2026-10-19');const form=new FormData();
  form.set('horarioExecucao','07:35');assert.equal(timing.readExecutionTime(form,past,'',true,now).horarioExecucao,'07:35');
  form.set('horarioExecucao','25:00');assert.throws(()=>timing.readExecutionTime(form,past,'',true,now),/HH:mm/);

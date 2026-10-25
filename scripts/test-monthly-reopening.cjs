@@ -60,7 +60,7 @@ function matches(row, where = {}) {
       if ('contains' in value && !String(row[key]).toLowerCase().includes(value.contains.toLowerCase())) return false;
       return true;
     }
-    return row[key] === value;
+    return (row[key]??null) === value;
   });
 }
 function selected(row, select) {
@@ -268,7 +268,7 @@ async function main() {
   const collaborator={perfil:'COLABORADOR'};
   const args={user:collaborator,noteDate:date('2026-09-01'),today,monthSigned:true,statusNota:'IMPORTADA'};
   assert.equal(noteAccess.getReceivingNoteEditAccessReason(args),'MONTH_SIGNED');
-  assert.equal(noteAccess.getReceivingNoteEditAccessReason({...args,monthSigned:false}),'EDITABLE');
+  assert.equal(noteAccess.getReceivingNoteEditAccessReason({...args,monthSigned:false}),'NO_PERMISSION');
   assert.equal(noteAccess.getReceivingNoteEditAccessReason({...args,monthSigned:false,user:{perfil:'COLABORADOR',perfilAcessoId:42,permissoes:[]}}),'NO_PERMISSION');
   actor.perfil='DEV';
   await action(actions.reopenPeriodAction,{moduloCodigo:'hortifruti',mes:9,ano:2026},'error');
@@ -291,15 +291,19 @@ async function main() {
   actor.perfil='DEV';await reopen.reopenOperationalMonth({user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});
   actor.perfil='COLABORADOR';
   result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
+  assert.equal(result.status,'error','Reabrir o mês não concede edição retroativa');
+  actor.perfilAcessoId=42;actor.permissoes=[...load('src/lib/permissions.ts').getDefaultPermissionCodes('COLABORADOR'),'modulo.rastreabilidade.editar_historico'];
+  result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'success',result.message);assert.equal(note.statusNota,'EM_CONFERENCIA');assert.equal(item.responsavelRecebimento,actor.nomeCompleto);
   assert.equal(+note.data,+date('2026-09-01'));assert.equal(+item.data,+note.data);assert.deepEqual(tables.assinaturaDiariaModulo,daily);
   const detail=await load('src/app/rastreabilidade-recebimento/nota/[id]/page.tsx').default({params:Promise.resolve({id:'1'}),searchParams:Promise.resolve({})});
   assert.equal(elements(detail,n=>n.type?.name==='NoteItemsForm')[0].props.readOnlyMode,false);
-  const listing=await load('src/app/rastreabilidade-recebimento/page.tsx').default({searchParams:Promise.resolve({})});
+  const listing=await load('src/app/rastreabilidade-recebimento/legacy-page.tsx').default({searchParams:Promise.resolve({})});
   assert(elements(listing,n=>n.props?.href==='/rastreabilidade-recebimento/nota/1' && n.props.children==='Conferir Nota').length);
   const dashboard=load('src/app/dashboard/service.ts');
   let card=await dashboard.buildMonthlyClosingCard({range:{start:date('2026-09-01'),end:date('2026-09-30')}});
   assert.equal(card.completed,0);assert.equal(card.pending,7);
+  delete actor.perfilAcessoId;delete actor.permissoes;
   actor.perfil='NUTRICIONISTA';
   await assert.rejects(()=>periods.closeReopenedOperationalMonth({user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026}),/notas pendentes/);
   tables.rastreabilidadeRecebimentoNota[0].statusNota='FINALIZADA';
@@ -309,7 +313,7 @@ async function main() {
   actor.perfil='COLABORADOR';
   result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error');assert.match(result.message,/fechado/);
-  console.log('PASS actual receiving action: closed blocks collaborator, reopening permits conference and saves original dates; detail and pending list accessible; daily signatures unchanged; dashboard follows reopened/reclosed state; no-session/direct access denied');
+  console.log('PASS actual receiving action: closed blocks collaborator, reopening requires explicit historical-edit permission before conference and preserves original dates; detail and pending list accessible; daily signatures unchanged; dashboard follows reopened/reclosed state; no-session/direct access denied');
   console.log('PASS simultaneous requests in serialized adapter, module isolation, rollback, actual permission rules, note access, input validation, migration constraints');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

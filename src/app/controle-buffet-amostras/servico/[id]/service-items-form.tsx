@@ -65,6 +65,7 @@ export type ServiceItemFormRow = {
 };
 
 type ServiceItemsFormProps = {
+  workflowVersion?: number;
   servicoId: number;
   dataInput: string;
   returnTo: string;
@@ -123,6 +124,7 @@ function getTemperatureTypeDefault(row: ServiceItemFormRow): "" | "NUMERICA" | "
 }
 
 function AddExtraItemModal({
+  workflowVersion,
   servicoId,
   dataInput,
   disabled
@@ -130,6 +132,7 @@ function AddExtraItemModal({
   servicoId: number;
   dataInput: string;
   disabled: boolean;
+  workflowVersion?: number;
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
@@ -140,7 +143,7 @@ function AddExtraItemModal({
       setIsOpen(false);
       router.refresh();
     }
-  }, [router, state.status]);
+  }, [router, state]);
 
   return (
     <>
@@ -166,7 +169,7 @@ function AddExtraItemModal({
               </p>
             ) : null}
 
-            <form action={formAction} className="mt-4 grid gap-3">
+            <form action={formAction} className="mt-4 grid gap-3">{workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
               <input type="hidden" name="servicoId" value={String(servicoId)} />
               <input type="hidden" name="data" value={dataInput} />
 
@@ -203,6 +206,7 @@ function AddExtraItemModal({
 }
 
 export function ServiceItemsForm({
+  workflowVersion,
   servicoId,
   dataInput,
   returnTo,
@@ -395,6 +399,7 @@ export function ServiceItemsForm({
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if(workflowVersion!==undefined)return;
     if (bypassConfirmationRef.current) {
       bypassConfirmationRef.current = false;
       return;
@@ -433,7 +438,7 @@ export function ServiceItemsForm({
           Nenhum item ativo está vinculado a este serviço. Se necessário, adicione um item extra para
           esta data.
         </p>
-        <AddExtraItemModal
+        <AddExtraItemModal workflowVersion={workflowVersion}
           servicoId={servicoId}
           dataInput={dataInput}
           disabled={fechamentoAssinado}
@@ -448,7 +453,7 @@ export function ServiceItemsForm({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <AddExtraItemModal
+        <AddExtraItemModal workflowVersion={workflowVersion}
           servicoId={servicoId}
           dataInput={dataInput}
           disabled={fechamentoAssinado}
@@ -478,7 +483,7 @@ export function ServiceItemsForm({
         />
       </label>
 
-      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={handleSubmit}>
+      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={workflowVersion===undefined?undefined:handleSubmit} noValidate={workflowVersion!==undefined}>{workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
         <input type="hidden" name="servicoId" value={String(servicoId)} />
         <input type="hidden" name="data" value={dataInput} />
         <input type="hidden" name="returnTo" value={returnTo} />

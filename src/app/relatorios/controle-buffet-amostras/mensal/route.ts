@@ -225,7 +225,7 @@ function buildServiceTables(
             ? "-"
             : valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelNome),
-        supervisor: valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
       }))
     }));
 }
@@ -564,6 +564,7 @@ async function getMonthlyBuffetRecords(month: number, year: number) {
       }
     },
     select: {
+      fluxo: {select:{estado:true,assinaturaVigente:{select:{usuarioNome:true}}}},
       horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, createdAt: true,
       id: true,
       data: true,

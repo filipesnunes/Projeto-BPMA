@@ -1,4 +1,8 @@
 "use server";
+import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
+import {getAppDate} from "@/lib/date-time";
+import {buildRegistroPayload,buildNaoServidoPayload,getRegistroItemIssue,type RegistroItemPayload,type RegistroTemperaturaInput} from "./workflow-payload";
+import {saveBuffetWorkflowState} from "./workflow-actions";
 import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 
@@ -6,7 +10,6 @@ import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
 import {
-  ClassificacaoItemBuffetAmostra,
   StatusFechamentoBuffetAmostra,
   StatusItemBuffetAmostra,
   TipoServicoBuffetAmostra
@@ -26,7 +29,6 @@ import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
 import {
-  findAcaoCorretivaByName,
   hasAcaoCorretivaWithSameName,
   hasItemWithSameName,
   hasServicoWithSameName,
@@ -34,9 +36,8 @@ import {
   parseItemClassification,
   sanitizeCatalogValue
 } from "./catalog";
-import { normalizeOption } from "./options";
+
 import {
-  avaliarTemperaturaBuffet,
   formatDateInput,
   getCurrentSystemDateTime,
   getMonthDateRange,
@@ -46,14 +47,13 @@ import {
   parseDateInput,
   parsePositiveInt,
   parseTipoServico,
-  parseTemperatureInput
 } from "./utils";
 
 const MODULE_PATH = "/controle-buffet-amostras";
 const SERVICE_PATH = "/controle-buffet-amostras/servico";
 const HISTORY_PATH = "/controle-buffet-amostras/historico";
 const OPTIONS_PATH = "/controle-buffet-amostras/opcoes";
-const NAO_SE_APLICA_NORMALIZED = normalizeOption("Não se aplica");
+
 const SELF_SUPERVISION_MESSAGE =
   "Este registro foi executado por você. A assinatura de supervisor deve ser feita por outro usuário autorizado.";
 
@@ -69,48 +69,6 @@ type FormActionState = {
 const FORM_ACTION_INITIAL_STATE: FormActionState = {
   status: "idle",
   message: ""
-};
-
-type RegistroTemperaturaInput = {
-  execution?: ReturnType<typeof readExecutionTime>;
-  tcEquipamentoInput: string;
-  primeiraTcInput: string;
-  temperaturaTipo: string;
-  acaoCorretivaInput: string;
-  observacao: string;
-  naoServido: boolean;
-};
-
-type RegistroItemSource = {
-  nome: string;
-  classificacao: ClassificacaoItemBuffetAmostra;
-  usaGarrafaTermica: boolean;
-};
-
-type RegistroItemPayload = {
-  horarioExecucao?: string | null;
-  horarioNaoInformado?: boolean;
-  justificativaHorario?: string | null;
-  itemNome: string;
-  classificacao: ClassificacaoItemBuffetAmostra;
-  tcEquipamento: number | null;
-  primeiraTc: number | null;
-  segundaTc: number | null;
-  usaGarrafaTermica: boolean;
-  temperaturaAmbiente: boolean;
-  statusTemperatura: ReturnType<typeof avaliarTemperaturaBuffet>["status"] | null;
-  acaoCorretiva: string | null;
-  observacao: string | null;
-  responsavelUsuarioId: number;
-  responsavelNome: string;
-  responsavelPerfil: Awaited<ReturnType<typeof getCurrentUserForAction>>["perfil"];
-  dataHoraRegistro: Date;
-  status: StatusItemBuffetAmostra;
-};
-
-type RegistroItemIssue = {
-  kind: "blank" | "incomplete";
-  missingFields: string[];
 };
 
 function getInputValue(formData: FormData, key: string): string {
@@ -306,167 +264,6 @@ export async function createServicoEsporadicoStateAction(
   }
 }
 
-async function buildRegistroPayload(params: {
-  actor: Awaited<ReturnType<typeof getCurrentUserForAction>>;
-  item: RegistroItemSource;
-  input: RegistroTemperaturaInput;
-}): Promise<RegistroItemPayload> {
-  const temperaturaAmbiente = params.input.temperaturaTipo === "AMBIENTE";
-  const usaGarrafaTermica = params.item.usaGarrafaTermica;
-  const acaoCorretivaOption = params.input.acaoCorretivaInput
-    ? await findAcaoCorretivaByName(params.input.acaoCorretivaInput, false)
-    : null;
-
-  if (params.input.acaoCorretivaInput && !acaoCorretivaOption) {
-    throw new Error("Selecione uma ação corretiva válida da lista cadastrada.");
-  }
-
-  const acaoCorretiva = acaoCorretivaOption
-    ? acaoCorretivaOption.nome
-    : await (async () => {
-        const naoSeAplica = await findAcaoCorretivaByName("Não se aplica", false);
-        return naoSeAplica?.nome ?? null;
-      })();
-
-  if (temperaturaAmbiente) {
-    return {
-      ...params.input.execution,
-    itemNome: params.item.nome,
-      classificacao: params.item.classificacao,
-      tcEquipamento: null,
-      primeiraTc: null,
-      segundaTc: null,
-      usaGarrafaTermica,
-      temperaturaAmbiente: true,
-      statusTemperatura: null,
-      acaoCorretiva,
-      observacao: params.input.observacao || null,
-      responsavelUsuarioId: params.actor.id,
-      responsavelNome: params.actor.nomeCompleto,
-      responsavelPerfil: params.actor.perfil,
-      dataHoraRegistro: getCurrentSystemDateTime(),
-      status: StatusItemBuffetAmostra.PREENCHIDO
-    };
-  }
-
-  const tcEquipamento = usaGarrafaTermica
-    ? null
-    : parseTemperatureInput(params.input.tcEquipamentoInput);
-  const primeiraTc = parseTemperatureInput(params.input.primeiraTcInput);
-
-  if ((!usaGarrafaTermica && tcEquipamento === null) || primeiraTc === null) {
-    if (usaGarrafaTermica) {
-      throw new Error("Preencha TC do Alimento com um valor válido.");
-    }
-
-    throw new Error("Preencha TC Equipamento e TC do Alimento com valores válidos.");
-  }
-
-  const avaliacao = avaliarTemperaturaBuffet(params.item.classificacao, primeiraTc);
-
-  if (
-    avaliacao.exigeAcaoCorretiva &&
-    (!acaoCorretivaOption ||
-      normalizeOption(acaoCorretivaOption.nome) === NAO_SE_APLICA_NORMALIZED)
-  ) {
-    throw new Error(
-      "A ação corretiva é obrigatória quando a temperatura estiver em Alerta ou Crítico."
-    );
-  }
-
-  return {
-    ...params.input.execution,
-    itemNome: params.item.nome,
-    classificacao: params.item.classificacao,
-    tcEquipamento,
-    primeiraTc,
-    segundaTc: null,
-    usaGarrafaTermica,
-    temperaturaAmbiente: false,
-    statusTemperatura: avaliacao.status,
-    acaoCorretiva,
-    observacao: params.input.observacao || null,
-    responsavelUsuarioId: params.actor.id,
-    responsavelNome: params.actor.nomeCompleto,
-    responsavelPerfil: params.actor.perfil,
-    dataHoraRegistro: getCurrentSystemDateTime(),
-    status: StatusItemBuffetAmostra.PREENCHIDO
-  };
-}
-
-function getRegistroItemIssue(
-  item: RegistroItemSource,
-  input: RegistroTemperaturaInput
-): RegistroItemIssue | null {
-  if (input.naoServido) {
-    return null;
-  }
-
-  const temperaturaAmbiente = input.temperaturaTipo === "AMBIENTE";
-  const usaGarrafaTermica = item.usaGarrafaTermica;
-  const values = [
-    usaGarrafaTermica ? "" : input.tcEquipamentoInput,
-    input.primeiraTcInput,
-    input.acaoCorretivaInput,
-    input.observacao,
-    temperaturaAmbiente ? "Ambiente" : ""
-  ];
-  const hasAnyValue = values.some((value) => value.trim().length > 0);
-
-  if (!hasAnyValue) {
-    return { kind: "blank", missingFields: [] };
-  }
-
-  if (temperaturaAmbiente) {
-    return null;
-  }
-
-  const missingFields: string[] = [];
-  const tcEquipamento = parseTemperatureInput(input.tcEquipamentoInput);
-  const primeiraTc = parseTemperatureInput(input.primeiraTcInput);
-
-  if (!usaGarrafaTermica && tcEquipamento === null) {
-    missingFields.push("TC Equipamento");
-  }
-
-  if (primeiraTc === null) {
-    missingFields.push("TC do Alimento");
-  } else {
-    const avaliacao = avaliarTemperaturaBuffet(item.classificacao, primeiraTc);
-    if (avaliacao.exigeAcaoCorretiva && !input.acaoCorretivaInput) {
-      missingFields.push("ação corretiva");
-    }
-  }
-
-  return missingFields.length > 0 ? { kind: "incomplete", missingFields } : null;
-}
-
-function buildNaoServidoPayload(params: {
-  actor: Awaited<ReturnType<typeof getCurrentUserForAction>>;
-  item: RegistroItemSource;
-  observacao?: string;
-}): RegistroItemPayload {
-  return {
-    horarioExecucao: null, horarioNaoInformado: false, justificativaHorario: null,
-    itemNome: params.item.nome,
-    classificacao: params.item.classificacao,
-    tcEquipamento: null,
-    primeiraTc: null,
-    segundaTc: null,
-    usaGarrafaTermica: params.item.usaGarrafaTermica,
-    temperaturaAmbiente: false,
-    statusTemperatura: null,
-    acaoCorretiva: null,
-    observacao:
-      params.observacao?.trim() || "Item previsto no serviço, mas não servido neste dia.",
-    responsavelUsuarioId: params.actor.id,
-    responsavelNome: params.actor.nomeCompleto,
-    responsavelPerfil: params.actor.perfil,
-    dataHoraRegistro: getCurrentSystemDateTime(),
-    status: StatusItemBuffetAmostra.NAO_SERVIDO
-  };
-}
-
 function formatAuditValue(value: unknown): string {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -556,6 +353,12 @@ async function isHistoricalBuffetMonthClosed(date: Date): Promise<boolean> {
   );
 }
 
+async function ensureLegacyBuffetGroup(servicoId:number,data:Date,actor:Awaited<ReturnType<typeof getCurrentUserForAction>>) {
+  assertWorkflowEdit({user:actor,module:"amostras",date:data,today:getAppDate()});
+  const legacy=await prisma.controleBuffetAmostraRegistro.findFirst({where:{servicoId,data,fluxoId:null}});
+  if(!legacy)throw new Error("Este serviço usa o formulário versionado. Recarregue a página antes de salvar.");
+}
+
 export async function saveRegistroItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, MODULE_PATH);
 
@@ -580,6 +383,7 @@ export async function saveRegistroItemAction(formData: FormData) {
       throw new Error("Data inválida para registro do item.");
     }
 
+    await ensureLegacyBuffetGroup(servicoId,data,actor);
     await ensurePeriodIsOpen(data);
     if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
@@ -651,6 +455,7 @@ export async function saveServicoItemsStateAction(
   _previousState: FormActionState = FORM_ACTION_INITIAL_STATE,
   formData: FormData
 ): Promise<FormActionState> {
+  if (formData.has("versao")) {const state=await saveBuffetWorkflowState(formData,"save");if(state.status==="success")redirectWithFeedback(getReturnToPath(formData,`${SERVICE_PATH}/${String(formData.get("servicoId"))}?data=${String(formData.get("data"))}`),"success",state.message);return state;}
   try {
     const actor = await getCurrentUserForAction();
     const servicoId = parsePositiveInt(getInputValue(formData, "servicoId"));
@@ -659,8 +464,6 @@ export async function saveServicoItemsStateAction(
       .getAll("rowKey")
       .map((value) => (typeof value === "string" ? value : ""))
       .filter(Boolean);
-    const confirmarItensPendentes =
-      getInputValue(formData, "confirmarItensPendentes") === "true";
 
     if (!servicoId) {
       throw new Error("Serviço inválido para salvar os itens.");
@@ -675,6 +478,7 @@ export async function saveServicoItemsStateAction(
       throw new Error("Não há itens disponíveis para salvar.");
     }
 
+    await ensureLegacyBuffetGroup(servicoId,data,actor);
     await ensurePeriodIsOpen(data);
     if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
@@ -763,29 +567,7 @@ export async function saveServicoItemsStateAction(
           }
 
           const issue = getRegistroItemIssue(item, input);
-          if (issue) {
-            if (!confirmarItensPendentes) {
-              return {
-                status: "error",
-                message:
-                  issue.kind === "blank"
-                    ? `O item "${item.nome}" está sem preenchimento. Confirme para salvar como não servido.`
-                    : `O item "${item.nome}" está incompleto (${issue.missingFields.join(", ")}). Corrija ou confirme para salvar como não servido.`,
-                invalidRowKey: rowKey
-              };
-            }
-
-            updates.push({
-              type: "fixed",
-              itemId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
+          if (issue) continue;
 
           updates.push({
             type: "fixed",
@@ -827,29 +609,7 @@ export async function saveServicoItemsStateAction(
           }
 
           const issue = getRegistroItemIssue(item, input);
-          if (issue) {
-            if (!confirmarItensPendentes) {
-              return {
-                status: "error",
-                message:
-                  issue.kind === "blank"
-                    ? `O item "${registro.itemNome}" está sem preenchimento. Confirme para salvar como não servido.`
-                    : `O item "${registro.itemNome}" está incompleto (${issue.missingFields.join(", ")}). Corrija ou confirme para salvar como não servido.`,
-                invalidRowKey: rowKey
-              };
-            }
-
-            updates.push({
-              type: "extra",
-              registroId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
+          if (issue) continue;
 
           updates.push({
             type: "extra",
@@ -1042,6 +802,7 @@ export async function createExtraItemStateAction(
   _previousState: FormActionState = FORM_ACTION_INITIAL_STATE,
   formData: FormData
 ): Promise<FormActionState> {
+  if (formData.has("versao")) {const state=await saveBuffetWorkflowState(formData,"extra");if(state.status==="success")redirectWithFeedback(`${SERVICE_PATH}/${String(formData.get("servicoId"))}?data=${String(formData.get("data"))}`,"success",state.message);return state;}
   try {
     const actor = await getCurrentUserForAction();
     const servicoId = parsePositiveInt(getInputValue(formData, "servicoId"));
@@ -1062,6 +823,7 @@ export async function createExtraItemStateAction(
       throw new Error(!nome ? "Informe o nome do item extra." : INVALID_ITEM_CLASSIFICATION_MESSAGE);
     }
 
+    await ensureLegacyBuffetGroup(servicoId,data,actor);
     await ensurePeriodIsOpen(data);
     if (!hasPermission(actor, "modulo.amostras.criar_registro")) {
       throw new Error("Seu perfil não pode editar registros de amostras nesta data.");
@@ -1123,6 +885,7 @@ export async function createExtraItemStateAction(
 export async function signRegistroItemAction(formData: FormData) {
   const returnTo = getReturnToPath(formData, MODULE_PATH);
 
+  if (formData.has("versao")) { const state=await saveBuffetWorkflowState(formData,"signItem");redirectWithFeedback(returnTo,state.status,state.message); }
   try {
     const actor = await getCurrentUserForAction();
     ensurePermission(actor, "modulo.amostras.assinar_servico", "Você não tem permissão para assinar este serviço.");

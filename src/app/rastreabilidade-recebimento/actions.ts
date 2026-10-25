@@ -1,14 +1,13 @@
 "use server";
-import { assertProcedureDate, readExecutionTime } from "@/lib/procedure-time";
+import {validateAndBuildItemPayload,parseTemperaturaRecebimentoTipo,FieldValidationError,type CategoryItem,type ValidatedItemPayload} from "./workflow-payload";
+import {startReceivingWorkflow,saveReceivingWorkflowState} from "./workflow-actions";
+import { readExecutionTime } from "@/lib/procedure-time";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
 import {
-  Prisma,
-  ConformidadeRecebimento,
   StatusNotaRecebimento,
-  StatusRecebimento,
   TipoTemperaturaRecebimento
 } from "@prisma/client";
 import { revalidatePath } from "next/cache";
@@ -21,7 +20,6 @@ import {
   ensureCanManageOptions,
   validateSignaturePassword
 } from "@/lib/authz";
-import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 import type { UserRole } from "@/lib/rbac";
@@ -30,50 +28,20 @@ import {
   hasCategoryWithSameName,
   sanitizeCategoryName
 } from "./catalog";
-import { parseRecebimentoXml } from "./xml-parser";
 import {
-  calculateOverallStatus,
-  calculateTemperatureStatus,
   formatDateInput,
   getMonthDateRange,
   getMonthYear,
   getTodaySystemDate,
-  isActionCorrectiveRequired,
-  parseConformidade,
-  parseDateInput,
   parsePositiveInt,
   parseTemperatureInput
 } from "./utils";
-import type { Conformidade } from "./utils";
-import {
-  normalizeSifValue,
-  SIF_BACKEND_REQUIRED_MESSAGE
-} from "./sif";
 import { getReceivingNoteEditAccessReason } from "./note-permissions";
 
 const MODULE_PATH = "/rastreabilidade-recebimento";
-const DUPLICATE_NFE_MESSAGE =
-  "Esta nota fiscal já foi importada anteriormente e não pode ser cadastrada novamente.";
-
-function canImportXmlAsGerente(role: UserRole): boolean {
-  return role === "DEV" || role === "GERENTE";
-}
 
 function canEditImportedXmlFields(role: UserRole): boolean {
   return role === "DEV" || role === "GERENTE";
-}
-
-function canCreateManualReceiving(role: UserRole): boolean {
-  return role !== "COLABORADOR";
-}
-
-function ensureCanCreateManualReceiving(actor: AuthenticatedUser) {
-  if (
-    !hasPermission(actor, "modulo.rastreabilidade.criar_registro") &&
-    !canCreateManualReceiving(actor.perfil)
-  ) {
-    throw new Error("Seu perfil não pode criar notas manuais de recebimento.");
-  }
 }
 
 function getReceivingNoteEditAccessMessage(
@@ -123,61 +91,6 @@ const FORM_ACTION_INITIAL_STATE: FormActionState = {
   status: "idle",
   message: ""
 };
-
-type CategoryItem = {
-  id: number;
-  nome: string;
-  temperaturaMaxima: number;
-  ativo: boolean;
-};
-
-type ItemInputValues = {
-  produto: string;
-  lote: string;
-  dataFabricacao: string;
-  semDataFabricacao: boolean;
-  dataValidade: string;
-  validadeNaoAplicavel: boolean;
-  sif: string;
-  temperatura: string;
-  temperaturaTipo: TipoTemperaturaRecebimento;
-  transporteEntregador: string;
-  aspectoSensorial: string;
-  embalagem: string;
-  acaoCorretiva: string;
-  observacoes: string;
-};
-
-type ValidatedItemPayload = {
-  produto: string;
-  lote: string;
-  dataFabricacao: Date | null;
-  semDataFabricacao: boolean;
-  dataValidade: Date | null;
-  validadeNaoAplicavel: boolean;
-  sif: string;
-  temperatura: number | null;
-  temperaturaTipo: TipoTemperaturaRecebimento;
-  categoriaId: number;
-  temperaturaStatus: ConformidadeRecebimento;
-  transporteEntregador: ConformidadeRecebimento;
-  aspectoSensorial: ConformidadeRecebimento;
-  embalagem: ConformidadeRecebimento;
-  acaoCorretiva: string | null;
-  responsavelRecebimento: string;
-  observacoes: string | null;
-  statusGeral: StatusRecebimento;
-};
-
-class FieldValidationError extends Error {
-  invalidField: string;
-
-  constructor(message: string, invalidField: string) {
-    super(message);
-    this.name = "FieldValidationError";
-    this.invalidField = invalidField;
-  }
-}
 
 function getInputValue(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -245,30 +158,6 @@ function getInvalidField(error: unknown): string | undefined {
   return undefined;
 }
 
-function buildFiscalIdentifier(params: {
-  notaFiscal: string;
-  cnpjFornecedor: string | null;
-  serieNota: string | null;
-}): string | null {
-  if (!params.notaFiscal || !params.cnpjFornecedor) {
-    return null;
-  }
-
-  const base = `${params.cnpjFornecedor}|${params.notaFiscal}`;
-  if (params.serieNota) {
-    return `${base}|${params.serieNota}`;
-  }
-
-  return base;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  );
-}
-
 function redirectWithFeedback(
   returnTo: string,
   feedbackType: FeedbackType,
@@ -311,242 +200,6 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return isOperationalMonthClosed("rastreabilidade", mes, ano);
 }
 
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .trim();
-}
-
-function findCategoryByNamePart(
-  categories: CategoryItem[],
-  keyword: string
-): CategoryItem | null {
-  const normalizedKeyword = normalizeText(keyword);
-  return (
-    categories.find((category) => normalizeText(category.nome).includes(normalizedKeyword)) ??
-    null
-  );
-}
-
-function determineCategoryForProduct(
-  productName: string,
-  categories: CategoryItem[]
-): CategoryItem {
-  const normalizedProduct = normalizeText(productName);
-
-  if (
-    /(pescad|peixe|camarao|salmao|tilapia|atum|bacalhau)/.test(normalizedProduct)
-  ) {
-    const pescados = findCategoryByNamePart(categories, "pescados");
-    if (pescados) return pescados;
-  }
-
-  if (
-    /(congel|freezer|sorvet|gelad)/.test(normalizedProduct)
-  ) {
-    const congelados = findCategoryByNamePart(categories, "congelados");
-    if (congelados) return congelados;
-  }
-
-  if (
-    /(carne|frango|bovina|suina|linguica|hamburg)/.test(normalizedProduct)
-  ) {
-    const carnes = findCategoryByNamePart(categories, "carnes");
-    if (carnes) return carnes;
-  }
-
-  if (
-    /(pao|bolo|torta|confeitar|panifica|recheio)/.test(normalizedProduct)
-  ) {
-    const panificacao = findCategoryByNamePart(categories, "panificação");
-    if (panificacao) return panificacao;
-  }
-
-  const demais = findCategoryByNamePart(categories, "demais");
-  if (demais) return demais;
-
-  return categories[0];
-}
-
-function parseRequiredDate(value: string, fieldLabel: string): Date {
-  if (!value) {
-    throw new Error(`O campo ${fieldLabel} é obrigatório.`);
-  }
-
-  const parsed = parseDateInput(value);
-  if (!parsed) {
-    throw new Error(`Informe uma ${fieldLabel.toLowerCase()} válida.`);
-  }
-
-  return parsed;
-}
-
-function parseRequiredTemperature(value: string): number {
-  const parsed = parseTemperatureInput(value);
-  if (parsed === null) {
-    throw new Error("Informe uma temperatura válida.");
-  }
-  return parsed;
-}
-
-function formatTemperatureValue(value: number): string {
-  return value.toLocaleString("pt-BR", {
-    minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
-    maximumFractionDigits: 1
-  });
-}
-
-function buildCorrectiveActionReasons(params: {
-  temperatura: number | null;
-  temperaturaStatus: Conformidade;
-  categoria: CategoryItem;
-  transporteEntregador: Conformidade | null;
-  aspectoSensorial: Conformidade | null;
-  embalagem: Conformidade | null;
-}): string[] {
-  const reasons: string[] = [];
-
-  if (params.temperaturaStatus === "NAO_CONFORME" && params.temperatura !== null) {
-    reasons.push(
-      `Temperatura fora do padrão: ${formatTemperatureValue(
-        params.temperatura
-      )} °C acima do limite de ${formatTemperatureValue(
-        params.categoria.temperaturaMaxima
-      )} °C para ${params.categoria.nome}.`
-    );
-  }
-
-  if (params.transporteEntregador === "NAO_CONFORME") {
-    reasons.push("Transporte/entregador marcado como não conforme.");
-  }
-
-  if (params.aspectoSensorial === "NAO_CONFORME") {
-    reasons.push("Aspecto sensorial marcado como não conforme.");
-  }
-
-  if (params.embalagem === "NAO_CONFORME") {
-    reasons.push("Embalagem marcada como não conforme.");
-  }
-
-  return reasons;
-}
-
-function parseTemperaturaRecebimentoTipo(value: string): TipoTemperaturaRecebimento {
-  if (value === TipoTemperaturaRecebimento.AMBIENTE) {
-    return TipoTemperaturaRecebimento.AMBIENTE;
-  }
-
-  if (value === TipoTemperaturaRecebimento.NAO_APLICAVEL) {
-    return TipoTemperaturaRecebimento.NAO_APLICAVEL;
-  }
-
-  return TipoTemperaturaRecebimento.NUMERICA;
-}
-
-function validateAndBuildItemPayload(
-  input: ItemInputValues,
-  categories: CategoryItem[],
-  responsavelLogado: string
-): ValidatedItemPayload {
-  if (!input.produto) {
-    throw new Error("O campo Produto é obrigatório.");
-  }
-
-  if (!input.lote) {
-    throw new FieldValidationError("O campo Lote é obrigatório.", "lote");
-  }
-
-  const sifNormalizado = input.sif.trim();
-  if (!sifNormalizado) {
-    throw new FieldValidationError(SIF_BACKEND_REQUIRED_MESSAGE, "sif");
-  }
-  const sifValue = normalizeSifValue(sifNormalizado);
-
-  if (!responsavelLogado.trim()) {
-    throw new Error("Não foi possível identificar o usuário logado para o campo Responsável.");
-  }
-
-  const dataFabricacao = input.semDataFabricacao
-    ? null
-    : parseRequiredDate(input.dataFabricacao, "Data de Fabricação");
-  const dataValidade = input.validadeNaoAplicavel
-    ? null
-    : parseRequiredDate(input.dataValidade, "Validade");
-  const temperaturaTipo = input.temperaturaTipo;
-
-  const transporteEntregador = parseConformidade(input.transporteEntregador);
-  const aspectoSensorial = parseConformidade(input.aspectoSensorial);
-  const embalagem = parseConformidade(input.embalagem);
-
-  if (!transporteEntregador || !aspectoSensorial || !embalagem) {
-    throw new Error(
-      "Preencha Transporte/Entregador, Aspecto Sensorial e Embalagem como Conforme ou Não Conforme."
-    );
-  }
-
-  const category = determineCategoryForProduct(input.produto, categories);
-  let temperatura: number | null = null;
-  let temperaturaStatus: Conformidade = "CONFORME";
-  if (temperaturaTipo === TipoTemperaturaRecebimento.NUMERICA) {
-    temperatura = parseRequiredTemperature(input.temperatura);
-    temperaturaStatus = calculateTemperatureStatus(temperatura, category.temperaturaMaxima);
-  }
-  const correctiveActionReasons = buildCorrectiveActionReasons({
-    temperatura,
-    temperaturaStatus,
-    categoria: category,
-    transporteEntregador,
-    aspectoSensorial,
-    embalagem
-  });
-  const needsCorrectiveAction = isActionCorrectiveRequired({
-    temperaturaStatus,
-    transporteEntregador,
-    aspectoSensorial,
-    embalagem
-  });
-
-  if (needsCorrectiveAction && !input.acaoCorretiva) {
-    const reasonText = correctiveActionReasons.length
-      ? correctiveActionReasons.join(" ")
-      : "Há campos não conformes neste item.";
-    throw new FieldValidationError(
-      `Este item possui não conformidade. ${reasonText} Informe a ação corretiva para salvar.`,
-      "acaoCorretiva"
-    );
-  }
-
-  const statusGeral = calculateOverallStatus({
-    temperaturaStatus,
-    transporteEntregador,
-    aspectoSensorial,
-    embalagem
-  });
-
-  return {
-    produto: input.produto,
-    lote: input.lote,
-    dataFabricacao,
-    semDataFabricacao: input.semDataFabricacao,
-    dataValidade,
-    validadeNaoAplicavel: input.validadeNaoAplicavel,
-    sif: sifValue,
-    temperatura,
-    temperaturaTipo,
-    categoriaId: category.id,
-    temperaturaStatus: temperaturaStatus as ConformidadeRecebimento,
-    transporteEntregador: transporteEntregador as ConformidadeRecebimento,
-    aspectoSensorial: aspectoSensorial as ConformidadeRecebimento,
-    embalagem: embalagem as ConformidadeRecebimento,
-    acaoCorretiva: input.acaoCorretiva || null,
-    responsavelRecebimento: responsavelLogado.trim(),
-    observacoes: input.observacoes || null,
-    statusGeral: statusGeral as StatusRecebimento
-  };
-}
-
 async function getActiveCategories(): Promise<CategoryItem[]> {
   const categories = await prisma.rastreabilidadeRecebimentoCategoria.findMany({
     where: { ativo: true },
@@ -560,224 +213,13 @@ async function getActiveCategories(): Promise<CategoryItem[]> {
   return categories;
 }
 
-async function ensureXmlNoteIsNotDuplicated(params: {
-  chaveNFe: string | null;
-  notaFiscal: string;
-  cnpjFornecedor: string | null;
-  serieNota: string | null;
-}) {
-  if (params.chaveNFe) {
-    const existingByKey = await prisma.rastreabilidadeRecebimentoNota.findFirst({
-      where: { chaveNfe: params.chaveNFe },
-      select: { id: true }
-    });
-
-    if (existingByKey) {
-      throw new Error(DUPLICATE_NFE_MESSAGE);
-    }
-  }
-
-  if (params.cnpjFornecedor) {
-    const existingByNumberAndDocument = await prisma.rastreabilidadeRecebimentoNota.findFirst({
-      where: {
-        notaFiscal: params.notaFiscal,
-        cnpjFornecedor: params.cnpjFornecedor,
-        ...(params.serieNota
-          ? {
-              OR: [{ serieNota: params.serieNota }, { serieNota: null }, { serieNota: "" }]
-            }
-          : {})
-      },
-      select: { id: true }
-    });
-
-    if (existingByNumberAndDocument) {
-      throw new Error(DUPLICATE_NFE_MESSAGE);
-    }
-  }
+export async function importXmlAction(formData:FormData) {
+  const returnTo=getReturnToPath(formData);
+  try{const id=await startReceivingWorkflow(formData,"xml");redirectToNoteWithFeedback(id,"success","XML importado. Complete a conferência.");}
+  catch(error){rethrowIfRedirectError(error);redirectWithFeedback(returnTo,"error",getErrorMessage(error));}
 }
 
-export async function importXmlAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    if (!canImportXmlAsGerente(actor.perfil)) {
-      throw new Error("A importação de XML é permitida apenas para DEV e GERENTE.");
-    }
-
-    const file = formData.get("xmlFile");
-    if (!(file instanceof File)) {
-      throw new Error("Selecione um arquivo XML válido.");
-    }
-
-    if (!file.name.toLowerCase().endsWith(".xml")) {
-      throw new Error("O arquivo precisa estar no formato XML.");
-    }
-
-    const content = await file.text();
-    const parsed = parseRecebimentoXml(content);
-    const categories = await getActiveCategories();
-
-    const dataRaw = formData.get("data");
-    const data = dataRaw === null ? getTodaySystemDate() : typeof dataRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataRaw) ? parseDateInput(dataRaw) : null;
-    if (!data) throw new Error("Informe uma data de recebimento válida.");
-    assertProcedureDate(data);
-    const { mes, ano } = getMonthYear(data);
-    if (await isMonthSigned(mes, ano)) {
-      throw new Error(
-        `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado e não aceita importações.`
-      );
-    }
-
-    await ensureXmlNoteIsNotDuplicated({
-      chaveNFe: parsed.chaveNFe,
-      notaFiscal: parsed.notaFiscal,
-      cnpjFornecedor: parsed.cnpjFornecedor,
-      serieNota: parsed.serieNota
-    });
-
-    const fiscalIdentifier = buildFiscalIdentifier({
-      notaFiscal: parsed.notaFiscal,
-      cnpjFornecedor: parsed.cnpjFornecedor,
-      serieNota: parsed.serieNota
-    });
-
-    const noteId = await prisma.$transaction(async (tx) => {
-      const note = await tx.rastreabilidadeRecebimentoNota.create({
-        data: {
-          data,
-          fornecedor: parsed.fornecedor,
-          notaFiscal: parsed.notaFiscal,
-          chaveNfe: parsed.chaveNFe,
-          cnpjFornecedor: parsed.cnpjFornecedor,
-          serieNota: parsed.serieNota,
-          identificadorFiscal: fiscalIdentifier,
-          statusNota: StatusNotaRecebimento.IMPORTADA,
-          origemXml: true,
-          responsavelGeral: actor.nomeCompleto
-        }
-      });
-
-      await tx.rastreabilidadeRecebimentoRegistro.createMany({
-        data: parsed.items.map((item) => {
-          const category = determineCategoryForProduct(item.produto, categories);
-          return {
-            notaId: note.id,
-            data,
-            produto: item.produto,
-            codigoProdutoXml: item.codigoProdutoXml,
-            ncm: item.ncm,
-            cfop: item.cfop,
-            quantidadeComprada: item.quantidadeComprada,
-            unidadeMedidaCompra: item.unidadeMedidaCompra,
-            valorUnitario: item.valorUnitario,
-            valorTotalItem: item.valorTotalItem,
-            quantidadeTributavel: item.quantidadeTributavel,
-            unidadeMedidaTributavel: item.unidadeMedidaTributavel,
-            valorUnitarioTributavel: item.valorUnitarioTributavel,
-            fornecedor: parsed.fornecedor,
-            notaFiscal: parsed.notaFiscal,
-            lote: item.lote,
-            dataFabricacao: item.dataFabricacao,
-            dataValidade: item.dataValidade,
-            categoriaId: category.id,
-            statusGeral: StatusRecebimento.PENDENTE,
-            origemXml: true
-          };
-        })
-      });
-
-      return note.id;
-    });
-
-    revalidateModulePaths();
-    redirectToNoteWithFeedback(
-      noteId,
-      "success",
-      `${parsed.items.length} Item(ns) Importado(s). Complete a conferência e finalize a nota.`
-    );
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    if (isUniqueViolation(error)) {
-      redirectWithFeedback(returnTo, "error", DUPLICATE_NFE_MESSAGE);
-    }
-
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
-}
-
-async function createManualNoteFromForm(formData: FormData): Promise<number> {
-  const actor = await getCurrentUserForAction();
-  ensureCanCreateManualReceiving(actor);
-
-  const fornecedor = getInputValue(formData, "fornecedor");
-  const notaFiscal = getInputValue(formData, "notaFiscal");
-
-  if (!fornecedor || !notaFiscal) {
-    throw new Error("Fornecedor e Nota Fiscal são obrigatórios.");
-  }
-
-  const dataRaw = formData.get("data");
-    const data = dataRaw === null ? getTodaySystemDate() : typeof dataRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dataRaw) ? parseDateInput(dataRaw) : null;
-    if (!data) throw new Error("Informe uma data de recebimento válida.");
-    assertProcedureDate(data);
-  const { mes, ano } = getMonthYear(data);
-  if (await isMonthSigned(mes, ano)) {
-    throw new Error(
-      `O mês ${String(mes).padStart(2, "0")}/${ano} já está fechado e não aceita novos registros.`
-    );
-  }
-
-  const categories = await getActiveCategories();
-  const itemPayload = validateAndBuildItemPayload(
-    {
-      produto: getInputValue(formData, "produto"),
-      lote: getInputValue(formData, "lote"),
-      dataFabricacao: getInputValue(formData, "dataFabricacao"),
-      semDataFabricacao: getBooleanInput(formData, "semDataFabricacao"),
-      dataValidade: getInputValue(formData, "dataValidade"),
-      validadeNaoAplicavel: getBooleanInput(formData, "validadeNaoAplicavel"),
-      sif: getInputValue(formData, "sif"),
-      temperatura: getInputValue(formData, "temperatura"),
-      temperaturaTipo: parseTemperaturaRecebimentoTipo(
-        getInputValue(formData, "temperaturaTipo")
-      ),
-      transporteEntregador: getInputValue(formData, "transporteEntregador"),
-      aspectoSensorial: getInputValue(formData, "aspectoSensorial"),
-      embalagem: getInputValue(formData, "embalagem"),
-      acaoCorretiva: getInputValue(formData, "acaoCorretiva"),
-      observacoes: getInputValue(formData, "observacoes")
-    },
-    categories,
-    actor.nomeCompleto
-  );
-
-  const note = await prisma.rastreabilidadeRecebimentoNota.create({
-    data: {
-      data,
-      fornecedor,
-      notaFiscal,
-      statusNota: StatusNotaRecebimento.EM_CONFERENCIA,
-      origemXml: false,
-      responsavelGeral: actor.nomeCompleto
-    }
-  });
-
-  await prisma.rastreabilidadeRecebimentoRegistro.create({
-    data: {
-      ...itemPayload,
-      ...readExecutionTime(formData, data),
-      notaId: note.id,
-      data,
-      fornecedor,
-      notaFiscal,
-      origemXml: false
-    }
-  });
-
-  return note.id;
-}
+async function createManualNoteFromForm(formData:FormData):Promise<number> { return startReceivingWorkflow(formData,"manual"); }
 
 export async function createManualNoteAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);
@@ -910,6 +352,7 @@ export async function saveNotaItemsStateAction(
   _previousState: FormActionState = FORM_ACTION_INITIAL_STATE,
   formData: FormData
 ): Promise<FormActionState> {
+  if(formData.has("versao")) {const state=await saveReceivingWorkflowState(formData);if(state.status==="success")redirectToNoteWithFeedback(Number(formData.get("notaId")),"success",state.message);return state;}
   try {
     const intent = getInputValue(formData, "intent") === "finalize" ? "finalize" : "save";
     const actor = await getCurrentUserForAction();

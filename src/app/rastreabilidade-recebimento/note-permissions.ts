@@ -84,6 +84,8 @@ export function getReceivingNoteEditAccessReason(
     return "FINALIZED";
   }
 
+  if(params.noteDate.getTime()<params.today.getTime()&&!hasPermission(params.user,`${MODULE_PERMISSION_PREFIX}.editar_historico`))return "NO_PERMISSION";
+
   if (
     canEditRecordDate(
       params.user,

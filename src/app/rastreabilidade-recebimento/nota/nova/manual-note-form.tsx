@@ -15,6 +15,7 @@ type ActionState = {
 };
 
 type ManualNoteFormProps = {
+  workflowRequestId?:string;
   responsavelLogado: string;
   inputClassName: string;
 };
@@ -57,6 +58,7 @@ function normalizeTemperatureOnBlur(value: string | null | undefined): string {
 }
 
 export function ManualNoteForm({
+  workflowRequestId,
   responsavelLogado,
   inputClassName
 }: ManualNoteFormProps) {
@@ -70,7 +72,7 @@ export function ManualNoteForm({
   const errorInputClass = `${inputClassName} border-red-400 bg-red-50 text-red-700 focus:border-red-500 focus:ring-red-500 dark:border-red-700 dark:bg-red-950 dark:text-red-200`;
 
   return (
-    <form action={formAction} className="grid gap-4 md:grid-cols-2">
+    <form action={formAction} className="grid gap-4 md:grid-cols-2">{workflowRequestId&&<input type="hidden" name="workflowRequestId" value={workflowRequestId}/>}
       <input type="hidden" name="returnTo" value="/rastreabilidade-recebimento/nota/nova" />
       <ReferenceExecutionFields defaultDate={formatAppDateInput(getAppDate())} today={formatAppDateInput(getAppDate())} />
 
@@ -260,6 +262,6 @@ export function ManualNoteForm({
       <datalist id="sif-opcoes-manual">
         <option value="NA" />
       </datalist>
-    </form>
+    <button type="submit" formNoValidate className="btn-secondary">Salvar recebimento parcial</button></form>
   );
 }

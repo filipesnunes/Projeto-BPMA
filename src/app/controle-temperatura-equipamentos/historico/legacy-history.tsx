@@ -1,3 +1,7 @@
+import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleDayReview } from "@/components/compatible-day-review";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
@@ -8,7 +12,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
-import { MonthlyClosureSection, SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { ActionModal } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, getAppMonthYear } from "@/lib/date-time";
@@ -30,7 +34,7 @@ import {
   parsePositiveInt
 } from "../utils";
 
-const PAGE_PATH = "/controle-temperatura-equipamentos/historico/legado";
+const PAGE_PATH = "/controle-temperatura-equipamentos/historico";
 const CARD_CLASS = "bpma-card";
 const INPUT_CLASS = "bpma-input";
 const MODULE_CODE = "temperatura";
@@ -114,7 +118,7 @@ export default async function ControleTemperaturaHistoricoPage({
   const selectedYear = filtroAno ?? todayMonth.ano;
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
 
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = { fluxoId: null };
+  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -147,7 +151,7 @@ export default async function ControleTemperaturaHistoricoPage({
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, registrosMensais, fechamentoMensal] = await Promise.all([
+  const [rawRegistros, rawRegistrosMensais, fechamentoMensal] = await Promise.all([
     prisma.controleTemperaturaEquipamento.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -167,6 +171,8 @@ export default async function ControleTemperaturaHistoricoPage({
     })
   ]);
 
+  const registros = await currentRecordSignatures(rawRegistros,"temperatura");
+  const registrosMensais = await currentRecordSignatures(rawRegistrosMensais,"temperatura");
   const gruposPorDia = new Map<string, { data: Date; registros: typeof registros }>();
   for (const registro of registros) {
     const key = formatAppDateInput(registro.data);
@@ -182,7 +188,7 @@ export default async function ControleTemperaturaHistoricoPage({
   const datasMensais = Array.from(
     new Map(registrosMensais.map((registro) => [formatAppDateInput(registro.data), registro.data])).values()
   );
-  const [assinaturasHistorico, assinaturasMensais] = await Promise.all([
+  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
     datasHistorico.length
       ? prisma.assinaturaDiariaModulo.findMany({
           where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
@@ -194,6 +200,9 @@ export default async function ControleTemperaturaHistoricoPage({
         })
       : Promise.resolve([])
   ]);
+
+  const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"temperatura",registros.map(row=>row.data));
+  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"temperatura",registrosMensais.map(row=>row.data));
   const assinaturasPorData = new Map(
     assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
@@ -478,7 +487,7 @@ export default async function ControleTemperaturaHistoricoPage({
               </tbody>
             </table>
           </div>
-          <SignDayForm
+          <CompatibleDayReview
             moduleCode={MODULE_CODE}
             dateInput={formatAppDateInput(grupoSelecionado.data)}
             returnTo={buildOpenDayHref(formatAppDateInput(grupoSelecionado.data))}
@@ -517,6 +526,8 @@ export default async function ControleTemperaturaHistoricoPage({
           )}
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="temperatura" history={true} query={params} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 "use server";
-import { saveOilWorkflowAction } from "./workflow-actions";
+import { createFromOriginalForm } from "@/app/historico-operacional/compatible-create";
 import { getRegistroPayload } from "./record-payload";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
@@ -126,7 +126,7 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
   return isOperationalMonthClosed("oleo", mes, ano);
 }
 
-export async function createRegistroAction(formData: FormData) { return saveOilWorkflowAction(formData); }
+export async function createRegistroAction(formData: FormData) { return createFromOriginalForm("oleo",formData); }
 
 export async function updateRegistroAction(formData: FormData) {
   const returnTo = getReturnToPath(formData);

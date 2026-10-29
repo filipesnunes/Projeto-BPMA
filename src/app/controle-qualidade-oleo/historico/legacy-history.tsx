@@ -1,10 +1,14 @@
+import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleDayReview } from "@/components/compatible-day-review";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { hasPermission } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma, StatusQualidadeOleo } from "@prisma/client";
 import Link from "next/link";
 
-import { MonthlyClosureSection, SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { ActionModal } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, getAppMonthYear } from "@/lib/date-time";
@@ -20,7 +24,7 @@ import {
   parseDateInput
 } from "../utils";
 
-const PAGE_PATH = "/controle-qualidade-oleo/historico/legado";
+const PAGE_PATH = "/controle-qualidade-oleo/historico";
 const CARD_CLASS = "bpma-card";
 const INPUT_CLASS = "bpma-input";
 const MODULE_CODE = "oleo";
@@ -80,7 +84,6 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
   const canSignMonthly = authUser ? canSignModuleMonthlyClosure(authUser, MODULE_CODE) : false;
 
   const params = await searchParams;
-  if (params.new === "1") redirect("/controle-qualidade-oleo/fluxo");
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
   const filtroData = firstParam(params.filtroData).trim();
@@ -96,7 +99,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
   const selectedYear = filtroAno ?? todayMonth.ano;
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
 
-  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = { fluxoId: null };
+  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -128,7 +131,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, registrosMensais, fitaOptions, fechamentoMensal] = await Promise.all([
+  const [rawRegistros, rawRegistrosMensais, fitaOptions, fechamentoMensal] = await Promise.all([
     prisma.controleQualidadeOleoRegistro.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -151,6 +154,8 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
     })
   ]);
 
+  const registros = await currentRecordSignatures(rawRegistros,"oleo");
+  const registrosMensais = await currentRecordSignatures(rawRegistrosMensais,"oleo");
   const gruposPorDia = new Map<string, { data: Date; registros: typeof registros }>();
   for (const registro of registros) {
     const key = formatAppDateInput(registro.data);
@@ -166,7 +171,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
   const datasMensais = Array.from(
     new Map(registrosMensais.map((registro) => [formatAppDateInput(registro.data), registro.data])).values()
   );
-  const [assinaturasHistorico, assinaturasMensais] = await Promise.all([
+  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
     datasHistorico.length
       ? prisma.assinaturaDiariaModulo.findMany({
           where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
@@ -178,6 +183,9 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
         })
       : Promise.resolve([])
   ]);
+
+  const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"oleo",registros.map(row=>row.data));
+  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"oleo",registrosMensais.map(row=>row.data));
   const assinaturasPorData = new Map(
     assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
@@ -419,7 +427,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
               </tbody>
             </table>
           </div>
-          <SignDayForm
+          <CompatibleDayReview
             moduleCode={MODULE_CODE}
             dateInput={formatAppDateInput(grupoSelecionado.data)}
             returnTo={buildOpenDayHref(formatAppDateInput(grupoSelecionado.data))}
@@ -429,6 +437,8 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
           />
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="oleo" history={true} query={params} />
     </div>
   );
 }

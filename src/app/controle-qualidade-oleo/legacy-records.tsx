@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
@@ -39,7 +42,7 @@ import {
   periodKey
 } from "./utils";
 
-const MODULE_PATH = "/controle-qualidade-oleo/legado";
+const MODULE_PATH = "/controle-qualidade-oleo";
 const CARD_CLASS =
   "bpma-card";
 const INPUT_CLASS =
@@ -112,7 +115,6 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "oleo");
 
   const params = await searchParams;
-  if (params.new === "1") redirect("/controle-qualidade-oleo/fluxo");
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
@@ -136,7 +138,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
-  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = { fluxoId: null };
+  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -168,7 +170,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
+  const [rawRegistros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
     prisma.controleQualidadeOleoRegistro.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -183,17 +185,24 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     })
   ]);
 
+  const registros = await currentRecordSignatures(rawRegistros,"oleo");
   const fitaOptionsAtivas = fitaOptions.filter((option) => option.ativo);
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const deleteId = parsePositiveInt(firstParam(params.deleteId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
   const registroEmEdicao = editId
-    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: editId, fluxoId: null } })
+    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: editId } })
     : null;
   const registroParaExcluir = deleteId
-    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: deleteId, fluxoId: null } })
+    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: deleteId } })
     : null;
+  const managedRecord = registroEmEdicao ?? registroParaExcluir;
+  if (managedRecord?.fluxoId) {
+    const flow = await prisma.fluxoOperacional.findUnique({where:{id:managedRecord.fluxoId}});
+    if (flow && !flow.excluidoEm) redirect(`/controle-qualidade-oleo/fluxo?chave=${encodeURIComponent(flow.chave)}`);
+  }
+
 
   let fitaFormOptions = fitaOptionsAtivas;
   if (
@@ -385,6 +394,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
               className="grid gap-4 md:grid-cols-2"
             >
               <input type="hidden" name="returnTo" value={formReturnTo} />
+              <input type="hidden" name="workflowRequestId" value={randomUUID()} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             {registroEmEdicao ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
@@ -669,6 +679,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
           )}
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="oleo" history={false} query={params} />
     </div>
   );
 }

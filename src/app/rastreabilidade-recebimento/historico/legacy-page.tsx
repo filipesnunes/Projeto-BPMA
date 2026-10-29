@@ -1,3 +1,8 @@
+import { hasPermission } from "@/lib/permissions";
+import { redirect } from "next/navigation";
+import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleDayReview } from "@/components/compatible-day-review";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ConformidadeRecebimento,
@@ -7,7 +12,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
-import { MonthlyClosureSection, SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { ActionModal } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, getAppMonthYear } from "@/lib/date-time";
@@ -23,7 +28,7 @@ import {
   parseDateInput
 } from "../utils";
 
-const PAGE_PATH = "/rastreabilidade-recebimento/historico/legado";
+const PAGE_PATH = "/rastreabilidade-recebimento/historico";
 const CARD_CLASS = "bpma-card";
 const INPUT_CLASS = "bpma-input";
 const MODULE_CODE = "rastreabilidade";
@@ -104,6 +109,8 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
   searchParams
 }: PageProps) {
   const authUser = await getCurrentUser();
+  if (!authUser) redirect("/login");
+  if (!hasPermission(authUser,"modulo.rastreabilidade.acessar_historico")) redirect("/acesso-negado");
   const canSignDay = authUser ? canSignModuleDay(authUser, MODULE_CODE) : false;
   const canSignMonthly = authUser ? canSignModuleMonthlyClosure(authUser, MODULE_CODE) : false;
 
@@ -124,7 +131,7 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
   const selectedYear = filtroAno ?? todayMonth.ano;
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
 
-  const where: Prisma.RastreabilidadeRecebimentoNotaWhereInput = {fluxoId:null,};
+  const where: Prisma.RastreabilidadeRecebimentoNotaWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -194,7 +201,7 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
   const datasMensais = Array.from(
     new Map(notasMensais.map((nota) => [formatAppDateInput(nota.data), nota.data])).values()
   );
-  const [assinaturasHistorico, assinaturasMensais] = await Promise.all([
+  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
     datasHistorico.length
       ? prisma.assinaturaDiariaModulo.findMany({
           where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
@@ -206,6 +213,9 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
         })
       : Promise.resolve([])
   ]);
+
+  const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"rastreabilidade",notas.map(row=>row.data));
+  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"rastreabilidade",notasMensais.map(row=>row.data));
   const assinaturasPorData = new Map(
     assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
@@ -476,7 +486,7 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
               </section>
             ))}
           </div>
-          <SignDayForm
+          <CompatibleDayReview
             moduleCode={MODULE_CODE}
             dateInput={formatAppDateInput(grupoSelecionado.data)}
             returnTo={buildOpenDayHref(formatAppDateInput(grupoSelecionado.data))}
@@ -488,6 +498,8 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
           />
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="rastreabilidade" history={true} query={params} />
     </div>
   );
 }

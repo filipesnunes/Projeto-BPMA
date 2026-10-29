@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { ModuloDocumento,  StatusItemBuffetAmostra } from "@prisma/client";
@@ -36,6 +38,8 @@ function firstParam(value: string | string[] | undefined): string {
 
 export default async function ControleBuffetAmostrasPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
+  if (!authUser) redirect("/login");
+  if (!hasPermission(authUser,"modulo.amostras.acessar")) redirect("/acesso-negado");
   const podeGerenciarOpcoes = authUser
     ? hasPermission(authUser, "modulo.amostras.gerenciar_cadastros")
     : false;
@@ -69,7 +73,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     }),
     prisma.controleBuffetAmostraRegistro.findMany({
-      where: { data: today, fluxoId:null },
+      where: { data: today },
       select: {
         id: true,
         servicoId: true,
@@ -81,6 +85,11 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
     isOperationalMonthClosed("amostras", currentPeriod.mes, currentPeriod.ano)
   ]);
 
+  // Draft item projections stay outside measurement queries, but the familiar
+  // service card must still reflect an already initiated service.
+  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true}}}});
+  const flowsByService = new Map(serviceFlows.map(flow=>[Number(flow.chave.split(":")[0]),flow]));
+
   const registrosPorServico = new Map<number, typeof registrosDia>();
   for (const registro of registrosDia) {
     const current = registrosPorServico.get(registro.servicoId) ?? [];
@@ -91,6 +100,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
   const servicosDoDia = servicos.filter((servico) =>
     isServicoDisponivelNaData(servico, today)
   ).map((servico) => {
+    const flow = flowsByService.get(servico.id);
     const registrosServico = registrosPorServico.get(servico.id) ?? [];
     const itensAtivos = servico.itens.map((vinculo) => vinculo.item.id);
     const registrosItensAtivos = registrosServico.filter(
@@ -98,8 +108,8 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
         registro.itemExtra ||
         (registro.itemId !== null && itensAtivos.includes(registro.itemId))
     );
-    const quantidadeItens =
-      itensAtivos.length + registrosServico.filter((registro) => registro.itemExtra).length;
+    const quantidadeItens = flow?.versoes[0]?.obrigatorios ??
+      (itensAtivos.length + registrosServico.filter((registro) => registro.itemExtra).length);
 
     const itensAssinados = registrosItensAtivos.filter(
       (registro) => registro.status === StatusItemBuffetAmostra.ASSINADO
@@ -111,7 +121,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       (registro) => registro.status !== StatusItemBuffetAmostra.PENDENTE
     ).length;
 
-    const status = calcularStatusServico({
+    const status = flow ? (flow.preenchimentoCompleto ? "CONCLUIDO" : "PARCIAL") : calcularStatusServico({
       totalItens: quantidadeItens,
       itensAssinados,
       itensNaoServidos,
@@ -233,6 +243,8 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
         </div>
       </section>
       <OperationalDeletionPanel target="amostras" selectedDate={params.exclusaoData} />
+
+      <CompatibleWorkflowRecords module="amostras" history={false} query={params} />
     </div>
   );
 }

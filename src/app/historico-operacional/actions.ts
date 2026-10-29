@@ -107,7 +107,7 @@ export async function signModuleDayAction(formData: FormData) {
     }
 
     if (["temperatura", "oleo", "amostras", "rastreabilidade"].includes(moduleConfig.codigo) && await prisma.fluxoOperacional.findFirst({ where: { modulo: moduleConfig.codigo, dataReferencia, excluidoEm: null } })) {
-      const legacy = moduleConfig.codigo === "amostras"
+      const legacy = moduleConfig.codigo === "temperatura" ? await prisma.controleTemperaturaEquipamento.count({where:{data:dataReferencia,fluxoId:null}}) : moduleConfig.codigo === "oleo" ? await prisma.controleQualidadeOleoRegistro.count({where:{data:dataReferencia,fluxoId:null}}) : moduleConfig.codigo === "amostras"
         ? await prisma.controleBuffetAmostraRegistro.count({where:{data:dataReferencia,fluxoId:null}})
         : moduleConfig.codigo === "rastreabilidade" ? await prisma.rastreabilidadeRecebimentoNota.count({where:{data:dataReferencia,fluxoId:null}}) : 0;
       if(!legacy)throw new Error("Selecione as unidades e suas versões no histórico do módulo para assinar.");

@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
 import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
@@ -121,6 +123,8 @@ function parsePendingStatusFilter(value: string): StatusNotaRecebimento | null {
 
 export default async function RastreabilidadeRecebimentoPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
+  if (!authUser) redirect("/login");
+  if (!hasPermission(authUser,"modulo.rastreabilidade.acessar")) redirect("/acesso-negado");
   const isColaborador = authUser?.perfil === "COLABORADOR";
   const permitirImportacao = canImportXml(authUser?.perfil ?? null);
   const podeGerenciarOpcoes = authUser
@@ -165,7 +169,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
       : periodoAtual.mes;
   const fechamentoAno = fechamentoAnoRaw ?? periodoAtual.ano;
 
-  const whereNotasPendentes: Prisma.RastreabilidadeRecebimentoNotaWhereInput = {fluxoId:null,
+  const whereNotasPendentes: Prisma.RastreabilidadeRecebimentoNotaWhereInput = {
     statusNota: filtroStatus ?? { in: PENDING_NOTE_STATUSES }
   };
 
@@ -261,7 +265,7 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
       filtroNotaFiscal ||
       filtroItemStatus
   );
-  const whereItensRecebidos: Prisma.RastreabilidadeRecebimentoRegistroWhereInput = {OR:[{notaId:null},{nota:{fluxoId:null}}]};
+  const whereItensRecebidos: Prisma.RastreabilidadeRecebimentoRegistroWhereInput = {OR:[{notaId:null},{nota:{}}]};
   const itemAndFilters: Prisma.RastreabilidadeRecebimentoRegistroWhereInput[] = [];
 
   if (buscaItemRecebido) {
@@ -769,6 +773,8 @@ export default async function RastreabilidadeRecebimentoPage({ searchParams }: P
       </section>
       <OperationalDeletionPanel target="rastreabilidade" selectedDate={params.exclusaoData} />
       <OperationalDeletionPanel target="nota" selectedDate={params.exclusaoData} />
+
+      <CompatibleWorkflowRecords module="rastreabilidade" history={false} query={params} />
     </div>
   );
 }

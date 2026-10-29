@@ -1,3 +1,5 @@
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
@@ -59,7 +61,7 @@ import {
   periodKey
 } from "./utils";
 
-const MODULE_PATH = "/controle-temperatura-equipamentos/legado";
+const MODULE_PATH = "/controle-temperatura-equipamentos";
 const CARD_CLASS =
   "bpma-card";
 const INPUT_CLASS =
@@ -149,7 +151,6 @@ export default async function ControleTemperaturaEquipamentosPage({
   const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "temperatura");
 
   const params = await searchParams;
-  if (firstParam(params.new) === "1") redirect("/controle-temperatura-equipamentos/fluxo");
   const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
@@ -171,7 +172,7 @@ export default async function ControleTemperaturaEquipamentosPage({
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = { fluxoId: null };
+  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -204,7 +205,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, options, categoryRules] = await Promise.all([
+  const [rawRegistros, options, categoryRules] = await Promise.all([
     prisma.controleTemperaturaEquipamento.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -223,6 +224,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     (option) =>
       option.tipo === TipoOpcaoTemperaturaEquipamento.EQUIPAMENTO && option.ativo
   );
+  const registros = await currentRecordSignatures(rawRegistros,"temperatura");
   const equipamentoOptionsAtivas = equipamentoCatalogOptionsAtivas.map((option) => option.nome);
   const equipamentosCategoria: Array<{
     nome: string;
@@ -262,11 +264,17 @@ export default async function ControleTemperaturaEquipamentosPage({
   const fotoId = parsePositiveInt(firstParam(params.fotoId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
   const registroEmEdicao = editId
-    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: editId, fluxoId: null } })
+    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: editId } })
     : null;
   const registroParaExcluir = deleteId
-    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: deleteId, fluxoId: null } })
+    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: deleteId } })
     : null;
+
+  const managedRecord = registroEmEdicao ?? registroParaExcluir;
+  if (managedRecord?.fluxoId) {
+    const flow = await prisma.fluxoOperacional.findUnique({where:{id:managedRecord.fluxoId}});
+    if (flow && !flow.excluidoEm) redirect(`/controle-temperatura-equipamentos/fluxo?chave=${encodeURIComponent(flow.chave)}`);
+  }
   const fotoRegistroEmEdicao = registroEmEdicao
     ? getStoredImageSrc({
         url: registroEmEdicao.fotoUrl,
@@ -906,6 +914,8 @@ export default async function ControleTemperaturaEquipamentosPage({
           )}
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="temperatura" history={false} query={params} />
     </div>
   );
 }

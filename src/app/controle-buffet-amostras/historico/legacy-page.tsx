@@ -1,3 +1,8 @@
+import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
+import { redirect } from "next/navigation";
+import { CompatibleDayReview } from "@/components/compatible-day-review";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ClassificacaoItemBuffetAmostra,
@@ -7,7 +12,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
-import { MonthlyClosureSection, SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { ActionModal, ModalActions } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, getAppMonthYear } from "@/lib/date-time";
@@ -33,7 +38,7 @@ import {
 } from "../utils";
 
 const MODULE_PATH = "/controle-buffet-amostras";
-const HISTORY_PATH = "/controle-buffet-amostras/historico/legado";
+const HISTORY_PATH = "/controle-buffet-amostras/historico";
 const CARD_CLASS = "bpma-card";
 const INPUT_CLASS = "bpma-input";
 const MODULE_CODE = "amostras";
@@ -121,6 +126,8 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   searchParams
 }: PageProps) {
   const authUser = await getCurrentUser();
+  if (!authUser) redirect("/login");
+  if (!hasPermission(authUser,"modulo.amostras.acessar_historico")) redirect("/acesso-negado");
   const canSignDay = authUser ? canSignModuleDay(authUser, MODULE_CODE) : false;
   const canSignMonthly = authUser ? canSignModuleMonthlyClosure(authUser, MODULE_CODE) : false;
   const canEditHistory = authUser
@@ -165,7 +172,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     })
   ]);
 
-  const where: Prisma.ControleBuffetAmostraRegistroWhereInput = {fluxoId:null};
+  const where: Prisma.ControleBuffetAmostraRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
   if (dataFiltro) {
     where.data = dataFiltro;
@@ -200,7 +207,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     }
   } satisfies Prisma.ControleBuffetAmostraRegistroInclude;
 
-  const [registros, registrosMensais, fechamentoMensal] = await Promise.all([
+  const [rawRegistros, rawRegistrosMensais, fechamentoMensal] = await Promise.all([
     prisma.controleBuffetAmostraRegistro.findMany({
       where,
       include: includeServico,
@@ -232,6 +239,8 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     })
   ]);
 
+  const registros = await currentRecordSignatures(rawRegistros,"amostras");
+  const registrosMensais = await currentRecordSignatures(rawRegistrosMensais,"amostras");
   const expectedItemCountsByServiceId = new Map(
     servicos.map((servico) => [servico.id, servico.itens.length])
   );
@@ -242,7 +251,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
 
   const datasHistorico = diasHistorico.map((dia) => parseDateInput(dia.dataInput)).filter((date): date is Date => Boolean(date));
   const datasMensais = diasMensais.map((dia) => parseDateInput(dia.dataInput)).filter((date): date is Date => Boolean(date));
-  const [assinaturasHistorico, assinaturasMensais] = await Promise.all([
+  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
     datasHistorico.length
       ? prisma.assinaturaDiariaModulo.findMany({
           where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
@@ -254,6 +263,9 @@ export default async function ControleBuffetAmostrasHistoricoPage({
         })
       : Promise.resolve([])
   ]);
+
+  const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"amostras",registros.map(row=>row.data));
+  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"amostras",registrosMensais.map(row=>row.data));
   const assinaturasPorData = new Map(
     assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
@@ -263,6 +275,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   const registroParaEditar = canEditHistory && editRegistroId
     ? registros.find((registro) => registro.id === editRegistroId) ?? null
     : null;
+  if (registroParaEditar?.fluxoId) redirect(`/controle-buffet-amostras/servico/${registroParaEditar.servicoId}?data=${formatAppDateInput(registroParaEditar.data)}`);
   const periodoRegistroParaEditar = registroParaEditar
     ? getMonthYear(registroParaEditar.data)
     : null;
@@ -591,7 +604,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
               </section>
             ))}
           </div>
-          <SignDayForm
+          <CompatibleDayReview
             moduleCode={MODULE_CODE}
             dateInput={diaSelecionado.dataInput}
             returnTo={buildOpenDayHref(diaSelecionado.dataInput)}
@@ -742,6 +755,8 @@ export default async function ControleBuffetAmostrasHistoricoPage({
           </form>
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="amostras" history={true} query={params} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 "use server";
-import { saveTemperatureWorkflowAction } from "./workflow-actions";
+import { createFromOriginalForm } from "@/app/historico-operacional/compatible-create";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
@@ -252,7 +252,7 @@ async function ensureCategoryHasAnotherActiveRule(
 }
 
 export async function createRegistroAction(formData: FormData) {
-  return saveTemperatureWorkflowAction(formData);
+  return createFromOriginalForm("temperatura",formData);
 }
 
 export async function updateRegistroAction(formData: FormData) {

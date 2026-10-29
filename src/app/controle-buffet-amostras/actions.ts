@@ -1098,6 +1098,9 @@ export async function signServicoNutricionistaAction(formData: FormData) {
       throw new Error("Data inválida para assinatura do supervisor.");
     }
 
+    const managed = await prisma.fluxoOperacional.findUnique({where:{modulo_chave:{modulo:"amostras",chave:`${servicoId}:${dataInput}`}}});
+    if (managed && !managed.excluidoEm) redirect(`/controle-buffet-amostras/servico/${servicoId}?data=${dataInput}`);
+
     const registros = await prisma.controleBuffetAmostraRegistro.findMany({
       where: { data, servicoId },
       select: {

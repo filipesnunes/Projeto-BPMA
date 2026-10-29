@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
+import { buffetDraftStarted } from "./workflow-history";
+import type { BuffetDraft } from "./workflow-adapter";
 import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { ModuloDocumento,  StatusItemBuffetAmostra } from "@prisma/client";
@@ -87,7 +88,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
 
   // Draft item projections stay outside measurement queries, but the familiar
   // service card must still reflect an already initiated service.
-  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true}}}});
+  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true,resolvidos:true,rascunho:true}}}});
   const flowsByService = new Map(serviceFlows.map(flow=>[Number(flow.chave.split(":")[0]),flow]));
 
   const registrosPorServico = new Map<number, typeof registrosDia>();
@@ -121,7 +122,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       (registro) => registro.status !== StatusItemBuffetAmostra.PENDENTE
     ).length;
 
-    const status = flow ? (flow.preenchimentoCompleto ? "CONCLUIDO" : "PARCIAL") : calcularStatusServico({
+    const status = flow ? (flow.preenchimentoCompleto ? "CONCLUIDO" : (flow.versoes[0]?.resolvidos||buffetDraftStarted(flow.versoes[0]?.rascunho as unknown as BuffetDraft)?"PARCIAL":"PENDENTE")) : calcularStatusServico({
       totalItens: quantidadeItens,
       itensAssinados,
       itensNaoServidos,
@@ -244,7 +245,6 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       </section>
       <OperationalDeletionPanel target="amostras" selectedDate={params.exclusaoData} />
 
-      <CompatibleWorkflowRecords module="amostras" history={false} query={params} />
     </div>
   );
 }

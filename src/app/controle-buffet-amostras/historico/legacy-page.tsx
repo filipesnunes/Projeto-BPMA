@@ -2,7 +2,8 @@ import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible
 import { redirect } from "next/navigation";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
 import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
-import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
+import { buffetHistoryInclude, mergeBuffetWorkflowHistory, type BuffetHistoryFlow } from "../workflow-history";
+import type { BuffetDraft } from "../workflow-adapter";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
   ClassificacaoItemBuffetAmostra,
@@ -22,7 +23,6 @@ import { prisma } from "@/lib/prisma";
 
 import { updateHistoricoRegistroAction } from "../actions";
 import {
-  buildBuffetServiceHistoryGroups,
   buildBuffetServiceHistoryTotals,
   type BuffetServiceHistoryGroup
 } from "../service-history";
@@ -152,6 +152,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   const selectedMonth = filtroMes && filtroMes <= 12 ? filtroMes : todayMonth.mes;
   const selectedYear = filtroAno ?? todayMonth.ano;
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
+  const implicitMonthFilter=!filtroData&&!filtroMes&&!filtroAno;
 
   const [servicos, itens, acoesCorretivasAtivas] = await Promise.all([
     prisma.controleBuffetAmostraServico.findMany({
@@ -172,7 +173,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     })
   ]);
 
-  const where: Prisma.ControleBuffetAmostraRegistroWhereInput = {};
+  const where: Prisma.ControleBuffetAmostraRegistroWhereInput = {data:{gte:selectedMonthRange.start,lte:selectedMonthRange.end}};
   const dataFiltro = parseDateInput(filtroData);
   if (dataFiltro) {
     where.data = dataFiltro;
@@ -183,6 +184,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     const range = getYearDateRange(filtroAno);
     where.data = { gte: range.start, lte: range.end };
   } else if (filtroMes) {
+    where.data=undefined;
     const bounds = await prisma.controleBuffetAmostraRegistro.aggregate({
       _min: { data: true },
       _max: { data: true }
@@ -241,11 +243,25 @@ export default async function ControleBuffetAmostrasHistoricoPage({
 
   const registros = await currentRecordSignatures(rawRegistros,"amostras");
   const registrosMensais = await currentRecordSignatures(rawRegistrosMensais,"amostras");
+  const historyFlowWhere:Prisma.FluxoOperacionalWhereInput={modulo:MODULE_CODE,excluidoEm:null,dataReferencia:where.OR?undefined:where.data as Prisma.DateTimeFilter,OR:where.OR?.map(clause=>({dataReferencia:clause.data as Prisma.DateTimeFilter})),...(filtroServicoId?{chave:{startsWith:`${filtroServicoId}:`}}:{})};
+  const monthFlowWhere:Prisma.FluxoOperacionalWhereInput={modulo:MODULE_CODE,excluidoEm:null,dataReferencia:{gte:selectedMonthRange.start,lte:selectedMonthRange.end}};
+  const sameRange=!filtroServicoId&&!where.OR&&JSON.stringify(historyFlowWhere.dataReferencia)===JSON.stringify(monthFlowWhere.dataReferencia);
+  const monthFlowsPromise=prisma.fluxoOperacional.findMany({where:monthFlowWhere,include:buffetHistoryInclude});
+  const [historyFlows,monthFlows]=await Promise.all([sameRange?monthFlowsPromise:prisma.fluxoOperacional.findMany({where:historyFlowWhere,include:buffetHistoryInclude}),monthFlowsPromise]);
+  const matchesFlow=(flow:BuffetHistoryFlow)=>{
+    const draft=flow.versoes[0]?.rascunho as unknown as BuffetDraft|undefined;
+    const selected=(draft?.manifest??[]).filter(item=>(!filtroItemId||item.id===filtroItemId)&&(!filtroClassificacao||item.classificacao===filtroClassificacao));
+    const rows=flow.amostras.filter(row=>(!filtroItemId||row.itemId===filtroItemId)&&(!filtroClassificacao||row.classificacao===filtroClassificacao));
+    if((filtroItemId||filtroClassificacao)&&!selected.length&&!rows.length)return false;
+    if(filtroStatus&&!rows.some(row=>row.status===filtroStatus)&&!(filtroStatus==="PENDENTE"&&selected.some(item=>!rows.some(row=>row.itemId===item.id))))return false;
+    if(filtroResponsavel&&!rows.some(row=>row.responsavelNome.toLocaleLowerCase("pt-BR").includes(filtroResponsavel.toLocaleLowerCase("pt-BR")))&&!(flow.versoes[0]?.usuarioNome??"").toLocaleLowerCase("pt-BR").includes(filtroResponsavel.toLocaleLowerCase("pt-BR")))return false;
+    return true;
+  };
   const expectedItemCountsByServiceId = new Map(
     servicos.map((servico) => [servico.id, servico.itens.length])
   );
-  const gruposHistorico = buildBuffetServiceHistoryGroups(registros, expectedItemCountsByServiceId);
-  const gruposMensais = buildBuffetServiceHistoryGroups(registrosMensais, expectedItemCountsByServiceId);
+  const gruposHistorico = mergeBuffetWorkflowHistory(registros,historyFlows.filter(matchesFlow),servicos,expectedItemCountsByServiceId);
+  const gruposMensais = mergeBuffetWorkflowHistory(registrosMensais,monthFlows,servicos,expectedItemCountsByServiceId);
   const diasHistorico = groupServicesByDay(gruposHistorico);
   const diasMensais = groupServicesByDay(gruposMensais);
 
@@ -401,7 +417,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Mês
-            <select name="filtroMes" defaultValue={filtroMes ? String(filtroMes) : ""} className={INPUT_CLASS}>
+            <select name="filtroMes" defaultValue={filtroMes ? String(filtroMes) : implicitMonthFilter?String(selectedMonth):""} className={INPUT_CLASS}>
               <option value="">Todos</option>
               {MONTH_OPTIONS.map((month) => (
                 <option key={month.value} value={String(month.value)}>
@@ -412,7 +428,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Ano
-            <input type="number" name="filtroAno" min={2020} max={2100} defaultValue={filtroAno ?? ""} className={INPUT_CLASS} />
+            <input type="number" name="filtroAno" min={2020} max={2100} defaultValue={filtroAno ?? (implicitMonthFilter?selectedYear:"")} className={INPUT_CLASS} />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Serviço
@@ -505,10 +521,10 @@ export default async function ControleBuffetAmostrasHistoricoPage({
                       <td className="px-3 py-2">{dia.dataLabel}</td>
                       <td className="px-3 py-2">{dia.services.length}</td>
                       <td className="px-3 py-2">{totalItens}</td>
-                      <td className="px-3 py-2">{completo ? "Completo" : "Parcial"}</td>
+                      <td className="px-3 py-2">{completo ? "Completo" : dia.services.every(service=>service.status==="PENDENTE")?"Não iniciado":"Parcial"}</td>
                       <td className="px-3 py-2">{alertas}</td>
                       <td className="px-3 py-2">
-                        <SupervisorSignatureStatus signature={assinaturasPorData.get(dia.dataInput) ?? null} />
+                        {dia.services.some(service=>service.workflowState==="REABERTO")?"Revisão pendente":<SupervisorSignatureStatus signature={assinaturasPorData.get(dia.dataInput) ?? null} />}
                       </td>
                       <td className="px-3 py-2">
                         <Link href={buildOpenDayHref(dia.dataInput)} scroll={false} className="btn-action">
@@ -555,7 +571,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
                       {service.tipoServicoLabel} - responsável: {service.responsavelExecucao}
                     </p>
                   </div>
-                  <ServiceStatusBadge status={service.status} />
+                  <div className="space-y-2"><ServiceStatusBadge status={service.status} /><p className="text-sm">{service.itensPreenchidos} preenchidos · {service.itensNaoServidos} não servidos · {service.itensPendentes??0} pendentes</p><p className="text-sm">{service.workflowState==="REABERTO"?"Revisão pendente":service.assinadoNutricionista?`Assinado pelo supervisor — ${service.assinaturaNutricionistaResumo}`:"Pendente de assinatura"}</p><Link className="btn-secondary" href={`${MODULE_PATH}/servico/${service.servicoId}?data=${service.dataInput}`}>Abrir serviço</Link></div>
                 </div>
                 <div className="mt-3 overflow-x-auto">
                   <table className="min-w-[1180px] divide-y divide-slate-200 text-sm dark:divide-slate-700">
@@ -588,7 +604,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
                           {canEditHistory ? (
                             <td className="px-3 py-2">
                               <Link
-                                href={buildEditRecordHref(diaSelecionado.dataInput, item.id)}
+                                href={service.workflowId||item.id<0?`${MODULE_PATH}/servico/${service.servicoId}?data=${service.dataInput}`:buildEditRecordHref(diaSelecionado.dataInput, item.id)}
                                 scroll={false}
                                 className="btn-action"
                               >
@@ -756,7 +772,6 @@ export default async function ControleBuffetAmostrasHistoricoPage({
         </ActionModal>
       ) : null}
 
-      <CompatibleWorkflowRecords module="amostras" history={true} query={params} />
     </div>
   );
 }

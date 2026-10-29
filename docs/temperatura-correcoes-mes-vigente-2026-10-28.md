@@ -226,3 +226,16 @@ Criados:
 - `src/lib/register-temperature-correction-permission.ts`
 
 Os processos de navegador/servidor de teste foram encerrados. O container local foi parado sem apagar os bancos sintéticos. Nenhuma reversão foi feita no destino externo não identificado.
+
+## Auditoria posterior autorizada — 29/10/2026
+
+Por orientação do usuário, o banco do `.env` passou a ser tratado como produção.
+Uma consulta em transação PostgreSQL READ ONLY, sem imports da aplicação,
+encontrou os dois metadados: a permissão de edição do mês foi criada em 28/10 às
+22:21:21 de São Paulo e a de reabertura, criada em 24/10, foi atualizada no mesmo
+intervalo de 28/10. Ambos estão com zero vínculos de perfil. As gravações são
+compatíveis com a ocorrência acima; sem snapshot/log anterior, não é possível
+provar a autoria nem recuperar os valores anteriores. Nenhuma reversão ou nova
+escrita foi executada. Os testes posteriores usaram apenas bancos sintéticos
+locais, sem modificar o arquivo `.env`. Evidências e limites detalhados em
+`buffet-historico-e-auditoria-2026-10-29.md`.

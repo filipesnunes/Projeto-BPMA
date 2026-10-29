@@ -46,7 +46,7 @@ let browser,socket;
    await wait(`document.body.innerText.includes(${JSON.stringify('Browser '+strip)})`);
    const listed=await evaluate(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes(${JSON.stringify('Browser '+strip)}))?.querySelectorAll('td')[1]?.textContent`);assert.equal(listed,saved.fitaOleo??'-');
    await navigate(base+'/fluxo?chave='+encodeURIComponent(fixture.day+':'+request));await wait(`!!document.querySelector('[name=temperatura]')`);assert.equal(await transmitted(),strip);
-   await fill('observacao','Only observation changed '+strip);await clickText('Salvar Registro');await wait(`location.search.includes('feedbackType=success')`);
+   await fill('observacao','Only observation changed '+strip);await clickText('Salvar Alterações');await wait(`location.search.includes('feedbackType=success')`);
    assert.equal((await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:saved.id}})).fitaOleo,saved.fitaOleo);
    await navigate(base+'/historico?dia='+fixture.day);await wait(`document.body.innerText.includes(${JSON.stringify('Only observation changed '+strip)})`);
    const historical=await evaluate(`[...document.querySelectorAll('tbody tr')].find(r=>r.textContent.includes(${JSON.stringify('Only observation changed '+strip)}))?.querySelector('td')?.textContent`);assert.equal(historical,saved.fitaOleo??'-');

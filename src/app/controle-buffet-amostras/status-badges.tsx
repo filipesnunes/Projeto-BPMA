@@ -34,7 +34,7 @@ export function ServiceStatusBadge({ status }: ServiceStatusBadgeProps) {
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusClass}`}
     >
-      {getStatusServicoLabel(status)}
+      {status==="PENDENTE"?"Não iniciado":getStatusServicoLabel(status)}
     </span>
   );
 }

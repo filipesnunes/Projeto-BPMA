@@ -48,7 +48,7 @@ const row=id=>prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{flux
   const concurrent=await Promise.allSettled([save(key,changed.versao,{fitaOleo:'2%'}),save(key,changed.versao,{fitaOleo:'7%'})]);assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);assert.equal(await prisma.controleQualidadeOleoRegistro.count({where:{fluxoId:unit.id}}),1);
   const duplicateKey=day+':'+randomUUID();await save(duplicateKey,0,{fitaOleo:'2%'});await assert.rejects(()=>save(duplicateKey,0,{fitaOleo:'7%'}));assert.equal(await prisma.fluxoOperacional.count({where:{modulo:'oleo',chave:duplicateKey}}),1);
   const actions=require('../src/app/controle-qualidade-oleo/actions.ts');const legacy=await prisma.controleQualidadeOleoRegistro.create({data:{data:dates.getAppDate(),...await getRegistroPayload(form({fitaOleo:'3,5%'}),'Legacy Test',prisma)}});
-  try{await actions.updateRegistroAction(form({id:String(legacy.id),observacao:'Legacy action partial edit',returnTo:'/controle-qualidade-oleo'}));assert.fail('redirect');}catch(e){assert(e instanceof Redirect);assert.match(e.url,/feedbackType=success/);}
+  try{await actions.updateRegistroAction(form({id:String(legacy.id),versao:'0',originalUpdatedAt:legacy.updatedAt.toISOString(),observacao:'Legacy action partial edit',returnTo:'/controle-qualidade-oleo'}));assert.fail('redirect');}catch(e){assert(e instanceof Redirect);assert.match(e.url,/feedbackType=success/);}
   assert.equal((await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:legacy.id}})).fitaOleo,'3,5%');
   await prisma.controleQualidadeOleoOpcaoFita.update({where:{rotulo:'3,5%'},data:{ativo:false}});
   assert.equal((await getRegistroPayload(form({}),'Legacy Test',prisma,legacy)).fitaOleo,'3,5%');

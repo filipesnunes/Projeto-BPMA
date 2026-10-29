@@ -1,3 +1,4 @@
+import { buffetLinkedItemOrder } from "./item-ordering";
 import {assertGroupDeletion,auditGroupDeletion} from "@/lib/operational-workflow/group-deletion";
 ﻿import "server-only";
 import {Prisma, type ControleBuffetAmostraRegistro} from "@prisma/client";
@@ -22,7 +23,7 @@ export const buffetAdapter:WorkflowAdapter={
  if(!(input instanceof FormData))throw Error("Formulário inválido.");const{serviceId,date}=parseBuffetKey(key);
  await tx.$executeRaw`SELECT set_config('bpma.workflow_flow',${unit.id},true)`;
  const source=await tx.fluxoOperacional.findUniqueOrThrow({where:{id:unit.id},include:{amostras:{where:{excluidoEm:null},orderBy:{id:"asc"}},versoes:{orderBy:{versao:"desc"},take:1}}});
- const service=await tx.controleBuffetAmostraServico.findUniqueOrThrow({where:{id:serviceId},include:{itens:{where:{item:{ativo:true}},include:{item:true}}}});
+ const service=await tx.controleBuffetAmostraServico.findUniqueOrThrow({where:{id:serviceId},include:{itens:{where:{item:{ativo:true}},include:{item:true},orderBy:buffetLinkedItemOrder}}});
  if(!isServicoDisponivelNaData(service,date))throw Error("Serviço fora do período configurado.");
  const previous=source.versoes[0]?.rascunho as unknown as BuffetDraft|undefined;
  const draft:BuffetDraft=previous?structuredClone(previous):{manifest:service.itens.map(v=>({id:v.item.id,nome:v.item.nome,classificacao:v.item.classificacao,usaGarrafaTermica:v.item.usaGarrafaTermica})),rows:{}};

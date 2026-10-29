@@ -10,10 +10,12 @@ import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
 import {
+  Prisma,
   StatusFechamentoBuffetAmostra,
   StatusItemBuffetAmostra,
   TipoServicoBuffetAmostra
 } from "@prisma/client";
+import { lockBuffetCatalog, writeActiveBuffetOrder } from "./catalog-order";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
@@ -1436,6 +1438,8 @@ export async function createItemAction(formData: FormData) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const ids=catalog.filter(item=>item.ativo).map(item=>item.id);
       const item = await tx.controleBuffetAmostraItem.create({
         data: {
           nome,
@@ -1453,7 +1457,9 @@ export async function createItemAction(formData: FormData) {
         })),
         skipDuplicates: true
       });
-    });
+      ids.splice(Math.min(Math.max(ordem-1,0),ids.length),0,item.id);
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Cadastrado com Sucesso.");
@@ -1515,6 +1521,9 @@ export async function updateItemAction(formData: FormData) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const active=catalog.filter(item=>item.ativo),ids=active.filter(item=>item.id!==existing.id).map(item=>item.id);
+      if(ativo){const position=!existing.ativo?ids.length:ordem===existing.ordem?active.findIndex(item=>item.id===existing.id):ordem-1;ids.splice(Math.min(Math.max(position,0),ids.length),0,existing.id);}
       await tx.controleBuffetAmostraItem.update({
         where: { id: existing.id },
         data: {
@@ -1527,7 +1536,7 @@ export async function updateItemAction(formData: FormData) {
       });
 
       await tx.controleBuffetAmostraItemServico.deleteMany({
-        where: { itemId: existing.id }
+        where: { itemId: existing.id,servicoId:{notIn:servicoIds} }
       });
 
       await tx.controleBuffetAmostraItemServico.createMany({
@@ -1537,7 +1546,8 @@ export async function updateItemAction(formData: FormData) {
         })),
         skipDuplicates: true
       });
-    });
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Atualizado com Sucesso.");
@@ -1572,10 +1582,16 @@ export async function toggleItemStatusAction(formData: FormData) {
       throw new Error("Item não encontrado.");
     }
 
-    await prisma.controleBuffetAmostraItem.update({
-      where: { id: existing.id },
-      data: { ativo }
-    });
+    await prisma.$transaction(async tx=>{
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const current=catalog.find(item=>item.id===existing.id);
+      if(!current)throw Error("Item não encontrado.");
+      if(current.ativo===ativo)return;
+      const ids=catalog.filter(item=>item.ativo&&item.id!==current.id).map(item=>item.id);
+      if(ativo)ids.push(current.id);
+      await tx.controleBuffetAmostraItem.update({where:{id:current.id},data:{ativo}});
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(

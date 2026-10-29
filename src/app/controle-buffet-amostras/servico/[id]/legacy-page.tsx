@@ -112,7 +112,7 @@ export default async function ExecucaoServicoBuffetPage({
           include: {
             item: true
           },
-          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }]
+          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }, { item: { id: "asc" } }]
         }
       }
     }),

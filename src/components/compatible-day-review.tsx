@@ -9,12 +9,13 @@ type Module = "temperatura" | "oleo" | "amostras" | "rastreabilidade";
 export async function CompatibleDayReview(props: {
   moduleCode: Module; dateInput: string; returnTo: string; canSign: boolean;
   alreadySigned: boolean; hasOperationalWarnings?: boolean;
+  temperatureSummaryOnly?: boolean;
 }) {
   const date = parseAppDateInput(props.dateInput);
   if (!date) return null;
   const code = props.moduleCode;
   const [units, legacyCount, legacySignature] = await Promise.all([
-    prisma.fluxoOperacional.findMany({where:{modulo:code,dataReferencia:date,excluidoEm:null},include:{assinaturaVigente:true,temperatura:true,oleo:true,recebimento:true,amostras:{where:{excluidoEm:null},take:1,include:{servico:true}}},orderBy:{criadoEm:"asc"}}),
+    prisma.fluxoOperacional.findMany({where:{modulo:code,dataReferencia:date,excluidoEm:null},include:{assinaturaVigente:true,temperatura:code==="temperatura"&&props.temperatureSummaryOnly?{select:{id:true,equipamento:true,turno:true}}:true,oleo:true,recebimento:true,amostras:{where:{excluidoEm:null},take:1,include:{servico:true}}},orderBy:{criadoEm:"asc"}}),
     code === "temperatura" ? prisma.controleTemperaturaEquipamento.count({where:{data:date,fluxoId:null}})
       : code === "oleo" ? prisma.controleQualidadeOleoRegistro.count({where:{data:date,fluxoId:null}})
       : code === "amostras" ? prisma.controleBuffetAmostraRegistro.count({where:{data:date,fluxoId:null}})

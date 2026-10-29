@@ -1,14 +1,11 @@
 import { fullTemperatureHistory, MONTH_EDIT } from "../correction-policy";
-import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
+import { loadTemperatureHistory, positivePage } from "./history-data";
+import { TemperatureHistoryWorkflows } from "./history-workflows";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
-import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
-import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { hasPermission } from "@/lib/permissions";
-import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
+import { parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import {
-  Prisma,
-  StatusOperacionalEquipamento,
   StatusTemperaturaEquipamento
 } from "@prisma/client";
 import Link from "next/link";
@@ -16,22 +13,18 @@ import Link from "next/link";
 import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { ActionModal } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
-import { formatAppDate, formatAppDateInput, getAppDate, getAppMonthDateRange, getAppMonthYear } from "@/lib/date-time";
-import { getImageDataUrl, hasStoredImage as hasImageEvidence } from "@/lib/image-upload";
+import { formatAppDate, formatAppDateInput, getAppDate } from "@/lib/date-time";
+import { getImageDataUrl } from "@/lib/image-upload";
 import { canSignModuleDay, canSignModuleMonthlyClosure } from "@/lib/module-signatures";
-import { prisma } from "@/lib/prisma";
 
 import { EvidencePhoto } from "../evidence-photo";
 import { TemperatureStatusBadge } from "../temperature-status-badge";
 import {
   formatDateDisplay,
   formatTemperatureDisplay,
-  getMonthDateRange,
   getOperationalStatusLabel,
   getShiftLabel,
-  getYearDateRange,
   isOperationalTemperatureStatus,
-  parseDateInput,
   parsePositiveInt
 } from "../utils";
 
@@ -82,16 +75,6 @@ function parseStatusFilter(value: string): StatusTemperaturaEquipamento | null {
   return null;
 }
 
-function isTemperatureAlert(registro: {
-  status: StatusTemperaturaEquipamento;
-  statusOperacionalEquipamento: StatusOperacionalEquipamento;
-}): boolean {
-  return (
-    isOperationalTemperatureStatus(registro.statusOperacionalEquipamento) &&
-    (registro.status === StatusTemperaturaEquipamento.ALERTA ||
-      registro.status === StatusTemperaturaEquipamento.CRITICO)
-  );
-}
 
 export default async function ControleTemperaturaHistoricoPage({
   searchParams
@@ -101,7 +84,6 @@ export default async function ControleTemperaturaHistoricoPage({
   const fullHistory=fullTemperatureHistory(authUser);
   if (!hasPermission(authUser,"modulo.temperatura.acessar") || !fullHistory && !hasPermission(authUser,MONTH_EDIT) && !hasPermission(authUser,"modulo.temperatura.reabrir_registro")) redirect("/acesso-negado");
   const today=getAppDate();
-  const historyRange=fullHistory?undefined:{gte:new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),1)),lte:today};
   const canSignDay = authUser ? canSignModuleDay(authUser, MODULE_CODE) : false;
   const canSignMonthly = authUser ? canSignModuleMonthlyClosure(authUser, MODULE_CODE) : false;
 
@@ -117,158 +99,20 @@ export default async function ControleTemperaturaHistoricoPage({
   const diaAberto = firstParam(params.dia).trim();
   const fotoId = parsePositiveInt(firstParam(params.fotoId));
 
-  const todayMonth = getAppMonthYear(getAppDate());
-  const selectedMonth = fullHistory && filtroMes && filtroMes <= 12 ? filtroMes : todayMonth.mes;
-  const selectedYear = fullHistory ? filtroAno ?? todayMonth.ano : todayMonth.ano;
-  const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
-
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = historyRange ? {AND:{data:historyRange}} : {};
-  const dataFiltro = parseDateInput(filtroData);
-
-  if (dataFiltro) {
-    where.data = dataFiltro;
-  } else if (filtroMes && filtroAno && filtroMes <= 12) {
-    const { start, end } = getMonthDateRange(filtroMes, filtroAno);
-    where.data = { gte: start, lte: end };
-  } else if (filtroAno) {
-    const { start, end } = getYearDateRange(filtroAno);
-    where.data = { gte: start, lte: end };
-  } else if (filtroMes) {
-    const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
-      where:historyRange?{data:historyRange}:undefined,
-      _min: { data: true },
-      _max: { data: true }
-    });
-    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
-      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
-  }
-
-  if (filtroEquipamento) {
-    where.equipamento = { contains: filtroEquipamento, mode: "insensitive" };
-  }
-
-  if (filtroStatus) {
-    where.status = filtroStatus;
-    where.statusOperacionalEquipamento = StatusOperacionalEquipamento.EM_OPERACAO;
-  }
-
-  if (filtroResponsavel) {
-    where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
-  }
-
-  const [rawRegistros, rawRegistrosMensais, fechamentoMensal] = await Promise.all([
-    prisma.controleTemperaturaEquipamento.findMany({
-      where,
-      orderBy: [{ data: "desc" }, { createdAt: "desc" }]
-    }),
-    prisma.controleTemperaturaEquipamento.findMany({
-      where: { data: { gte: selectedMonthRange.start, lte: selectedMonthRange.end },...(historyRange?{AND:{data:historyRange}}:{}) },
-      orderBy: [{ data: "desc" }, { createdAt: "desc" }]
-    }),
-    prisma.fechamentoMensalModulo.findUnique({
-      where: { status: "FECHADO",
-        moduloCodigo_ano_mes: {
-          moduloCodigo: MODULE_CODE,
-          ano: selectedYear,
-          mes: selectedMonth
-        }
-      }
-    })
-  ]);
-
-  const registros = await currentRecordSignatures(rawRegistros,"temperatura");
-  const registrosMensais = await currentRecordSignatures(rawRegistrosMensais,"temperatura");
-  const gruposPorDia = new Map<string, { data: Date; registros: typeof registros }>();
-  for (const registro of registros) {
-    const key = formatAppDateInput(registro.data);
-    const group = gruposPorDia.get(key) ?? { data: registro.data, registros: [] };
-    group.registros.push(registro);
-    gruposPorDia.set(key, group);
-  }
-  const grupos = Array.from(gruposPorDia.values()).sort(
-    (a, b) => b.data.getTime() - a.data.getTime()
-  );
-
-  const datasHistorico = grupos.map((grupo) => grupo.data);
-  const datasMensais = Array.from(
-    new Map(registrosMensais.map((registro) => [formatAppDateInput(registro.data), registro.data])).values()
-  );
-  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
-    datasHistorico.length
-      ? prisma.assinaturaDiariaModulo.findMany({
-          where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
-        })
-      : Promise.resolve([]),
-    datasMensais.length
-      ? prisma.assinaturaDiariaModulo.findMany({
-          where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasMensais } }
-        })
-      : Promise.resolve([])
-  ]);
-
-  const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"temperatura",registros.map(row=>row.data));
-  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"temperatura",registrosMensais.map(row=>row.data));
-  const assinaturasPorData = new Map(
-    assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
-  );
-  const assinaturasMensaisPorData = new Set(
-    assinaturasMensais.map((assinatura) => formatAppDateInput(assinatura.dataReferencia))
-  );
-
-  const parametrosRetorno = new URLSearchParams();
-  if (filtroData) parametrosRetorno.set("filtroData", filtroData);
-  if (filtroMes) parametrosRetorno.set("filtroMes", String(filtroMes));
-  if (filtroAno) parametrosRetorno.set("filtroAno", String(filtroAno));
-  if (filtroEquipamento) parametrosRetorno.set("filtroEquipamento", filtroEquipamento);
-  if (filtroStatus) parametrosRetorno.set("filtroStatus", filtroStatus);
-  if (filtroResponsavel) parametrosRetorno.set("filtroResponsavel", filtroResponsavel);
-  const returnTo = buildPathWithParams(parametrosRetorno);
-
-  const grupoSelecionado = diaAberto ? grupos.find((grupo) => formatAppDateInput(grupo.data) === diaAberto) : null;
-  const buildOpenDayHref = (dateInput: string): string => {
-    const query = new URLSearchParams(parametrosRetorno);
-    query.set("dia", dateInput);
-    return buildPathWithParams(query);
-  };
-  const buildOpenPhotoHref = (registroId: number): string => {
-    const query = new URLSearchParams(parametrosRetorno);
-    if (grupoSelecionado) {
-      query.set("dia", formatAppDateInput(grupoSelecionado.data));
-    }
-    query.set("fotoId", String(registroId));
-    return buildPathWithParams(query);
-  };
-  const closePhotoHref = grupoSelecionado
-    ? buildOpenDayHref(formatAppDateInput(grupoSelecionado.data))
-    : returnTo;
-  const registroFotoSelecionado = fotoId
-    ? registros.find((registro) => registro.id === fotoId) ?? null
-    : null;
-  const fotoSelecionadaFallbackSrc = registroFotoSelecionado
-    ? getImageDataUrl(
-        registroFotoSelecionado.fotoMimeType,
-        registroFotoSelecionado.fotoBase64
-      )
-    : null;
-  const fotoSelecionadaPrimarySrc =
-    registroFotoSelecionado?.fotoUrl?.trim() || fotoSelecionadaFallbackSrc;
-
-  const diasComRegistro = new Set(registrosMensais.map((registro) => formatAppDateInput(registro.data)));
-  const equipamentosMonitorados = new Set(registrosMensais.map((registro) => registro.equipamento));
-  const alertasMensais = registrosMensais.filter(isTemperatureAlert).length;
-  const indicadoresMensais = {
-    "Mês/Ano": `${String(selectedMonth).padStart(2, "0")}/${selectedYear}`,
-    "Dias monitorados": diasComRegistro.size,
-    "Registros": registrosMensais.length,
-    "Equipamentos monitorados": equipamentosMonitorados.size,
-    "Alertas": alertasMensais,
-    "Ações corretivas": registrosMensais.filter((registro) => registro.acaoCorretiva?.trim()).length,
-    "Manutenção/Inativos": registrosMensais.filter(
-      (registro) => !isOperationalTemperatureStatus(registro.statusOperacionalEquipamento)
-    ).length,
-    "Dias assinados": assinaturasMensaisPorData.size,
-    "Dias pendentes de assinatura": Math.max(diasComRegistro.size - assinaturasMensaisPorData.size, 0)
-  };
+  const data=await loadTemperatureHistory({filters:{date:filtroData,month:filtroMes,year:filtroAno,equipment:filtroEquipamento,status:filtroStatus,responsible:filtroResponsavel},today,fullHistory,page:positivePage(firstParam(params.pagina)),detailPage:positivePage(firstParam(params.detalhePagina)),openDay:diaAberto,photoId:fotoId});
+  const {groups:grupos,selected:grupoSelecionado,signatures:assinaturasPorData,closure:fechamentoMensal,indicators:indicadoresMensais,month:selectedMonth,year:selectedYear,photo:registroFotoSelecionado}=data;
+  const parametrosRetorno=new URLSearchParams();
+  for(const key of ["filtroData","filtroMes","filtroAno","filtroEquipamento","filtroStatus","filtroResponsavel"] as const){const value=firstParam(params[key]);if(value)parametrosRetorno.set(key,value);}
+  if(data.page>1)parametrosRetorno.set("pagina",String(data.page));
+  const returnTo=buildPathWithParams(parametrosRetorno);
+  const buildOpenDayHref=(date:string)=>{const query=new URLSearchParams(parametrosRetorno);query.set("dia",date);return buildPathWithParams(query);};
+  const pageHref=(page:number)=>{const query=new URLSearchParams(parametrosRetorno);query.set("pagina",String(page));return buildPathWithParams(query);};
+  const detailHref=(page:number)=>{const query=new URLSearchParams(parametrosRetorno);query.set("dia",diaAberto);query.set("detalhePagina",String(page));return buildPathWithParams(query);};
+  const buildOpenPhotoHref=(id:number)=>{const query=new URLSearchParams(parametrosRetorno);query.set("dia",diaAberto);query.set("fotoId",String(id));if(data.detailPage>1)query.set("detalhePagina",String(data.detailPage));return buildPathWithParams(query);};
+  const closePhotoHref=grupoSelecionado?detailHref(data.detailPage):returnTo;
+  const fotoSelecionadaFallbackSrc=registroFotoSelecionado?getImageDataUrl(registroFotoSelecionado.fotoMimeType,registroFotoSelecionado.fotoBase64):null;
+  const fotoSelecionadaPrimarySrc=registroFotoSelecionado?.fotoUrl?.trim()||fotoSelecionadaFallbackSrc;
+  const implicitPeriod=!filtroData&&!filtroMes&&!filtroAno;
 
   return (
     <div className="space-y-6 dark:text-slate-100">
@@ -311,7 +155,7 @@ export default async function ControleTemperaturaHistoricoPage({
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Mês
-            <select name="filtroMes" defaultValue={filtroMes ? String(filtroMes) : ""} className={INPUT_CLASS}>
+            <select name="filtroMes" defaultValue={filtroMes ? String(filtroMes) : implicitPeriod?String(selectedMonth):""} className={INPUT_CLASS}>
               <option value="">Todos</option>
               {MONTH_OPTIONS.map((month) => (
                 <option key={month.value} value={String(month.value)}>
@@ -322,7 +166,7 @@ export default async function ControleTemperaturaHistoricoPage({
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Ano
-            <input type="number" name="filtroAno" min={2020} max={2100} defaultValue={filtroAno ?? ""} className={INPUT_CLASS} />
+            <input type="number" name="filtroAno" min={2020} max={2100} defaultValue={filtroAno ?? (!filtroData?selectedYear:"")} className={INPUT_CLASS} />
           </label>
           <label className="text-sm text-slate-700 dark:text-slate-200">
             Equipamento
@@ -350,8 +194,9 @@ export default async function ControleTemperaturaHistoricoPage({
 
       <section className={CARD_CLASS}>
         <h2 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">
-          Dias no Histórico ({grupos.length})
+          Dias no Histórico ({data.totalDays})
         </h2>
+        <p className="mb-3 text-sm">{data.totalRecords} registros encontrados. Página {data.page} de {data.pages}.</p>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
             <thead className="bg-slate-50 text-left text-slate-700 dark:bg-slate-800 dark:text-slate-200">
@@ -374,23 +219,21 @@ export default async function ControleTemperaturaHistoricoPage({
               ) : (
                 grupos.map((grupo) => {
                   const key = formatAppDateInput(grupo.data);
-                  const alertas = grupo.registros.filter(isTemperatureAlert).length;
-                  const registrosInativos = grupo.registros.filter(
-                    (registro) => !isOperationalTemperatureStatus(registro.statusOperacionalEquipamento)
-                  ).length;
+                  const alertas = grupo.alertas;
+                  const registrosInativos = grupo.inativos;
                   const assinatura = assinaturasPorData.get(key) ?? null;
 
                   return (
                     <tr key={key}>
                       <td className="px-3 py-2">{formatDateDisplay(grupo.data)}</td>
-                      <td className="px-3 py-2">{grupo.registros.length}</td>
+                      <td className="px-3 py-2">{grupo.quantidade}</td>
                       <td className="px-3 py-2">
                         {alertas > 0 ? "Com alerta" : registrosInativos > 0 ? "Com equipamento fora de operação" : "Completo"}
                       </td>
                       <td className="px-3 py-2">{alertas}</td>
                       <td className="px-3 py-2"><SupervisorSignatureStatus signature={assinatura} /></td>
                       <td className="px-3 py-2">
-                        <Link href={buildOpenDayHref(key)} scroll={false} className="btn-action">
+                        <Link prefetch={false} href={buildOpenDayHref(key)} scroll={false} className="btn-action">
                           Abrir
                         </Link>
                       </td>
@@ -403,6 +246,7 @@ export default async function ControleTemperaturaHistoricoPage({
         </div>
       </section>
 
+      {data.pages>1&&<nav className="btn-group" aria-label="Páginas dos dias">{data.page>1&&<Link prefetch={false} className="btn-secondary" href={pageHref(data.page-1)}>Página anterior</Link>}{data.page<data.pages&&<Link prefetch={false} className="btn-secondary" href={pageHref(data.page+1)}>Próxima página</Link>}</nav>}
       <MonthlyClosureSection
         moduleCode={MODULE_CODE}
         month={selectedMonth}
@@ -422,6 +266,7 @@ export default async function ControleTemperaturaHistoricoPage({
           description={<p>Esta assinatura valida a revisão de todos os registros deste dia.</p>}
         >
           <div className="mb-4">
+            <p className="mb-2">{data.detailTotal} aferições. Página {data.detailPage} de {data.detailPages}.</p>
             <SupervisorSignatureStatus
               signature={assinaturasPorData.get(formatAppDateInput(grupoSelecionado.data)) ?? null}
             />
@@ -450,11 +295,7 @@ export default async function ControleTemperaturaHistoricoPage({
                   const observacaoRegistro = registroEmOperacao
                     ? registro.observacoes
                     : registro.observacaoStatusOperacional;
-                  const hasStoredImage = hasImageEvidence({
-                    url: registro.fotoUrl,
-                    mimeType: registro.fotoMimeType,
-                    base64: registro.fotoBase64
-                  });
+                  const hasStoredImage = data.photoIds.has(registro.id);
 
                   return (
                     <tr key={registro.id}>
@@ -475,7 +316,7 @@ export default async function ControleTemperaturaHistoricoPage({
                       <td className="px-3 py-2">
                         {hasStoredImage ? (
                           <Link
-                            href={buildOpenPhotoHref(registro.id)}
+                            prefetch={false} href={buildOpenPhotoHref(registro.id)}
                             scroll={false}
                             className="text-sm font-medium text-slate-700 underline-offset-4 hover:underline dark:text-slate-200"
                           >
@@ -487,20 +328,22 @@ export default async function ControleTemperaturaHistoricoPage({
                       </td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                       <td className="px-3 py-2 max-w-80 whitespace-normal break-words">{observacaoRegistro?.trim() || "-"}</td>
-                      <td className="px-3 py-2"><Link className="btn-secondary" href={`/controle-temperatura-equipamentos/registro/${registro.id}`}>Consultar / Editar</Link>{registro.assinaturaNutricionistaNome&&<p>Assinado por {registro.assinaturaNutricionistaNome}</p>}</td>
+                      <td className="px-3 py-2"><Link prefetch={false} className="btn-secondary" href={`/controle-temperatura-equipamentos/registro/${registro.id}`}>Consultar / Editar</Link>{registro.assinaturaNutricionistaNome&&<p>Assinado por {registro.assinaturaNutricionistaNome}</p>}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {data.detailPages>1&&<nav className="btn-group" aria-label="Páginas das aferições">{data.detailPage>1&&<Link prefetch={false} className="btn-secondary" href={detailHref(data.detailPage-1)}>Aferições anteriores</Link>}{data.detailPage<data.detailPages&&<Link prefetch={false} className="btn-secondary" href={detailHref(data.detailPage+1)}>Mais aferições</Link>}</nav>}
           <CompatibleDayReview
+            temperatureSummaryOnly
             moduleCode={MODULE_CODE}
             dateInput={formatAppDateInput(grupoSelecionado.data)}
             returnTo={buildOpenDayHref(formatAppDateInput(grupoSelecionado.data))}
             canSign={canSignDay}
             alreadySigned={Boolean(assinaturasPorData.get(formatAppDateInput(grupoSelecionado.data)))}
-            hasOperationalWarnings={grupoSelecionado.registros.some(isTemperatureAlert)}
+            hasOperationalWarnings={data.selectedAlerts>0}
           />
         </ActionModal>
       ) : null}
@@ -534,7 +377,7 @@ export default async function ControleTemperaturaHistoricoPage({
         </ActionModal>
       ) : null}
 
-      <CompatibleWorkflowRecords module="temperatura" history={true} query={params} historyRange={historyRange} />
+      <TemperatureHistoryWorkflows where={data.where} query={params} />
     </div>
   );
 }

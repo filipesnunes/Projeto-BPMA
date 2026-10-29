@@ -4,11 +4,10 @@ import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
-import { getRegistroPayload } from "./record-payload";
+import { saveTemperatureWorkflowAction } from "./workflow-actions";
 
 import {
   ModuloDocumento,
-  StatusOperacionalEquipamento,
   StatusTemperaturaEquipamento,
   TipoOpcaoTemperaturaEquipamento,
   TurnoTemperaturaEquipamento
@@ -19,20 +18,11 @@ import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
-  createSignatureLog,
   ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
-import { canEditRecordDate } from "@/lib/permissions";
-import {
-  hasStoredImage,
-  parseImageUploadFromFormData
-} from "@/lib/image-upload";
-import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
-import { saveTemperatureEquipmentEvidenceImage } from "@/lib/local-image-storage";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
-import { getExigirFotoEmAlertaCritico } from "./settings";
 
 import {
   hasCatalogOptionWithSameName,
@@ -41,11 +31,7 @@ import {
   sanitizeCatalogName
 } from "./catalog";
 import {
-  getCurrentSystemDateTime,
   getMonthDateRange,
-  getMonthYear,
-  getTodaySystemDate,
-  isCorrectiveActionRequired,
   parseNullableTemperatureInput,
   parsePositiveInt,
 } from "./utils";
@@ -53,9 +39,6 @@ import {
 const MODULE_PATH = "/controle-temperatura-equipamentos";
 const HISTORY_PATH = "/controle-temperatura-equipamentos/historico";
 const OPTIONS_PATH = "/controle-temperatura-equipamentos/opcoes";
-const DUPLICATE_MEASUREMENT_MESSAGE =
-  "Este equipamento já possui registro para este dia/turno.";
-
 type FeedbackType = "success" | "error";
 
 function getInputValue(formData: FormData, key: string): string {
@@ -122,31 +105,6 @@ function revalidateModulePaths() {
   revalidatePath(OPTIONS_PATH);
 }
 
-async function ensureUniqueTemperatureMeasurement(params: {
-  equipamento: string;
-  data: Date;
-  turno: TurnoTemperaturaEquipamento;
-  ignoreId?: number;
-}) {
-  const existing = await prisma.controleTemperaturaEquipamento.findFirst({
-    where: {
-      equipamento: params.equipamento,
-      data: params.data,
-      turno: params.turno,
-      ...(params.ignoreId ? { id: { not: params.ignoreId } } : {})
-    },
-    select: { id: true }
-  });
-
-  if (existing) {
-    throw new Error(DUPLICATE_MEASUREMENT_MESSAGE);
-  }
-}
-
-function getShiftLabel(turno: TurnoTemperaturaEquipamento): string {
-  return turno === TurnoTemperaturaEquipamento.MANHA ? "Manhã" : "Tarde";
-}
-
 function parseConfiguredShiftsFromFormData(formData: FormData): {
   turnoManha: boolean;
   turnoTarde: boolean;
@@ -160,17 +118,6 @@ function parseConfiguredShiftsFromFormData(formData: FormData): {
   }
 
   return { turnoManha, turnoTarde };
-}
-
-function ensureEquipmentSupportsShift(
-  configuredShifts: TurnoTemperaturaEquipamento[],
-  turno: TurnoTemperaturaEquipamento
-) {
-  if (!configuredShifts.includes(turno)) {
-    throw new Error(
-      `Este equipamento não está configurado para conferência no turno ${getShiftLabel(turno)}.`
-    );
-  }
 }
 
 async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
@@ -256,114 +203,14 @@ export async function createRegistroAction(formData: FormData) {
 }
 
 export async function updateRegistroAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro inválido para edição.");
-    }
-
-    const existing = await prisma.controleTemperaturaEquipamento.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (existing.fluxoId) throw new Error("Abra a aferição no formulário versionado para editar.");
-    const existingPeriod = getMonthYear(existing.data);
-    if (await isMonthSigned(existingPeriod.mes, existingPeriod.ano)) {
-      throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
-    }
-    if (!canEditRecordDate(actor, "modulo.temperatura", existing.data, getTodaySystemDate())) {
-      throw new Error("Seu perfil não pode editar este registro de temperatura.");
-    }
-
-    const registroPayload = await getRegistroPayload(formData, actor.nomeCompleto, { data: existing.data, turno: existing.turno });
-    const { turnosConferencia, ...payload } = registroPayload;
-
-    if (payload.equipamento !== existing.equipamento) {
-      ensureEquipmentSupportsShift(turnosConferencia, existing.turno);
-    }
-
-    await ensureUniqueTemperatureMeasurement({
-      equipamento: payload.equipamento,
-      data: existing.data,
-      turno: existing.turno,
-      ignoreId: existing.id
-    });
-
-    const registroEmOperacao =
-      payload.statusOperacionalEquipamento === StatusOperacionalEquipamento.EM_OPERACAO;
-    const fotoDesvio = registroEmOperacao
-      ? await parseImageUploadFromFormData({
-          formData,
-          key: "fotoDesvio",
-          maxBytes: TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES
-        })
-      : null;
-    const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
-    const exigeFoto = exigirFotoEmAlertaCritico && registroEmOperacao && isCorrectiveActionRequired(payload.status);
-    const temFotoExistente =
-      registroEmOperacao &&
-      hasStoredImage({
-        url: existing.fotoUrl,
-        mimeType: existing.fotoMimeType,
-        base64: existing.fotoBase64
-      });
-
-    if (exigeFoto && !fotoDesvio && !temFotoExistente) {
-      throw new Error(
-        "Anexe uma foto da evidência para salvar este registro."
-      );
-    }
-    const fotoArmazenada = fotoDesvio
-      ? await saveTemperatureEquipmentEvidenceImage(fotoDesvio)
-      : null;
-
-    await prisma.controleTemperaturaEquipamento.update({
-      where: { id },
-      data: {
-        ...payload,
-        turno: existing.turno,
-        ...(!registroEmOperacao
-          ? {
-              fotoNome: null,
-              fotoMimeType: null,
-              fotoBase64: null,
-              fotoUrl: null,
-              fotoTamanhoBytes: null,
-              fotoCriadoEm: null,
-              fotoCriadoPorUsuarioId: null
-            }
-          : fotoDesvio && fotoArmazenada
-          ? {
-              fotoNome: fotoDesvio.fileName,
-              fotoMimeType: fotoArmazenada.mimeType,
-              fotoBase64: null,
-              fotoUrl: fotoArmazenada.url,
-              fotoTamanhoBytes: fotoArmazenada.size,
-              fotoCriadoEm: fotoArmazenada.createdAt,
-              fotoCriadoPorUsuarioId: actor.id
-            }
-          : {})
-      }
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Atualizado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios.")
-    );
-  }
+  const actor = await getCurrentUserForAction();
+  ensurePermission(actor, "modulo.temperatura.acessar", "Sem acesso ao módulo.");
+  const record = await prisma.controleTemperaturaEquipamento.findUnique({where:{id:Number(getInputValue(formData,"id"))}});
+  if (!record) throw new Error("Registro não encontrado.");
+  if (record.fluxoId || !getInputValue(formData,"originalUpdatedAt")) redirect(MODULE_PATH+"/registro/"+record.id);
+  formData.set("chave","legacy:"+record.id);
+  formData.set("versao","0");
+  return saveTemperatureWorkflowAction(formData);
 }
 
 export async function updatePhotoRequirementAction(formData: FormData) {
@@ -493,69 +340,12 @@ export async function reopenMonthAction(formData: FormData) {
 }
 
 export async function signRegistroNutricionistaAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.temperatura.assinar_historico", "Você não tem permissão para assinar o histórico de temperatura.");
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    if (!id) {
-      throw new Error("Registro inválido para assinatura do supervisor.");
-    }
-
-    const registro = await prisma.controleTemperaturaEquipamento.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        fluxoId: true,
-        assinaturaNutricionistaDataHora: true
-      }
-    });
-
-    if (!registro) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (registro.fluxoId) throw new Error("Valide a versão atual pelo formulário da aferição.");
-    if (registro.assinaturaNutricionistaDataHora) {
-      throw new Error("Este registro já foi assinado pelo supervisor.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const now = getCurrentSystemDateTime();
-    await prisma.controleTemperaturaEquipamento.update({
-      where: { id },
-      data: {
-        assinaturaNutricionistaUsuarioId: actor.id,
-        assinaturaNutricionistaNome: actor.nomeCompleto,
-        assinaturaNutricionistaPerfil: actor.perfil,
-        assinaturaNutricionistaDataHora: now
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "REVISAO_NUTRICIONISTA",
-      modulo: "controle-temperatura-equipamentos/registro",
-      referenciaId: String(id)
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro assinado com sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(
-        error,
-        "Não foi possível assinar a conferência como revisada pelo supervisor."
-      )
-    );
-  }
+  const actor=await getCurrentUserForAction();
+  ensurePermission(actor,"modulo.temperatura.assinar_historico","Sem permissão para assinar.");
+  const id=parsePositiveInt(getInputValue(formData,"id"));
+  if (!id) throw new Error("Registro inválido.");
+  // Cached unversioned forms must display the current content/scope first.
+  redirect(MODULE_PATH+"/registro/"+id);
 }
 
 export async function createCatalogOptionAction(formData: FormData) {

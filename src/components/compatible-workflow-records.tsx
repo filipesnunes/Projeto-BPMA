@@ -10,8 +10,8 @@ const first = (value: string | string[] | undefined) => Array.isArray(value) ? v
 
 // Incomplete projections stay out of sanitary reports. Read their immutable draft
 // through the workflow relation instead of weakening the global measurement filter.
-export async function CompatibleWorkflowRecords({ module, history, query, operationalDate }: {
-  module: Module; history: boolean; query: Record<string, string | string[] | undefined>; operationalDate?: Date;
+export async function CompatibleWorkflowRecords({ module, history, query, operationalDate, historyRange }: {
+  module: Module; history: boolean; query: Record<string, string | string[] | undefined>; operationalDate?: Date; historyRange?: {gte:Date;lte:Date};
 }) {
   const user = await getCurrentUser();
   if (!user || !hasPermission(user, `modulo.${module}.acessar`)) return null;
@@ -25,7 +25,7 @@ export async function CompatibleWorkflowRecords({ module, history, query, operat
   } : undefined);
   const units = await prisma.fluxoOperacional.findMany({
     where: { modulo: module, excluidoEm: null,
-      ...(history ? { dataReferencia: dateFilter } : { OR: [{ preenchimentoCompleto: false }, { estado: "REABERTO" }] }),
+      ...(history ? { dataReferencia: historyRange??dateFilter, ...(historyRange&&date?{AND:{dataReferencia:date}}:{}) } : { OR: [{ preenchimentoCompleto: false }, { estado: "REABERTO" }] }),
       ...(!history && !fullHistory ? { OR: [{ dataReferencia: operationalDate ?? getAppDate(), preenchimentoCompleto: false }, { estado: "REABERTO" }] } : {}),
       ...(!history && operationalDate ? { dataReferencia: operationalDate } : {})
     },

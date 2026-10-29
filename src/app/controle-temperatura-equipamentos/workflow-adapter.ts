@@ -11,6 +11,7 @@ import { hasPermission, getDefaultPermissionCodes } from "@/lib/permissions";
 import { canSignModuleDay } from "@/lib/module-signatures";
 import { verifyPassword } from "@/lib/password";
 import type { AuthenticatedUser } from "@/lib/auth-session";
+import {temperatureCorrectionAudit,temperatureAuditValues} from "./correction-audit";
 
 export type TemperatureDraft = Record<string, string>;
 const fields = ["temperaturaAferida", "statusOperacionalEquipamento", "observacaoStatusOperacional", "horarioAfericao", "horarioNaoInformado", "justificativaHorario"];
@@ -43,28 +44,37 @@ export async function refreshWorkflowActor(tx: Prisma.TransactionClient, authent
 export const temperatureAdapter: WorkflowAdapter = {
   module: "temperatura",
   async load(tx, key) {
+    if (/^legacy:\d+$/.test(key)) {
+      const flow=await tx.fluxoOperacional.findUnique({where:{modulo_chave:{modulo:"temperatura",chave:key}},include:{temperatura:true}});
+      if(!flow?.temperatura||flow.temperatura.excluidoEm)throw Error("Registro legado indisponível. Recarregue a consulta.");
+      return {date:flow.temperatura.data,legacy:false,content:{snapshot:{},draft:{},complete:false,resolved:0,required:1}};
+    }
     const { equipmentId, date, shift } = parseTemperatureKey(key);
     const equipment = await tx.controleTemperaturaEquipamentoOpcao.findUnique({ where: { id: equipmentId } });
     if (!equipment || equipment.tipo !== "EQUIPAMENTO") throw new Error("Equipamento não encontrado.");
     const identity = key.split(":").slice(0, 3).join(":");
     const duplicate = await tx.fluxoOperacional.findFirst({ where: { modulo: "temperatura", excluidoEm: null,
-      chave: { not: key }, OR: [{ chave: identity }, { chave: { startsWith: identity + ":" } }] } });
+      chave: { not: key }, OR: [{ chave: identity }, { chave: { startsWith: identity + ":" } }, {temperatura:{equipamento:equipment.nome,data:date,turno:shift,excluidoEm:null}}] } });
     if (duplicate) throw new Error("Este equipamento já possui registro para este dia/turno. Abra a aferição existente.");
     const existing = await tx.controleTemperaturaEquipamento.findFirst({ where: { equipamento: equipment.nome, data: date, turno: shift, fluxoId: null } });
     return { date, legacy: Boolean(existing), content: { snapshot: {}, draft: {}, complete: false, resolved: 0, required: 1 } };
   },
   async save(tx, key, input, user, unit) {
     if (!(input instanceof FormData)) throw new Error("Formulário inválido.");
-    const { equipmentId, date, shift } = parseTemperatureKey(key);
-    const equipment = await tx.controleTemperaturaEquipamentoOpcao.findUniqueOrThrow({ where: { id: equipmentId } });
-    if (!equipment.ativo || !(shift === "MANHA" ? equipment.turnoManha : equipment.turnoTarde)) throw new Error("Equipamento/turno não disponível para preenchimento.");
     const previous = await tx.fluxoOperacional.findUniqueOrThrow({ where: { id: unit.id }, include: { temperatura: true, versoes: { orderBy: { versao: "desc" }, take: 1 } } });
+    const legacy=/^legacy:\d+$/.test(key);
+    const identity=legacy?null:parseTemperatureKey(key);
+    const date=identity?.date??previous.temperatura!.data,shift=identity?.shift??previous.temperatura!.turno;
+    const equipment=legacy?await tx.controleTemperaturaEquipamentoOpcao.findFirstOrThrow({where:{tipo:"EQUIPAMENTO",nome:previous.temperatura!.equipamento}}):await tx.controleTemperaturaEquipamentoOpcao.findUniqueOrThrow({where:{id:identity!.equipmentId}});
+    if (!equipment.ativo || !(shift === "MANHA" ? equipment.turnoManha : equipment.turnoTarde)) throw new Error("Equipamento/turno não disponível para preenchimento.");
     const oldDraft = (previous.versoes[0]?.rascunho ?? {}) as TemperatureDraft;
     const draft: TemperatureDraft = {};
     for (const field of fields) {
-      const value = input.get(field); draft[field] = typeof value === "string" ? value.trim() : "";
+      const value = input.get(field); draft[field] = typeof value === "string" ? value.trim() : oldDraft[field]??"";
       if (draft[field].length > 4000) throw new Error("Texto excede o limite de 4000 caracteres.");
     }
+    if(oldDraft.registroLegadoOriginal)draft.registroLegadoOriginal=oldDraft.registroLegadoOriginal;
+    if(previous.temperatura){draft.horarioAfericao=previous.temperatura.horarioAfericao??"";draft.horarioNaoInformado=String(previous.temperatura.horarioNaoInformado);draft.justificativaHorario=previous.temperatura.justificativaHorario??"";}
     if (!["EM_OPERACAO", "INATIVO", "MANUTENCAO"].includes(draft.statusOperacionalEquipamento)) throw new Error("Situação do equipamento inválida.");
     const photo = await parseImageUploadFromFormData({ formData: input, key: "fotoDesvio", maxBytes: TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES });
     draft.fotoBase64 = photo?.base64 ?? oldDraft.fotoBase64 ?? previous.temperatura?.fotoBase64 ?? "";
@@ -74,31 +84,33 @@ export const temperatureAdapter: WorkflowAdapter = {
     const operating = draft.statusOperacionalEquipamento === "EM_OPERACAO";
     const retroactive = formatAppDateInput(date) < formatAppDateInput(getAppDate());
     let complete = !operating || Boolean(draft.temperaturaAferida);
-    if (operating && retroactive && !draft.horarioAfericao && draft.horarioNaoInformado !== "true") complete = false;
-    if (operating && draft.horarioNaoInformado === "true" && (!retroactive || !draft.justificativaHorario)) complete = false;
+    if (!previous.temperatura && operating && retroactive && !draft.horarioAfericao && draft.horarioNaoInformado !== "true") complete = false;
+    if (!previous.temperatura && operating && draft.horarioNaoInformado === "true" && (!retroactive || !draft.justificativaHorario)) complete = false;
     const payloadForm = new FormData();
     for (const field of fields) payloadForm.set(field, draft[field]);
     payloadForm.set("equipamento", equipment.nome);
-    const payload = complete ? await getRegistroPayload(payloadForm, user.nomeCompleto, { data: date, turno: shift }, tx) : null;
+    const payload = complete ? await getRegistroPayload(payloadForm, previous.temperatura?.responsavel??user.nomeCompleto, { data: date, turno: shift }, tx) : null;
     const settings = await tx.moduloConfiguracao.findUnique({ where: { modulo: "CONTROLE_TEMPERATURA" } });
     if (payload && operating && payload.status !== "CONFORME" && (settings?.exigirFotoEmAlertaCritico ?? true) && !draft.fotoBase64 && !draft.fotoUrl) complete = false;
     if (!complete || !payload) {
       if (input.get("intent") === "complete") throw new Error("Preencha temperatura, horário e evidência obrigatória antes de concluir. Você pode salvar o rascunho.");
+      if(previous.versoes.length)await temperatureCorrectionAudit(tx,unit,user,oldDraft,draft,false);
       return { snapshot: {}, draft, complete: false, resolved: 0, required: 1 };
     }
-    const unknown = operating && draft.horarioNaoInformado === "true";
-    const time = !operating || unknown ? null : retroactive ? draft.horarioAfericao : previous.temperatura?.horarioAfericao || operationalTime(getAppNow());
+    const unknown = previous.temperatura?.horarioNaoInformado ?? (operating && draft.horarioNaoInformado === "true");
+    const time = previous.temperatura ? previous.temperatura.horarioAfericao : !operating || unknown ? null : retroactive ? draft.horarioAfericao : operationalTime(getAppNow());
     if (time !== null) assertProcedureTime(time, date);
     const { turnosConferencia, ...data } = payload; void turnosConferencia;
     const projected = { ...data, data: date, turno: shift, horarioAfericao: time,
       horarioNaoInformado: unknown, justificativaHorario: unknown ? draft.justificativaHorario : null,
-      fotoNome: operating ? draft.fotoNome || null : null, fotoMimeType: operating ? draft.fotoMimeType || null : null,
-      fotoBase64: operating ? draft.fotoBase64 || null : null, fotoUrl: operating ? draft.fotoUrl || null : null,
+      fotoNome: draft.fotoNome || null, fotoMimeType: draft.fotoMimeType || null,
+      fotoBase64: draft.fotoBase64 || null, fotoUrl: draft.fotoUrl || null,
       ...(photo ? { fotoTamanhoBytes: photo.size, fotoCriadoEm: getAppNow(), fotoCriadoPorUsuarioId: user.id } : {}) };
     const record = previous.temperatura
       ? await tx.controleTemperaturaEquipamento.update({ where: { id: previous.temperatura.id }, data: projected })
       : await tx.controleTemperaturaEquipamento.create({ data: { ...projected, fluxoId: unit.id } });
     draft.horarioAfericao = time ?? "";
+    if(previous.versoes.length)await temperatureCorrectionAudit(tx,unit,user,temperatureAuditValues(previous.temperatura,oldDraft),temperatureAuditValues(record,draft),true);
     return { snapshot: temperatureSnapshot(record), draft, complete: true, resolved: 1, required: 1 };
   }
 };
@@ -116,6 +128,7 @@ export function temperatureSignatureBridge(password: string, daily: boolean): Wo
         complete: true, resolved: 1, required: 1 };
     },
     async sign(tx, user, units, signedAt) {
+      if(units.some(unit=>unit.dataReferencia>getAppDate()))throw Error("Não é possível assinar aferições de datas futuras.");
       if (daily ? !canSignModuleDay(user, "temperatura") : !hasPermission(user, "modulo.temperatura.assinar_historico")) throw new Error("Sem permissão para esta assinatura.");
       if (!daily && units.length !== 1) throw new Error("A revisão individual abrange uma única aferição.");
       const day = formatAppDateInput(units[0].dataReferencia);

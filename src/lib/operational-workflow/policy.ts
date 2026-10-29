@@ -28,6 +28,8 @@ export function assertWorkflowEdit(params: {
   assertWorkflowAccess(user, module);
   const reference = formatAppDateInput(date), current = formatAppDateInput(today);
   if (reference > current) throw new Error("A data do procedimento não pode estar no futuro.");
+  if (module === "temperatura" && !creating && reference.slice(0,7) === current.slice(0,7) &&
+      hasPermission(user,"modulo.temperatura.editar_registros_mes_vigente")) return;
   const permission = reference < current ? "editar_historico" : creating ? "criar_registro" : "editar_registro_do_dia";
   if (!hasPermission(user, `modulo.${module}.${permission}`)) throw new Error("Sem permissão para editar registros nesta data.");
 }
@@ -38,6 +40,9 @@ export function assertWorkflowReopen(params: {
 }) {
   assertWorkflowAccess(params.user, params.module);
   if (!hasPermission(params.user, `modulo.${params.module}.reabrir_registro`)) throw new Error("Sem permissão para reabrir este registro.");
+  if (params.module === "temperatura" && (formatAppDateInput(params.date).slice(0,7) !== formatAppDateInput(params.today).slice(0,7) || params.date > params.today)) {
+    throw new Error("A reabertura individual é permitida somente na competência vigente, sem datas futuras.");
+  }
   if (params.fromEdit) assertWorkflowEdit(params);
   if (params.state !== "FECHADO") throw new Error("Somente registros fechados podem ser reabertos.");
   if (!params.reason.trim() || params.reason.trim().length > 4000) throw new Error("Informe a justificativa da reabertura (até 4000 caracteres).");

@@ -7,6 +7,7 @@ import { deleteOperationalRecord } from "@/lib/operational-deletion";
 import { prisma } from "@/lib/prisma";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
 import { temperatureAdapter, temperatureSignatureBridge, refreshWorkflowActor } from "./workflow-adapter";
+import {adoptLegacyTemperature,legacyTemperatureId,legacyTemperatureFlowId} from "./legacy-workflow";
 
 const base = "/controle-temperatura-equipamentos";
 const value = (form: FormData, key: string) => typeof form.get(key) === "string" ? String(form.get(key)).trim() : "";
@@ -32,8 +33,10 @@ export async function saveTemperatureWorkflowAction(form: FormData) {
   const returnTo = `${base}/fluxo?chave=${encodeURIComponent(key)}`;
   try {
     const authenticated = await getCurrentUserForAction();
+    const legacyId=legacyTemperatureId(key),revision=version(form);
     const saved = await saveWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), adapter: temperatureAdapter,
-      key, expectedVersion: version(form), input: form });
+      key, expectedVersion: legacyId&&revision===0?1:revision, input: form,
+      prepare:legacyId&&revision===0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"save"):undefined });
     refresh();
     result(saved.estado === "COMPLETO" ? `${base}/historico?data=${saved.dataReferencia.toISOString().slice(0,10)}` : returnTo,
       saved.estado === "COMPLETO" ? "Aferição completa. Aguardando validação do supervisor." : "Preenchimento salvo. Você pode continuar depois.");
@@ -44,21 +47,25 @@ export async function reopenTemperatureWorkflowAction(form: FormData) {
   try {
     if (value(form, "confirmar") !== "true") throw new Error("Confirme explicitamente a reabertura.");
     const authenticated = await getCurrentUserForAction();
-    await reopenWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), module: "temperatura", id: value(form, "id"),
-      expectedVersion: version(form), reason: value(form, "justificativa"), fromEdit: value(form, "origem") === "editar" });
+    const legacyId=legacyTemperatureId(key),revision=version(form);
+    await reopenWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), module: "temperatura", id: legacyId?legacyTemperatureFlowId(legacyId):value(form,"id"),
+      expectedVersion:legacyId&&revision===0?1:revision,reason:value(form,"justificativa"),fromEdit:false,
+      prepare:legacyId&&revision===0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"reopen"):undefined });
     refresh(); result(returnTo, "Aferição reaberta. Uma nova assinatura será necessária.");
   } catch (error) { rethrowIfRedirectError(error); result(returnTo, message(error), true); }
 }
 export async function signTemperatureWorkflowAction(form: FormData) {
   try {
     const authenticated = await getCurrentUserForAction();
-    const scope = form.getAll("unidade").map(entry => {
+    const legacyId=Number(value(form,"legacyRecordId"));
+    const scope = legacyId>0?[{id:legacyTemperatureFlowId(legacyId),version:1}]:form.getAll("unidade").map(entry => {
       const [id, revision] = String(entry).split(":");
       if (!id || !/^\d+$/.test(revision)) throw new Error("Escopo de assinatura inválido.");
       return { id, version: Number(revision) };
     });
     await signWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), scope,
-      bridge: temperatureSignatureBridge(value(form, "senha"), value(form, "mecanismo") === "diaria") });
+      bridge: temperatureSignatureBridge(value(form, "senha"), value(form, "mecanismo") === "diaria"),
+      prepare:legacyId>0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"sign"):undefined });
     refresh(); result(`${base}/historico`, "Validação registrada para as versões selecionadas.");
   } catch (error) { rethrowIfRedirectError(error); result(`${base}/historico`, message(error), true); }
 }

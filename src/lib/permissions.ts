@@ -169,7 +169,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     modulo: "temperatura",
     grupo: "Temperatura de Equipamentos",
     prefixo: "modulo.temperatura",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_registros_mes_vigente", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "oleo",
@@ -243,6 +243,7 @@ const COLABORADOR_PERMISSIONS = new Set([
   "modulo.temperatura.acessar",
   "modulo.temperatura.criar_registro",
   "modulo.temperatura.editar_registro_do_dia",
+  "modulo.temperatura.editar_registros_mes_vigente",
   "modulo.oleo.acessar",
   "modulo.oleo.criar_registro",
   "modulo.oleo.editar_registro_do_dia",
@@ -280,6 +281,7 @@ const NUTRICIONISTA_PERMISSIONS = new Set([
   "modulo.temperatura.acessar_historico",
   "modulo.temperatura.excluir_registro",
   "modulo.temperatura.assinar_historico",
+  "modulo.temperatura.reabrir_registro",
   "modulo.temperatura.assinar_dia",
   "modulo.temperatura.assinar_fechamento_mensal",
   "modulo.temperatura.fechar_mes",
@@ -312,7 +314,7 @@ const NUTRICIONISTA_PERMISSIONS = new Set([
 ]);
 
 const GERENTE_PERMISSIONS = new Set([
-  ...NUTRICIONISTA_PERMISSIONS,
+  ...Array.from(NUTRICIONISTA_PERMISSIONS).filter(code=>code!=="modulo.temperatura.reabrir_registro"),
   "modulo.personalizacao.acessar",
   "usuarios.acessar",
   "usuarios.criar",
@@ -503,7 +505,7 @@ function buildModulePermissions(params: {
       grupo: params.grupo,
       modulo: params.modulo,
       acao,
-      sensivel: /editar_historico|excluir_registro|reabrir_mes|reabrir_registro/.test(acao)
+      sensivel: /editar_historico|editar_registros_mes_vigente|excluir_registro|reabrir_mes|reabrir_registro/.test(acao)
     };
   });
 }
@@ -512,6 +514,8 @@ function getPermissionDisplay(
   modulo: string,
   acao: string
 ): { nome: string; descricao?: string } {
+  if (modulo === "temperatura" && acao === "editar_registros_mes_vigente") return {nome:"Editar registros do mês vigente",descricao:"Permite editar registros de temperatura de equipamentos já existentes no mês atual, inclusive de dias anteriores, desde que não estejam assinados e que a competência esteja aberta."};
+  if (modulo === "temperatura" && acao === "reabrir_registro") return {nome:"Reabrir registros assinados",descricao:"Permite reabrir registros assinados da competência vigente, mediante justificativa, preservando a assinatura e o histórico anteriores."};
   if (modulo === "limpeza_semanal" && acao === "assinar_dia") {
     return {
       nome: "Assinar semana como supervisor",

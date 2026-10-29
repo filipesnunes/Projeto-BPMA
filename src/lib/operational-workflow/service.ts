@@ -10,6 +10,7 @@ import { assertWorkflowAccess, assertWorkflowEdit, assertWorkflowReopen, assertW
 
 type Tx = Prisma.TransactionClient;
 type Actor = (tx: Tx) => Promise<AuthenticatedUser>;
+type Preparation = (tx: Tx, user: AuthenticatedUser) => Promise<void | { legacySignaturePreserved: true }>;
 const author = (user: AuthenticatedUser) => ({ usuarioId: user.id, usuarioNome: user.nomeCompleto, usuarioPerfil: user.perfil });
 
 function state(value: string): WorkflowState {
@@ -48,13 +49,14 @@ async function revision(tx: Tx, unit: FluxoOperacional, content: WorkflowContent
 // Internal server API: callers supply a server-owned adapter and authenticate
 // inside the transaction. No public action accepts an adapter or completion flag.
 export async function saveWorkflow(params: {
-  actor: Actor; adapter: WorkflowAdapter; key: string; expectedVersion: number; input: unknown;
+  actor: Actor; adapter: WorkflowAdapter; key: string; expectedVersion: number; input: unknown; prepare?: Preparation;
 }) {
   const { adapter, key } = params;
   return prisma.$transaction(async tx => {
     await lock(tx, adapter.module);
     const user = await params.actor(tx);
     assertWorkflowAccess(user, adapter.module);
+    await params.prepare?.(tx, user);
     const original = await tx.fluxoOperacional.findUnique({ where: { modulo_chave: { modulo: adapter.module, chave: key } } });
     assertWorkflowVersion(original?.versao ?? 0, params.expectedVersion);
     if (original?.excluidoEm) throw new Error("Registro excluído.");
@@ -86,18 +88,19 @@ export async function saveWorkflow(params: {
 
 export async function reopenWorkflow(params: {
   actor: Actor; module: OperationalSignatureModuleCode; id: string; expectedVersion: number;
-  reason: string; fromEdit: boolean;
+  reason: string; fromEdit: boolean; prepare?: Preparation;
 }) {
   return prisma.$transaction(async tx => {
     await lock(tx, params.module);
     const user = await params.actor(tx);
     assertWorkflowAccess(user, params.module);
+    const evidence = await params.prepare?.(tx, user);
     const original = await tx.fluxoOperacional.findUnique({ where: { id: params.id, modulo: params.module } });
     if (!original || original.excluidoEm) throw new Error("Registro operacional não encontrado.");
     assertWorkflowVersion(original.versao, params.expectedVersion);
     await openPeriod(tx, params.module, original.dataReferencia);
     assertWorkflowReopen({ user, module: params.module, date: original.dataReferencia, today: getAppDate(),
-      state: state(original.estado), reason: params.reason, fromEdit: params.fromEdit });
+      state: evidence?.legacySignaturePreserved && params.module === "temperatura" && /^legacy:\d+$/.test(original.chave) ? "FECHADO" : state(original.estado), reason: params.reason, fromEdit: params.fromEdit });
     const previousContent = await tx.fluxoVersao.findUniqueOrThrow({ where: { fluxoId_versao: { fluxoId: original.id, versao: original.versao } } });
     const unit = await tx.fluxoOperacional.update({ where: { id: original.id, versao: original.versao }, data: {
       estado: "REABERTO", versao: { increment: 1 }, assinaturaVigenteId: null
@@ -122,7 +125,7 @@ export type WorkflowSignatureBridge = {
 };
 
 export async function signWorkflow(params: {
-  actor: Actor; bridge: WorkflowSignatureBridge; scope: readonly { id: string; version: number }[];
+  actor: Actor; bridge: WorkflowSignatureBridge; scope: readonly { id: string; version: number }[]; prepare?: Preparation;
 }) {
   const { bridge, scope } = params;
   if (!scope.length || new Set(scope.map(item => item.id)).size !== scope.length) throw new Error("Selecione um conjunto válido de registros para assinar.");
@@ -130,6 +133,7 @@ export async function signWorkflow(params: {
     await lock(tx, bridge.module);
     const user = await params.actor(tx);
     assertWorkflowAccess(user, bridge.module);
+    await params.prepare?.(tx, user);
     const originals: FluxoOperacional[] = [];
     for (const item of scope) {
       const unit = await tx.fluxoOperacional.findUnique({ where: { id: item.id, modulo: bridge.module } });

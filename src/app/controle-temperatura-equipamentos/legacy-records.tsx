@@ -1,3 +1,4 @@
+import { canCorrectTemperature } from "./correction-policy";
 import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
 import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
@@ -312,9 +313,9 @@ export default async function ControleTemperaturaEquipamentosPage({
   const closedPeriods = await Promise.all(Array.from(periodos.values()).map(async period => ({ ...period, closed: await isOperationalMonthClosed("temperatura", period.mes, period.ano) })));
   const assinadosSet = new Set(closedPeriods.filter(p => p.closed).map(p => periodKey(p.mes, p.ano)));
   const periodoEdicao = registroEmEdicao ? getMonthYear(registroEmEdicao.data) : null;
-  const registroEmEdicaoBloqueado = periodoEdicao
+  const registroEmEdicaoBloqueado = Boolean(registroEmEdicao?.assinaturaNutricionistaDataHora) || Boolean(registroEmEdicao && !canCorrectTemperature(authUser,registroEmEdicao.data)) || (periodoEdicao
     ? assinadosSet.has(periodKey(periodoEdicao.mes, periodoEdicao.ano))
-    : false;
+    : false);
   const periodoExclusao = registroParaExcluir ? getMonthYear(registroParaExcluir.data) : null;
   const registroParaExcluirBloqueado = periodoExclusao
     ? assinadosSet.has(periodKey(periodoExclusao.mes, periodoExclusao.ano))
@@ -458,7 +459,7 @@ export default async function ControleTemperaturaEquipamentosPage({
         modulePath={MODULE_PATH}
         searchParams={params}
         managementHref={podeGerenciarOpcoes ? "/controle-temperatura-equipamentos/opcoes" : undefined}
-        historyHref={podeVerGestao ? "/controle-temperatura-equipamentos/historico" : undefined}
+        historyHref={podeVerGestao || hasPermission(authUser,"modulo.temperatura.editar_registros_mes_vigente") || hasPermission(authUser,"modulo.temperatura.reabrir_registro") ? "/controle-temperatura-equipamentos/historico" : undefined}
         maintenanceHref="/chamados-manutencao?origem=TEMPERATURA"
       />
 
@@ -512,7 +513,7 @@ export default async function ControleTemperaturaEquipamentosPage({
             </p>
           ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-              Este registro pertence a um mês fechado e não pode ser alterado.
+              {registroEmEdicao.assinaturaNutricionistaDataHora ? "Registro assinado. Solicite a reabertura a um usuário autorizado para realizar alterações." : "Registro bloqueado para edição por permissão ou fechamento da competência."}
             </p>
           ) : (
             <form
@@ -522,6 +523,7 @@ export default async function ControleTemperaturaEquipamentosPage({
             >
               <TemperatureReferenceFields referenceDate={formatDateInput(dataFormulario)} todayDate={todayDateInput} editable={!registroEmEdicao}>
               <input type="hidden" name="returnTo" value={formReturnTo} />
+              {registroEmEdicao && <input type="hidden" name="originalUpdatedAt" value={registroEmEdicao.updatedAt.toISOString()}/>}
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             {semEquipamentosDisponiveis ? <p className="text-sm md:col-span-2">Todos os equipamentos previstos para esta data já foram registrados. Selecione outra data para consultar as pendências.</p> : null}

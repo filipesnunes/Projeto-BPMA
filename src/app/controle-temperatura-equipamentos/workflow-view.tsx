@@ -1,3 +1,6 @@
+import { TemperatureSavedRecordPage } from "./saved-record-page";
+import { legacyTemperatureId } from "./legacy-workflow";
+import { currentTemperatureMonth, canReadTemperatureDate } from "./correction-policy";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -74,6 +77,8 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
   let key = first(query.chave);
   if (!key && first(query.equipamento) && first(query.data) && first(query.turno)) key = `${first(query.equipamento)}:${first(query.data)}:${first(query.turno)}`;
   if (!key) return redirect(`${base}?new=1`);
+  const legacyId=legacyTemperatureId(key);
+  if(legacyId)return TemperatureSavedRecordPage({id:legacyId,query});
   let identity: ReturnType<typeof parseTemperatureKey>;
   try { identity = parseTemperatureKey(key); } catch { return <p>Selecione equipamento, data e turno válidos.</p>; }
   const [unit, equipment, closedMonth] = await Promise.all([
@@ -81,6 +86,7 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
     prisma.controleTemperaturaEquipamentoOpcao.findUnique({ where: { id: identity.equipmentId } }),
     isOperationalMonthClosed("temperatura", identity.date.getUTCMonth()+1, identity.date.getUTCFullYear())
   ]);
+  if (unit?.temperatura && !unit.excluidoEm) return TemperatureSavedRecordPage({id:unit.temperatura.id,query});
   if (!equipment) return <p>Registro indisponível.</p>;
   if (unit?.excluidoEm) return <p>Registro excluído com auditoria. <Link href={`${base}/fluxo?chave=${encodeURIComponent(key.split(":").slice(0,3).join(":") + ":" + randomUUID())}`}>Criar nova aferição</Link></p>;
   if (!unit) {
@@ -88,12 +94,12 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
     const active = await prisma.fluxoOperacional.findFirst({ where: { modulo: "temperatura", excluidoEm: null, OR: [{ chave: identityKey }, { chave: { startsWith: identityKey + ":" } }] } });
     if (active) redirect(`${base}/fluxo?chave=${encodeURIComponent(active.chave)}`);
   }
-  if (formatAppDateInput(identity.date) < today && unit?.estado !== "REABERTO" && !hasPermission(user,"modulo.temperatura.acessar_historico") && !hasPermission(user,"modulo.temperatura.editar_historico")) return <p>Sem permissão de consulta a esta data.</p>;
+  if (!canReadTemperatureDate(user,identity.date)) return <p>Sem permissão de consulta a esta data.</p>;
   const legacy = !unit && await prisma.controleTemperaturaEquipamento.findFirst({ where: { equipamento: equipment.nome, data: identity.date, turno: identity.shift, fluxoId: null } });
   if (legacy) return <section className="bpma-card">Esta aferição é legada e foi preservada. <Link href={`${base}/historico/legado?dia=${formatAppDateInput(identity.date)}`}>Consultar histórico legado</Link></section>;
   let canEdit = !closedMonth;
   try { assertWorkflowEdit({ user, module: "temperatura", date: identity.date, today: getAppDate(), creating: !unit }); } catch { canEdit = false; }
-  const canReopen = !closedMonth && hasPermission(user,"modulo.temperatura.reabrir_registro");
+  const canReopen = !closedMonth && currentTemperatureMonth(identity.date) && hasPermission(user,"modulo.temperatura.reabrir_registro");
   const draft = (unit?.versoes[0]?.rascunho ?? {}) as TemperatureDraft;
   const formalClosed = unit?.estado === "FECHADO";
   const confirm = formalClosed && first(query.confirmar) === "reabrir";

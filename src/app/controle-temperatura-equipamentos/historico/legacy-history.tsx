@@ -1,3 +1,4 @@
+import { fullTemperatureHistory, MONTH_EDIT } from "../correction-policy";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
 import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
@@ -97,7 +98,10 @@ export default async function ControleTemperaturaHistoricoPage({
 }: PageProps) {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/login");
-  if (!hasPermission(authUser,"modulo.temperatura.acessar_historico")) redirect("/acesso-negado");
+  const fullHistory=fullTemperatureHistory(authUser);
+  if (!hasPermission(authUser,"modulo.temperatura.acessar") || !fullHistory && !hasPermission(authUser,MONTH_EDIT) && !hasPermission(authUser,"modulo.temperatura.reabrir_registro")) redirect("/acesso-negado");
+  const today=getAppDate();
+  const historyRange=fullHistory?undefined:{gte:new Date(Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),1)),lte:today};
   const canSignDay = authUser ? canSignModuleDay(authUser, MODULE_CODE) : false;
   const canSignMonthly = authUser ? canSignModuleMonthlyClosure(authUser, MODULE_CODE) : false;
 
@@ -114,11 +118,11 @@ export default async function ControleTemperaturaHistoricoPage({
   const fotoId = parsePositiveInt(firstParam(params.fotoId));
 
   const todayMonth = getAppMonthYear(getAppDate());
-  const selectedMonth = filtroMes && filtroMes <= 12 ? filtroMes : todayMonth.mes;
-  const selectedYear = filtroAno ?? todayMonth.ano;
+  const selectedMonth = fullHistory && filtroMes && filtroMes <= 12 ? filtroMes : todayMonth.mes;
+  const selectedYear = fullHistory ? filtroAno ?? todayMonth.ano : todayMonth.ano;
   const selectedMonthRange = getAppMonthDateRange(selectedMonth, selectedYear);
 
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = {};
+  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = historyRange ? {AND:{data:historyRange}} : {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -131,6 +135,7 @@ export default async function ControleTemperaturaHistoricoPage({
     where.data = { gte: start, lte: end };
   } else if (filtroMes) {
     const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
+      where:historyRange?{data:historyRange}:undefined,
       _min: { data: true },
       _max: { data: true }
     });
@@ -157,7 +162,7 @@ export default async function ControleTemperaturaHistoricoPage({
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
     }),
     prisma.controleTemperaturaEquipamento.findMany({
-      where: { data: { gte: selectedMonthRange.start, lte: selectedMonthRange.end } },
+      where: { data: { gte: selectedMonthRange.start, lte: selectedMonthRange.end },...(historyRange?{AND:{data:historyRange}}:{}) },
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -434,6 +439,7 @@ export default async function ControleTemperaturaHistoricoPage({
                   <th className="px-3 py-2">Foto</th>
                   <th className="px-3 py-2">Responsável</th>
                   <th className="px-3 py-2">Observações</th>
+                  <th className="px-3 py-2">Registro e correções</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -481,6 +487,7 @@ export default async function ControleTemperaturaHistoricoPage({
                       </td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                       <td className="px-3 py-2 max-w-80 whitespace-normal break-words">{observacaoRegistro?.trim() || "-"}</td>
+                      <td className="px-3 py-2"><Link className="btn-secondary" href={`/controle-temperatura-equipamentos/registro/${registro.id}`}>Consultar / Editar</Link>{registro.assinaturaNutricionistaNome&&<p>Assinado por {registro.assinaturaNutricionistaNome}</p>}</td>
                     </tr>
                   );
                 })}
@@ -527,7 +534,7 @@ export default async function ControleTemperaturaHistoricoPage({
         </ActionModal>
       ) : null}
 
-      <CompatibleWorkflowRecords module="temperatura" history={true} query={params} />
+      <CompatibleWorkflowRecords module="temperatura" history={true} query={params} historyRange={historyRange} />
     </div>
   );
 }

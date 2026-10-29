@@ -3,7 +3,8 @@ import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-reco
 import { redirect } from "next/navigation";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
-import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
+import { parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
+import { getAppDate } from "@/lib/date-time";
 import {
   ModuloDocumento,
   Prisma,
@@ -156,7 +157,8 @@ export default async function ControleTemperaturaEquipamentosPage({
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
   const now = getCurrentSystemDateTime();
-  const todayDateInput = formatDateInput(now);
+  const today = getAppDate(now);
+  const todayDateInput = formatDateInput(today);
   const dataRegistroInput = firstParam(params.dataRegistro).trim();
   const dataRegistro = /^\d{4}-\d{2}-\d{2}$/.test(dataRegistroInput) ? parseDateInput(dataRegistroInput) : null;
   const turnoRegistroInput = firstParam(params.turnoRegistro);
@@ -172,24 +174,21 @@ export default async function ControleTemperaturaEquipamentosPage({
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = {};
+  // The daily workspace may be narrowed by filters, never expanded to other dates.
+  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = { data: today };
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
-    where.data = dataFiltro;
+    where.AND = { data: dataFiltro };
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
     const { start, end } = getMonthDateRange(filtroMes, filtroAno);
-    where.data = { gte: start, lte: end };
+    where.AND = { data: { gte: start, lte: end } };
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
-    where.data = { gte: start, lte: end };
+    where.AND = { data: { gte: start, lte: end } };
   } else if (filtroMes) {
-    const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
-      _min: { data: true },
-      _max: { data: true }
-    });
-    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
-      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
+    const { start, end } = getMonthDateRange(filtroMes, today.getUTCFullYear());
+    where.AND = { data: { gte: start, lte: end } };
   }
 
   if (filtroEquipamento) {
@@ -720,11 +719,11 @@ export default async function ControleTemperaturaEquipamentosPage({
         )}
 
         <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          A listagem principal inicia sem filtro de data.
+          A listagem principal mostra somente os registros de hoje.
           {podeVerGestao ? (
             <>
               {" "}
-              Use os filtros ou o <strong>Histórico</strong> para outras consultas.
+              Consulte o <strong>Histórico</strong> para outras datas.
             </>
           ) : null}
         </p>
@@ -915,7 +914,7 @@ export default async function ControleTemperaturaEquipamentosPage({
         </ActionModal>
       ) : null}
 
-      <CompatibleWorkflowRecords module="temperatura" history={false} query={params} />
+      <CompatibleWorkflowRecords module="temperatura" history={false} query={params} operationalDate={today} />
     </div>
   );
 }

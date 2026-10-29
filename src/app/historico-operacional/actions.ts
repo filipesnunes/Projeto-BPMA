@@ -105,6 +105,12 @@ export async function signModuleDayAction(formData: FormData) {
     if (!dataReferencia) {
       throw new Error("Data inválida para assinatura do dia.");
     }
+    if(moduleConfig.codigo==="oleo") {
+      const {signLegacyOilDay}=await import("@/app/controle-qualidade-oleo/legacy-day-signature");
+      await signLegacyOilDay(actor,dataReferencia,senhaConfirmacao,observacao);
+      revalidatePath(moduleConfig.historyPath);
+      redirectWithFeedback(returnTo,"success","Dia assinado pelo supervisor com sucesso.");
+    }
 
     if (["temperatura", "oleo", "amostras", "rastreabilidade"].includes(moduleConfig.codigo) && await prisma.fluxoOperacional.findFirst({ where: { modulo: moduleConfig.codigo, dataReferencia, excluidoEm: null } })) {
       const legacy = moduleConfig.codigo === "temperatura" ? await prisma.controleTemperaturaEquipamento.count({where:{data:dataReferencia,fluxoId:null}}) : moduleConfig.codigo === "oleo" ? await prisma.controleQualidadeOleoRegistro.count({where:{data:dataReferencia,fluxoId:null}}) : moduleConfig.codigo === "amostras"

@@ -1,6 +1,6 @@
 "use server";
 import { createFromOriginalForm } from "@/app/historico-operacional/compatible-create";
-import { getRegistroPayload } from "./record-payload";
+import { saveOilWorkflowAction, signOilWorkflowAction } from "./workflow-actions";
 import { deleteOperationalRecord } from "@/lib/operational-deletion";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
@@ -11,11 +11,9 @@ import { rethrowIfRedirectError } from "@/lib/redirect-error";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
 import {
-  createSignatureLog,
   ensurePermission,
   validateSignaturePassword
 } from "@/lib/authz";
-import { canEditRecordDate } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { reopenOperationalMonth, isOperationalMonthClosed, assertNotReopenedMonth } from "@/lib/monthly-reopening";
 
@@ -26,10 +24,7 @@ import {
   sanitizeLabel
 } from "./catalog";
 import {
-  getCurrentSystemDateTime,
   getMonthDateRange,
-  getMonthYear,
-  getTodaySystemDate,
   parsePositiveInt,
 } from "./utils";
 
@@ -104,18 +99,6 @@ function redirectWithFeedback(
   redirect(`${url.pathname}?${url.searchParams.toString()}`);
 }
 
-function getRegistroFormState(
-  formData: FormData
-): Record<(typeof REGISTRO_FORM_PARAM_KEYS)[number], string> {
-  return {
-    formDataReferencia: getInputValue(formData, "data"),
-    formFita: getInputValue(formData, "fitaOleo"),
-    formTemperatura: getInputValue(formData, "temperatura"),
-    formSemUtilizacao: getInputValue(formData, "semUtilizacao") === "true" ? "true" : "false",
-    formObservacao: getInputValue(formData, "observacao")
-  };
-}
-
 function revalidateModulePaths() {
   revalidatePath(MODULE_PATH);
   revalidatePath(HISTORY_PATH);
@@ -129,51 +112,11 @@ async function isMonthSigned(mes: number, ano: number): Promise<boolean> {
 export async function createRegistroAction(formData: FormData) { return createFromOriginalForm("oleo",formData); }
 
 export async function updateRegistroAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro inválido para edição.");
-    }
-
-    const existing = await prisma.controleQualidadeOleoRegistro.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (existing.fluxoId) throw new Error("Edite pelo formulário versionado da verificação.");
-    const existingPeriod = getMonthYear(existing.data);
-    if (await isMonthSigned(existingPeriod.mes, existingPeriod.ano)) {
-      throw new Error("O mês deste registro já foi fechado e não pode ser editado.");
-    }
-    if (!canEditRecordDate(actor, "modulo.oleo", existing.data, getTodaySystemDate())) {
-      throw new Error("Seu perfil não pode editar este registro de óleo.");
-    }
-
-    const payload = await getRegistroPayload(formData, actor.nomeCompleto);
-
-    await prisma.controleQualidadeOleoRegistro.update({
-      where: { id },
-      data: payload
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro Atualizado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível salvar o registro. Verifique os campos obrigatórios."),
-      getRegistroFormState(formData)
-    );
-  }
+  const id = parsePositiveInt(getInputValue(formData, "id"));
+  if (!id) throw new Error("Registro inv?lido para edi??o.");
+  formData.set("chave", `legacy:${id}`);
+  if (!formData.has("versao")) formData.set("versao", "0");
+  return saveOilWorkflowAction(formData);
 }
 
 export async function deleteRegistroAction(formData: FormData) {
@@ -188,67 +131,10 @@ export async function deleteRegistroAction(formData: FormData) {
 }
 
 export async function signRegistroSupervisorAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.oleo.assinar_historico", "Você não tem permissão para assinar o histórico de óleo.");
-
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-
-    if (!id) {
-      throw new Error("Registro inválido para assinatura do supervisor.");
-    }
-
-    const registro = await prisma.controleQualidadeOleoRegistro.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        fluxoId: true,
-        assinaturaSupervisorEm: true
-      }
-    });
-
-    if (!registro) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    if (registro.fluxoId) throw new Error("Valide a versão atual pelo formulário da verificação.");
-    if (registro.assinaturaSupervisorEm) {
-      throw new Error("Este registro já foi assinado pelo supervisor.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const now = getCurrentSystemDateTime();
-    await prisma.controleQualidadeOleoRegistro.update({
-      where: { id },
-      data: {
-        assinaturaSupervisorUsuarioId: actor.id,
-        assinaturaSupervisorNome: actor.nomeCompleto,
-        assinaturaSupervisorPerfil: actor.perfil,
-        assinaturaSupervisorEm: now
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "SUPERVISOR",
-      modulo: "controle-qualidade-oleo/registro",
-      referenciaId: String(id)
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Registro assinado pelo supervisor com sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(error, "Não foi possível assinar o registro como revisado pelo supervisor.")
-    );
-  }
+  formData.set("legacyRecordId", getInputValue(formData,"id"));
+  formData.set("senha", getInputValue(formData,"senhaConfirmacao"));
+  formData.set("mecanismo", "individual");
+  return signOilWorkflowAction(formData);
 }
 
 export async function closeMonthAction(formData: FormData) {

@@ -175,7 +175,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     modulo: "oleo",
     grupo: "Qualidade do Óleo",
     prefixo: "modulo.oleo",
-    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
+    acoes: ["acessar", "acessar_historico", "criar_registro", "editar_registro_do_dia", "editar_registros_mes_vigente", "editar_historico", "excluir_registro", "assinar_historico", "assinar_dia", "assinar_fechamento_mensal", "gerenciar_cadastros", "fechar_mes", "reabrir_mes", "reabrir_registro"]
   }),
   ...buildModulePermissions({
     modulo: "rastreabilidade",
@@ -247,6 +247,7 @@ const COLABORADOR_PERMISSIONS = new Set([
   "modulo.oleo.acessar",
   "modulo.oleo.criar_registro",
   "modulo.oleo.editar_registro_do_dia",
+  "modulo.oleo.editar_registros_mes_vigente",
   "modulo.rastreabilidade.acessar",
   "modulo.rastreabilidade.criar_registro",
   "modulo.rastreabilidade.editar_registro_do_dia",
@@ -288,6 +289,7 @@ const NUTRICIONISTA_PERMISSIONS = new Set([
   "modulo.oleo.acessar_historico",
   "modulo.oleo.excluir_registro",
   "modulo.oleo.assinar_historico",
+  "modulo.oleo.reabrir_registro",
   "modulo.oleo.assinar_dia",
   "modulo.oleo.assinar_fechamento_mensal",
   "modulo.oleo.fechar_mes",
@@ -314,7 +316,7 @@ const NUTRICIONISTA_PERMISSIONS = new Set([
 ]);
 
 const GERENTE_PERMISSIONS = new Set([
-  ...Array.from(NUTRICIONISTA_PERMISSIONS).filter(code=>code!=="modulo.temperatura.reabrir_registro"),
+  ...Array.from(NUTRICIONISTA_PERMISSIONS).filter(code=>code!=="modulo.temperatura.reabrir_registro"&&code!=="modulo.oleo.reabrir_registro"),
   "modulo.personalizacao.acessar",
   "usuarios.acessar",
   "usuarios.criar",
@@ -516,6 +518,8 @@ function getPermissionDisplay(
 ): { nome: string; descricao?: string } {
   if (modulo === "temperatura" && acao === "editar_registros_mes_vigente") return {nome:"Editar registros do mês vigente",descricao:"Permite editar registros de temperatura de equipamentos já existentes no mês atual, inclusive de dias anteriores, desde que não estejam assinados e que a competência esteja aberta."};
   if (modulo === "temperatura" && acao === "reabrir_registro") return {nome:"Reabrir registros assinados",descricao:"Permite reabrir registros assinados da competência vigente, mediante justificativa, preservando a assinatura e o histórico anteriores."};
+  if (modulo === "oleo" && acao === "editar_registros_mes_vigente") return {nome:"Editar registros do mês vigente",descricao:"Permite editar registros existentes do Controle da Qualidade do Óleo no mês atual, inclusive de dias anteriores, desde que não possuam assinatura vigente e que a competência esteja aberta."};
+  if (modulo === "oleo" && acao === "reabrir_registro") return {nome:"Reabrir registros assinados",descricao:"Permite reabrir registros assinados do mês vigente mediante justificativa, preservando as assinaturas e os históricos anteriores."};
   if (modulo === "limpeza_semanal" && acao === "assinar_dia") {
     return {
       nome: "Assinar semana como supervisor",

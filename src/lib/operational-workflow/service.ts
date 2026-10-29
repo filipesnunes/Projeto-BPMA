@@ -100,7 +100,7 @@ export async function reopenWorkflow(params: {
     assertWorkflowVersion(original.versao, params.expectedVersion);
     await openPeriod(tx, params.module, original.dataReferencia);
     assertWorkflowReopen({ user, module: params.module, date: original.dataReferencia, today: getAppDate(),
-      state: evidence?.legacySignaturePreserved && params.module === "temperatura" && /^legacy:\d+$/.test(original.chave) ? "FECHADO" : state(original.estado), reason: params.reason, fromEdit: params.fromEdit });
+      state: evidence?.legacySignaturePreserved && ["temperatura","oleo"].includes(params.module) && /^legacy:\d+$/.test(original.chave) ? "FECHADO" : state(original.estado), reason: params.reason, fromEdit: params.fromEdit });
     const previousContent = await tx.fluxoVersao.findUniqueOrThrow({ where: { fluxoId_versao: { fluxoId: original.id, versao: original.versao } } });
     const unit = await tx.fluxoOperacional.update({ where: { id: original.id, versao: original.versao }, data: {
       estado: "REABERTO", versao: { increment: 1 }, assinaturaVigenteId: null

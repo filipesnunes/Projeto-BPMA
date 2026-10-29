@@ -7,7 +7,8 @@ import { readExecutionTime } from "@/lib/procedure-time";
 import { hasPermission } from "@/lib/permissions";
 import { canSignModuleDay } from "@/lib/module-signatures";
 import { verifyPassword } from "@/lib/password";
-import { getRegistroPayload } from "./record-payload";
+import { getRegistroPayload, preserveOilStrip } from "./record-payload";
+import { oilCorrectionAudit } from "./correction-audit";
 export { refreshWorkflowActor } from "../controle-temperatura-equipamentos/workflow-adapter";
 export type OilDraft = Record<string,string>;
 export function parseOilKey(key: string) {
@@ -23,30 +24,47 @@ export function oilSnapshot(record: ControleQualidadeOleoRegistro): Prisma.Input
 }
 export const oilAdapter: WorkflowAdapter = {
   module: "oleo",
-  async load(_tx, key) { return { date: parseOilKey(key).date, legacy: false, content: { snapshot:{}, draft:{}, complete:false, resolved:0, required:1 } }; },
+  async load(tx, key) {
+    if (/^legacy:\d+$/.test(key)) {
+      const record=await tx.controleQualidadeOleoRegistro.findFirst({where:{fluxo:{modulo:"oleo",chave:key},excluidoEm:null}});
+      if(!record)throw Error("Registro legado indisponível.");
+      return {date:record.data,legacy:false,content:{snapshot:{},draft:{},complete:false,resolved:0,required:1}};
+    }
+    return { date: parseOilKey(key).date, legacy: false, content: { snapshot:{}, draft:{}, complete:false, resolved:0, required:1 } };
+  },
   async save(tx, key, input, user, unit) {
     if (!(input instanceof FormData)) throw new Error("Formulário inválido.");
-    const {date} = parseOilKey(key);
-    const previous = await tx.fluxoOperacional.findUniqueOrThrow({where:{id:unit.id},include:{oleo:true}});
+    const previous = await tx.fluxoOperacional.findUniqueOrThrow({where:{id:unit.id},include:{oleo:true,versoes:{orderBy:{versao:"desc"},take:1}}});
+    const date=previous.oleo?.data??parseOilKey(key).date;
+    const form = preserveOilStrip(input, previous.oleo);
+    const previousDraft = previous.versoes[0]?.rascunho as OilDraft | undefined;
+    if(previous.oleo) {
+      for(const field of ["temperatura","semUtilizacao","observacao"] as const)if(!form.has(field))form.set(field,String(previous.oleo[field]??""));
+      // Corrections cannot rewrite the original execution time or responsible.
+      form.set("horarioExecucao",previous.oleo.horarioExecucao??"");form.set("horarioNaoInformado",String(previous.oleo.horarioNaoInformado));form.set("justificativaHorario",previous.oleo.justificativaHorario??"");
+    }
+    if (!form.has("fitaOleo") && previousDraft?.fitaOleo) form.set("fitaOleo", previousDraft.fitaOleo);
     const draft: OilDraft = {};
     for (const field of ["temperatura","fitaOleo","semUtilizacao","observacao","horarioExecucao","horarioNaoInformado","justificativaHorario"]) {
-      draft[field] = typeof input.get(field) === "string" ? String(input.get(field)).trim() : "";
+      draft[field] = typeof form.get(field) === "string" ? String(form.get(field)).trim() : "";
       if (draft[field].length>4000) throw new Error("Texto excede 4000 caracteres.");
     }
+    for(const field of ["registroLegadoOriginal","assinaturaDiariaOriginal"])if(previousDraft?.[field])draft[field]=previousDraft[field];
     const unused = draft.semUtilizacao === "true";
     const retro = formatAppDateInput(date) < formatAppDateInput(getAppDate());
     let complete = unused || Boolean(draft.temperatura);
-    if (!unused && retro && !draft.horarioExecucao && draft.horarioNaoInformado !== "true") complete=false;
-    if (!unused && draft.horarioNaoInformado === "true" && (!retro || !draft.justificativaHorario)) complete=false;
+    if (!previous.oleo && !unused && retro && !draft.horarioExecucao && draft.horarioNaoInformado !== "true") complete=false;
+    if (!previous.oleo && !unused && draft.horarioNaoInformado === "true" && (!retro || !draft.justificativaHorario)) complete=false;
     if (!complete) {
-      if (input.get("intent") === "complete") throw new Error("Preencha os dados obrigatórios e o horário antes de concluir. É possível salvar o rascunho.");
+      if(previous.oleo)throw Error("Informe uma temperatura válida ou confirme Sem utilização. Os dados salvos foram preservados.");
+      if (form.get("intent") === "complete") throw new Error("Preencha os dados obrigatórios e o horário antes de concluir. É possível salvar o rascunho.");
       return {snapshot:{}, draft, complete:false,resolved:0,required:1};
     }
-    const payload = await getRegistroPayload(input,user.nomeCompleto,tx);
-    const time = readExecutionTime(input,date,"",!unused);
-    if (!retro && !unused && previous.oleo?.horarioExecucao) time.horarioExecucao=previous.oleo.horarioExecucao;
+    const payload = await getRegistroPayload(form,previous.oleo?.responsavel??user.nomeCompleto,tx,previous.oleo);
+    const time = previous.oleo ? {horarioExecucao:previous.oleo.horarioExecucao,horarioNaoInformado:previous.oleo.horarioNaoInformado,justificativaHorario:previous.oleo.justificativaHorario} : readExecutionTime(form,date,"",!unused);
     const data = {...payload,...time,data:date};
     const record = previous.oleo ? await tx.controleQualidadeOleoRegistro.update({where:{id:previous.oleo.id},data}) : await tx.controleQualidadeOleoRegistro.create({data:{...data,fluxoId:unit.id}});
+    if(previous.oleo)await oilCorrectionAudit(tx,unit,user,previous.oleo,record);
     draft.horarioExecucao=time.horarioExecucao??"";
     return {snapshot:oilSnapshot(record),draft,complete:true,resolved:1,required:1};
   }

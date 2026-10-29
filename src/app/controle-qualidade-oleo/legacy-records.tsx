@@ -25,6 +25,8 @@ import {
   updateRegistroAction
 } from "./actions";
 import { OilRegisterFields } from "./oil-register-fields";
+import { MONTH_EDIT } from "./correction-policy";
+import { NO_OIL_STRIP } from "./strip-choice";
 import { OilStatusBadge } from "./oil-status-badge";
 import { OIL_OPERATION_GUIDELINES } from "./options";
 import {
@@ -101,6 +103,7 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
   return null;
 }
 
+function openSavedOil(id:number):void { redirect(`/controle-qualidade-oleo/registro/${id}`); }
 export default async function ControleQualidadeOleoPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/login");
@@ -110,7 +113,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     ? hasPermission(authUser, "modulo.oleo.gerenciar_cadastros")
     : false;
   const podeVerGestao = authUser
-    ? hasPermission(authUser, "modulo.oleo.acessar_historico") || podeGerenciarOpcoes
+    ? hasPermission(authUser, "modulo.oleo.acessar_historico") || hasPermission(authUser, MONTH_EDIT) || hasPermission(authUser,"modulo.oleo.reabrir_registro") || podeGerenciarOpcoes
     : false;
   const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "oleo");
 
@@ -169,6 +172,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   if (filtroResponsavel) {
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
+  // The initial screen is strictly today's work; filters cannot expand its scope.
+  where.AND = {data:getTodaySystemDate()};
 
   const [rawRegistros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
     prisma.controleQualidadeOleoRegistro.findMany({
@@ -194,6 +199,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const registroEmEdicao = editId
     ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: editId } })
     : null;
+  if(registroEmEdicao)openSavedOil(registroEmEdicao.id);
   const registroParaExcluir = deleteId
     ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: deleteId } })
     : null;
@@ -298,7 +304,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const shouldRestoreFormValues = Boolean(modalError) && mostrarFormulario;
   const formFita = shouldRestoreFormValues
     ? firstParam(params.formFita).trim()
-    : registroEmEdicao?.fitaOleo ?? "";
+    : registroEmEdicao ? registroEmEdicao.fitaOleo || NO_OIL_STRIP : "";
   const formTemperatura = shouldRestoreFormValues
     ? firstParam(params.formTemperatura).trim()
     : registroEmEdicao?.temperatura !== null && registroEmEdicao?.temperatura !== undefined
@@ -390,6 +396,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
             </p>
           ) : (
             <form
+              key={registroEmEdicao?.id ?? "new"}
               action={registroEmEdicao ? updateRegistroAction : createRegistroAction}
               className="grid gap-4 md:grid-cols-2"
             >
@@ -680,7 +687,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
         </ActionModal>
       ) : null}
 
-      <CompatibleWorkflowRecords module="oleo" history={false} query={params} />
+      <CompatibleWorkflowRecords module="oleo" history={false} query={params} operationalDate={getTodaySystemDate()} />
     </div>
   );
 }

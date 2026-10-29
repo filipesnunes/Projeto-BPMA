@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process'); const ts = require('type
 const root = path.resolve(__dirname, '..'); const database = 'workflow_' + Date.now();
 execFileSync('docker',['exec','bpma-temperature-workflow-test','psql','-U','postgres','-d','workflow_test','-c',`CREATE DATABASE ${database}`],{stdio:'pipe'});
 const url = `postgresql://postgres:isolated_test_only@127.0.0.1:55479/${database}`;
+process.env.DATABASE_URL=url;process.env.DIRECT_URL=url;
 execFileSync(process.execPath,[path.join(root,'node_modules/prisma/build/index.js'),'migrate','deploy'],{cwd:root,env:{...process.env,DATABASE_URL:url,DIRECT_URL:url},stdio:'pipe'});
 const mocks = new Map(); const originalLoad = Module._load;
 Module._load = function(name,parent,main){if(mocks.has(name))return mocks.get(name);if(name==='server-only')return {};if(name.startsWith('@/'))name=path.join(root,'src',name.slice(2));return originalLoad.call(this,name,parent,main);};
@@ -27,7 +28,7 @@ const {hashPassword}=require('../src/lib/password.ts');
 const actor=tx=>adapter.refreshWorkflowActor(tx,user);
 const {randomUUID}=require('node:crypto');
 const key=(date='2026-10-25')=>date+':'+randomUUID();
-const form=(extra={})=>{const f=new FormData();for(const[k,v]of Object.entries({temperatura:'170',semUtilizacao:'false',horarioExecucao:'09:40',intent:'draft',...extra}))f.set(k,v);return f;};
+const form=(extra={})=>{const f=new FormData();for(const[k,v]of Object.entries({temperatura:'170',fitaOleo:'__SEM_AFERICAO__',semUtilizacao:'false',horarioExecucao:'09:40',intent:'draft',...extra}))f.set(k,v);return f;};
 const save=(key,expectedVersion=0,extra={})=>service.saveWorkflow({actor,adapter:adapter.oilAdapter,key,expectedVersion,input:form(extra)});
 const sign=(units,daily=false)=>service.signWorkflow({actor,bridge:adapter.oilSignatureBridge('test-password',daily),scope:units.map(u=>({id:u.id,version:u.versao}))});
 const reopen=(u,extra={})=>service.reopenWorkflow({actor,module:'oleo',id:u.id,expectedVersion:u.versao,reason:'Correção documentada',fromEdit:false,...extra});
@@ -62,7 +63,7 @@ const editor=async(chave,query={})=>renderToStaticMarkup(await view.OilWorkflowE
  const unknown=await save(key('2026-10-22'),0,{horarioExecucao:'',horarioNaoInformado:'true',justificativaHorario:'Anotação sem horário'});assert.equal((await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:unknown.id}})).horarioExecucao,null);
  const unused=await save(key('2026-10-21'),0,{temperatura:'',fitaOleo:'',semUtilizacao:'true',horarioExecucao:''});const unusedRow=await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{fluxoId:unused.id}});assert.equal(unusedRow.status,'SEM_UTILIZACAO');assert.equal(unusedRow.temperatura,null);assert.equal(unusedRow.horarioExecucao,null);
  await assert.rejects(()=>save(key(),0,{temperatura:'119',fitaOleo:'2%'}),/120/);await assert.rejects(()=>save(key(),0,{temperatura:'errada'}),/temperatura válida/);await assert.rejects(()=>save(key(),0,{fitaOleo:'inexistente'}),/opção válida/);await assert.rejects(()=>save(key('2026-10-26')),/futuro/);
- const withoutStrip=await save(key(),0,{temperatura:'110',fitaOleo:''});assert.equal(withoutStrip.estado,'COMPLETO');
+ const withoutStrip=await save(key(),0,{temperatura:'110',fitaOleo:'__SEM_AFERICAO__'});assert.equal(withoutStrip.estado,'COMPLETO');
  await prisma.usuario.update({where:{id:account.id},data:{perfil:'COLABORADOR'}});
  await assert.rejects(()=>reopen(b),/permissão/);await assert.rejects(()=>save(retro.chave,retro.versao),/permissão/);
  const editable=await save(future.chave,future.versao,{temperatura:'175'});assert.equal(editable.estado,'COMPLETO');

@@ -103,7 +103,9 @@ export default async function ControleTemperaturaHistoricoPage({
   const {groups:grupos,selected:grupoSelecionado,signatures:assinaturasPorData,closure:fechamentoMensal,indicators:indicadoresMensais,month:selectedMonth,year:selectedYear,photo:registroFotoSelecionado}=data;
   const parametrosRetorno=new URLSearchParams();
   for(const key of ["filtroData","filtroMes","filtroAno","filtroEquipamento","filtroStatus","filtroResponsavel"] as const){const value=firstParam(params[key]);if(value)parametrosRetorno.set(key,value);}
+  if(!filtroData&&!filtroMes&&!filtroAno){parametrosRetorno.set("filtroMes",String(selectedMonth));parametrosRetorno.set("filtroAno",String(selectedYear));}
   if(data.page>1)parametrosRetorno.set("pagina",String(data.page));
+  if(positivePage(firstParam(params.fluxoPagina))>1)parametrosRetorno.set("fluxoPagina",String(positivePage(firstParam(params.fluxoPagina))));
   const returnTo=buildPathWithParams(parametrosRetorno);
   const buildOpenDayHref=(date:string)=>{const query=new URLSearchParams(parametrosRetorno);query.set("dia",date);return buildPathWithParams(query);};
   const pageHref=(page:number)=>{const query=new URLSearchParams(parametrosRetorno);query.set("pagina",String(page));return buildPathWithParams(query);};
@@ -328,7 +330,7 @@ export default async function ControleTemperaturaHistoricoPage({
                       </td>
                       <td className="px-3 py-2">{registro.responsavel}</td>
                       <td className="px-3 py-2 max-w-80 whitespace-normal break-words">{observacaoRegistro?.trim() || "-"}</td>
-                      <td className="px-3 py-2"><Link prefetch={false} className="btn-secondary" href={`/controle-temperatura-equipamentos/registro/${registro.id}`}>Consultar / Editar</Link>{registro.assinaturaNutricionistaNome&&<p>Assinado por {registro.assinaturaNutricionistaNome}</p>}</td>
+                      <td className="px-3 py-2"><Link prefetch={false} className="btn-secondary" href={withTemperatureHistory(`/controle-temperatura-equipamentos/registro/${registro.id}`,detailHref(data.detailPage))}>Consultar / Editar</Link>{registro.assinaturaNutricionistaNome&&<p>Assinado por {registro.assinaturaNutricionistaNome}</p>}</td>
                     </tr>
                   );
                 })}
@@ -382,3 +384,4 @@ export default async function ControleTemperaturaHistoricoPage({
   );
 }
 import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
+import { withTemperatureHistory } from "../history-navigation";

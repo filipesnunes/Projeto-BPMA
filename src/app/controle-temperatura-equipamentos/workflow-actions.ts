@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
 import { temperatureAdapter, temperatureSignatureBridge, refreshWorkflowActor } from "./workflow-adapter";
 import {adoptLegacyTemperature,legacyTemperatureId,legacyTemperatureFlowId} from "./legacy-workflow";
+import { temperatureHistoryReturnTo, withTemperatureHistory } from "./history-navigation";
 
 const base = "/controle-temperatura-equipamentos";
 const value = (form: FormData, key: string) => typeof form.get(key) === "string" ? String(form.get(key)).trim() : "";
@@ -28,22 +29,35 @@ function message(error: unknown) {
   return error instanceof Error && !/prisma|p20\d{2}|transaction|stack/i.test(error.message)
     ? error.message : "Não foi possível salvar. Recarregue os dados e tente novamente.";
 }
+async function persistTemperature(form: FormData) {
+  const authenticated = await getCurrentUserForAction();
+  const key = value(form, "chave"), legacyId = legacyTemperatureId(key), revision = version(form);
+  return saveWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), adapter: temperatureAdapter,
+    key, expectedVersion: legacyId && revision === 0 ? 1 : revision, input: form,
+    prepare: legacyId && revision === 0 ? (tx, user) => adoptLegacyTemperature(tx, user, legacyId, value(form, "originalUpdatedAt"), "save") : undefined });
+}
+export async function saveTemperatureRecordAction(form: FormData): Promise<{ error: string }> {
+  try {
+    const saved = await persistTemperature(form);
+    refresh();
+    const day = saved.dataReferencia.toISOString().slice(0, 10);
+    const destination = temperatureHistoryReturnTo(value(form, "returnTo"), saved.dataReferencia)
+      ?? `${base}/historico?filtroData=${day}&dia=${day}`;
+    result(destination, "Alterações salvas com sucesso.");
+  } catch (error) { rethrowIfRedirectError(error); return { error: message(error) }; }
+}
 export async function saveTemperatureWorkflowAction(form: FormData) {
   const key = value(form, "chave");
-  const returnTo = `${base}/fluxo?chave=${encodeURIComponent(key)}`;
+  const returnTo = withTemperatureHistory(`${base}/fluxo?chave=${encodeURIComponent(key)}`, temperatureHistoryReturnTo(value(form,"returnTo")));
   try {
-    const authenticated = await getCurrentUserForAction();
-    const legacyId=legacyTemperatureId(key),revision=version(form);
-    const saved = await saveWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), adapter: temperatureAdapter,
-      key, expectedVersion: legacyId&&revision===0?1:revision, input: form,
-      prepare:legacyId&&revision===0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"save"):undefined });
+    const saved = await persistTemperature(form);
     refresh();
-    result(saved.estado === "COMPLETO" ? `${base}/historico?data=${saved.dataReferencia.toISOString().slice(0,10)}` : returnTo,
+    result(temperatureHistoryReturnTo(value(form,"returnTo"), saved.dataReferencia) ?? (saved.estado === "COMPLETO" ? `${base}/historico?filtroData=${saved.dataReferencia.toISOString().slice(0,10)}&dia=${saved.dataReferencia.toISOString().slice(0,10)}` : returnTo),
       saved.estado === "COMPLETO" ? "Aferição completa. Aguardando validação do supervisor." : "Preenchimento salvo. Você pode continuar depois.");
   } catch (error) { rethrowIfRedirectError(error); result(returnTo, message(error), true); }
 }
 export async function reopenTemperatureWorkflowAction(form: FormData) {
-  const key = value(form, "chave"); const returnTo = `${base}/fluxo?chave=${encodeURIComponent(key)}`;
+  const key = value(form, "chave"); const returnTo = withTemperatureHistory(`${base}/fluxo?chave=${encodeURIComponent(key)}`, temperatureHistoryReturnTo(value(form,"returnTo")));
   try {
     if (value(form, "confirmar") !== "true") throw new Error("Confirme explicitamente a reabertura.");
     const authenticated = await getCurrentUserForAction();

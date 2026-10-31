@@ -46,10 +46,11 @@ lista de múltiplos perfis por usuário; o vínculo real é `perfilAcessoId`.
 
 COLABORADOR é bloqueado mesmo recebendo todas as permissões por engano.
 GERENTE e DEV também são bloqueados: permissões administrativas não demonstram
-habilitação técnica. Foi apresentada uma pergunta sobre delegação formal para
-outros perfis; sem definição recebida nesta implementação, adotou-se a alternativa
-conservadora de autorizar somente NUTRICIONISTA com os requisitos acima.
-Não foi criado mecanismo de delegação baseado em permissão genérica.
+habilitação técnica. Em 31/10/2026, o usuário confirmou a política: permitir
+somente NUTRICIONISTA com as permissões exigidas e bloquear os demais até existir
+delegação formal. A implementação existente já corresponde a essa decisão;
+a pendência de definição de acesso está encerrada. Não foi criado mecanismo
+de delegação baseado em permissão genérica.
 
 O banco não possui cadastro de registro profissional, documentos de habilitação
 ou designação individual do responsável técnico. O hotel deve conferir essa
@@ -244,6 +245,11 @@ regularização de legados sem autoria comprovada continuam exigindo definição
 formal. Não houve alterações de dados reais, assinaturas antigas, permissões
 reais, migrations, db push, seed, reset, commit, push ou deploy.
 
-Git final desta entrega: 16 arquivos rastreados modificados e sete arquivos
+Git final da implementação de 30/10/2026: 16 arquivos rastreados modificados e sete arquivos
 novos, na mesma branch de estabilização. Capturas de desktop e mobile foram
 inspecionadas; não houve overflow horizontal nas verificações do navegador.
+
+Em 31/10/2026, a confirmação da política alterou somente este documento, sobre
+Git inicialmente limpo. Nenhuma regra de código ou dado precisou ser alterado;
+as validações técnicas acima se referem à implementação anterior. O diff desta
+atualização documental passou em `git diff --check`, sem commit ou push.

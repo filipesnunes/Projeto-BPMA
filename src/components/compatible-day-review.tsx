@@ -22,8 +22,15 @@ export async function CompatibleDayReview(props: {
       : prisma.rastreabilidadeRecebimentoNota.count({where:{data:date,fluxoId:null}}),
     prisma.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:code,dataReferencia:date}}})
   ]);
-  if (!units.length) return <SignDayForm {...props} />;
-  const eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
+  if (!units.length) return code === "oleo" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
+  let eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
+  if(code === "oleo") {
+    const { getCurrentUser } = await import("@/lib/auth-session");
+    const { oilRecordSignatureEligibility } = await import("@/app/controle-qualidade-oleo/signature-policy");
+    const user=await getCurrentUser();
+    const eligibility=await Promise.all(eligible.map(async unit=>Boolean(props.canSign&&user&&unit.oleo&&(await oilRecordSignatureEligibility(prisma,user,unit.oleo,"daily",unit.versao)).allowed)));
+    eligible=eligible.filter((_,index)=>eligibility[index]);
+  }
   const label = (unit: typeof units[number]) => unit.temperatura ? `${unit.temperatura.equipamento} — ${unit.temperatura.turno === "MANHA" ? "Manhã" : "Tarde"}`
     : unit.oleo ? `Verificação do óleo #${unit.oleo.id} — ${unit.oleo.temperatura ?? "Sem utilização"}`
     : unit.recebimento ? `Nota ${unit.recebimento.notaFiscal} — ${unit.recebimento.fornecedor}`
@@ -40,6 +47,6 @@ export async function CompatibleDayReview(props: {
       <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
       <button className="btn-primary">Assinar dia</button>
     </form>}
-    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/><SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/></div>}
+    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/>{code === "oleo" ? props.canSign&&!legacySignature&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p> : <SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/>}</div>}
   </div>;
 }

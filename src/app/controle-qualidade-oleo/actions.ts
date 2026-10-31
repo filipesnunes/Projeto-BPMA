@@ -174,7 +174,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await closeOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano }, "legacy");
+    await closeOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano, password: senhaConfirmacao }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

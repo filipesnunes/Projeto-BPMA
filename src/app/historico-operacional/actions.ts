@@ -188,7 +188,7 @@ export async function signModuleMonthlyClosureAction(formData: FormData) {
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-    await closeOperationalMonth({ user: actor, moduleCode: moduleConfig.codigo, mes, ano, observacao });
+    await closeOperationalMonth({ user: actor, moduleCode: moduleConfig.codigo, mes, ano, observacao, password: senhaConfirmacao });
 
     revalidatePath(moduleConfig.historyPath);
     revalidatePath(new URL(returnTo, "http://localhost").pathname);

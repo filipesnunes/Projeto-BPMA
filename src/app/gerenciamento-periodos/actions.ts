@@ -21,7 +21,7 @@ async function transition(form: FormData, operation: "reopen" | "close") {
     if (operation === "reopen") await reopenOperationalMonth(params);
     else {
       await validateSignaturePassword({ user, password: text(form, "senhaConfirmacao") });
-      await closeReopenedOperationalMonth({ ...params, observacao: text(form, "observacao") });
+      await closeReopenedOperationalMonth({ ...params, observacao: text(form, "observacao"), password: text(form, "senhaConfirmacao") });
     }
     redirect(`${returnTo}?feedbackType=success&feedback=${encodeURIComponent(operation === "reopen" ? "Período reaberto com sucesso." : "Período fechado novamente com sucesso.")}`);
   } catch (error) {

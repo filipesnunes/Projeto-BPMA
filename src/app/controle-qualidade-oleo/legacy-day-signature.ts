@@ -7,6 +7,7 @@ import { getAppDate, getAppNow, formatAppDateInput } from "@/lib/date-time";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { verifyPassword } from "@/lib/password";
 import { refreshWorkflowActor } from "./workflow-adapter";
+import { oilRecordSignatureEligibility } from "./signature-policy";
 // Preserve the original daily mechanism, using the same lock as corrections.
 export async function signLegacyOilDay(authenticated:AuthenticatedUser,date:Date,password:string,observation:string) {
   return prisma.$transaction(async tx=>{
@@ -17,8 +18,9 @@ export async function signLegacyOilDay(authenticated:AuthenticatedUser,date:Date
     if(await isOperationalMonthClosed("oleo",date.getUTCMonth()+1,date.getUTCFullYear(),tx))throw Error("A competência está fechada.");
     const credentials=await tx.usuario.findUniqueOrThrow({where:{id:user.id},select:{senhaHash:true}});
     if(!password.trim()||!verifyPassword(password.trim(),credentials.senhaHash))throw Error("Senha inválida para confirmar a assinatura.");
-    const rows=await tx.controleQualidadeOleoRegistro.findMany({where:{data:date,fluxoId:null,excluidoEm:null},select:{id:true,updatedAt:true}});
+    const rows=await tx.controleQualidadeOleoRegistro.findMany({where:{data:date,fluxoId:null,excluidoEm:null},select:{id:true,fluxoId:true,updatedAt:true}});
     if(!rows.length)throw Error("Selecione as unidades e suas versões no histórico do módulo para assinar.");
+    for(const row of rows){const eligibility=await oilRecordSignatureEligibility(tx,user,row,"daily");if(!eligibility.allowed)throw Error(eligibility.reason);}
     const existing=await tx.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:"oleo",dataReferencia:date}}});
     if(existing)throw Error("Este dia já foi assinado pelo supervisor.");
     const at=getAppNow(),scope=JSON.stringify({observacao:observation,escopoLegado:rows.map(row=>({id:row.id,updatedAt:row.updatedAt.toISOString()}))});

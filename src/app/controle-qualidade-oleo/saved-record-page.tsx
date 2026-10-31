@@ -11,6 +11,8 @@ import { OilRegisterFields } from "./oil-register-fields";
 import { NO_OIL_STRIP } from "./strip-choice";
 import { getStatusLabel } from "./utils";
 import { saveOilWorkflowAction, reopenOilWorkflowAction, signOilWorkflowAction } from "./workflow-actions";
+import { oilRecordSignatureEligibility } from "./signature-policy";
+import { canSignOilSupervisor } from "@/lib/oil-signature-permissions";
 
 export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<string,string|string[]|undefined>}) {
   const user=await getCurrentUser();if(!user)redirect("/login");
@@ -24,7 +26,8 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
   const monthClosed=await isOperationalMonthClosed("oleo",record.data.getUTCMonth()+1,record.data.getUTCFullYear());
   const canEdit=!signed&&!monthClosed&&canCorrectOil(user,record.data);
   const canReopen=signed&&!monthClosed&&currentOilMonth(record.data)&&hasPermission(user,"modulo.oleo.reabrir_registro");
-  const canSign=!signed&&!monthClosed&&(!unit||unit.preenchimentoCompleto)&&hasPermission(user,"modulo.oleo.assinar_historico");
+  const signatureEligibility=!signed&&!monthClosed&&(!unit||unit.preenchimentoCompleto)&&canSignOilSupervisor(user,"individual")?await oilRecordSignatureEligibility(prisma,user,record,"individual",unit?.versao):null;
+  const canSign=Boolean(signatureEligibility?.allowed);
   const options=await prisma.controleQualidadeOleoOpcaoFita.findMany({orderBy:[{ordem:"asc"},{rotulo:"asc"}]});
   const fieldOptions=options.filter(option=>option.ativo||option.rotulo===record.fitaOleo);
   if(record.fitaOleo&&!fieldOptions.some(option=>option.rotulo===record.fitaOleo)&&record.status)fieldOptions.push({id:0,rotulo:record.fitaOleo,descricao:record.orientacao,statusAssociado:record.status,ordem:0,ativo:false,createdAt:record.createdAt,updatedAt:record.updatedAt});
@@ -48,7 +51,8 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
       <label className="md:col-span-2">Observação<textarea className="bpma-input" name="observacao" defaultValue={record.observacao??""} maxLength={4000}/></label>
       <button className="btn-primary" name="intent" value="complete">Salvar Alterações</button>
     </fieldset></form>
-    {canSign&&<form action={signOilWorkflowAction} className="bpma-card space-y-3">{unit?<input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`}/>:<><input type="hidden" name="legacyRecordId" value={id}/><input type="hidden" name="originalUpdatedAt" value={record.updatedAt.toISOString()}/></>}<input type="hidden" name="mecanismo" value="individual"/><h2>Assinatura da nutricionista / responsável autorizado</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label><button className="btn-primary">Assinar registro</button></form>}
+    {signatureEligibility&&!canSign&&<p className="bpma-card">{signatureEligibility.reason}</p>}
+    {canSign&&<form action={signOilWorkflowAction} className="bpma-card space-y-3">{unit?<input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`}/>:<><input type="hidden" name="legacyRecordId" value={id}/><input type="hidden" name="originalUpdatedAt" value={record.updatedAt.toISOString()}/></>}<input type="hidden" name="mecanismo" value="individual"/><h2>Assinatura da nutricionista / responsável autorizado</h2><p>Revisão da verificação #{id}{unit?`, versão ${unit.versao}`:""}. Responsável pelo preenchimento: {record.responsavel}.</p><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label><button className="btn-primary">Assinar registro</button></form>}
     {unit&&<section className="bpma-card space-y-3"><h2 className="font-semibold">Histórico de alterações e assinaturas</h2>
       {(original?.registroLegadoOriginal||original?.assinaturaDiariaOriginal)&&<details><summary>Evidência legada original preservada</summary><p>A evidência antiga não valida as correções posteriores.</p><pre className="whitespace-pre-wrap break-all text-xs">{original.registroLegadoOriginal}{"\n"}{original.assinaturaDiariaOriginal}</pre></details>}
       <ul>{signatures.map(link=><li key={link.assinaturaId}>Assinatura de {link.assinatura.usuarioNome} — {formatAppDateTime(link.assinatura.assinadoEm)} — versão {link.versao} — {unit.assinaturaVigenteId===link.assinaturaId?"Vigente":"Histórica"}</li>)}</ul>

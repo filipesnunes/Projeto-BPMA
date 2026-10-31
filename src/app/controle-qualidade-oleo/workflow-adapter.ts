@@ -4,8 +4,8 @@ import type { WorkflowAdapter, WorkflowContent } from "@/lib/operational-workflo
 import type { WorkflowSignatureBridge } from "@/lib/operational-workflow/service";
 import { formatAppDateInput, getAppDate, parseAppDateInput } from "@/lib/date-time";
 import { readExecutionTime } from "@/lib/procedure-time";
-import { hasPermission } from "@/lib/permissions";
-import { canSignModuleDay } from "@/lib/module-signatures";
+import { canSignOilSupervisor } from "@/lib/oil-signature-permissions";
+import { oilAuthorizationEvidence, oilRecordSignatureEligibility } from "./signature-policy";
 import { verifyPassword } from "@/lib/password";
 import { getRegistroPayload, preserveOilStrip } from "./record-payload";
 import { oilCorrectionAudit } from "./correction-audit";
@@ -82,10 +82,19 @@ export function oilSignatureBridge(password: string, daily: boolean): WorkflowSi
         complete: true, resolved: 1, required: 1 };
     },
     async sign(tx, user, units, signedAt) {
-      if (daily ? !canSignModuleDay(user, "oleo") : !hasPermission(user, "modulo.oleo.assinar_historico")) throw new Error("Sem permissão para esta assinatura.");
+      const kind = daily ? "daily" : "individual";
+      if (!canSignOilSupervisor(user, kind)) throw new Error("Sem habilitação e permissão para assinar a supervisão do óleo.");
       if (!daily && units.length !== 1) throw new Error("A revisão individual abrange uma única verificação.");
       const day = formatAppDateInput(units[0].dataReferencia);
       if (units.some(unit => formatAppDateInput(unit.dataReferencia) !== day)) throw new Error("A assinatura diária deve abranger uma única data.");
+      if (units.some(unit => unit.dataReferencia > getAppDate())) throw new Error("Não é possível assinar uma data futura.");
+      const segregation = [];
+      for (const unit of units) {
+        const record = await tx.controleQualidadeOleoRegistro.findUniqueOrThrow({ where: { fluxoId: unit.id } });
+        const eligibility = await oilRecordSignatureEligibility(tx, user, record, kind, unit.versao);
+        if (!eligibility.allowed) throw new Error(eligibility.reason);
+        segregation.push({ registroId: record.id, fluxoId: unit.id, versao: unit.versao, ...eligibility.evidence });
+      }
       const credentials = await tx.usuario.findUniqueOrThrow({ where: { id: user.id }, select: { senhaHash: true } });
       if (!password.trim() || !verifyPassword(password.trim(), credentials.senhaHash)) throw new Error("Senha inválida para confirmar a assinatura.");
       // Versioned daily scope lives in FluxoAssinatura; never create a blanket
@@ -93,7 +102,7 @@ export function oilSignatureBridge(password: string, daily: boolean): WorkflowSi
       const log = await tx.logAssinatura.create({ data: { usuarioId: user.id, nomeUsuario: user.nomeUsuario,
         nomeCompleto: user.nomeCompleto, perfil: user.perfil, tipo: daily ? "RESPONSAVEL_TECNICO" : "SUPERVISOR",
         modulo: "oleo", referenciaId: day, assinadoEm: signedAt,
-        observacao: JSON.stringify({ mecanismo: daily ? "DIARIA" : "INDIVIDUAL", unidades: units.map(u => ({ id: u.id, versao: u.versao })) }) } });
+        observacao: JSON.stringify({ mecanismo: daily ? "DIARIA" : "INDIVIDUAL", unidades: units.map(u => ({ id: u.id, versao: u.versao })), autorizacao: oilAuthorizationEvidence(user, kind), segregacao: segregation }) } });
       return `log:${log.id}`;
     }
   };

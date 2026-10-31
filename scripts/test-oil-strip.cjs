@@ -56,7 +56,9 @@ const row=id=>prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{flux
   await prisma.controleQualidadeOleoOpcaoFita.update({where:{rotulo:'3,5%'},data:{ativo:true}});
   const double=form({fitaOleo:'2%'});double.append('fitaOleo','7%');await assert.rejects(()=>getRegistroPayload(double,'Test',prisma),/confirme/);
   const {signWorkflow}=require('../src/lib/operational-workflow/service.ts'),{oilSignatureBridge}=require('../src/app/controle-qualidade-oleo/workflow-adapter.ts');
-  await signWorkflow({actor:tx=>refreshWorkflowActor(tx,user),bridge:oilSignatureBridge('oil-strip-password',false),scope:[{id:none.id,version:none.versao}]});
+  const reviewer=await prisma.usuario.create({data:{nomeCompleto:'Nutricionista independente',nomeUsuario:'oil-reviewer-'+Date.now(),senhaHash:require('../src/lib/password.ts').hashPassword('oil-strip-password'),perfil:'NUTRICIONISTA'}});
+  const reviewerSession=await prisma.usuarioSessao.create({data:{usuarioId:reviewer.id,tokenHash:randomUUID(),expiraEm:new Date('2035-01-01')}});
+  await signWorkflow({actor:tx=>refreshWorkflowActor(tx,{...reviewer,sessaoId:reviewerSession.id,permissoes:[]}),bridge:oilSignatureBridge('oil-strip-password',false),scope:[{id:none.id,version:none.versao}]});
   const signed=JSON.stringify(await row(none.id)),signatureCount=await prisma.fluxoAssinatura.count();await assert.rejects(()=>save(none.chave,none.versao,{fitaOleo:'7%'}),/fechado|versão/i);assert.equal(JSON.stringify(await row(none.id)),signed);assert.equal(await prisma.fluxoAssinatura.count(),signatureCount);
   const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');mocks.set('next/link',({href,children,...props})=>React.createElement('a',{...props,href},children));
   const history=require('../src/app/controle-qualidade-oleo/workflow-view.tsx');assert.match(renderToStaticMarkup(await history.OilWorkflowList({history:true,query:{}})),/3,5%/);

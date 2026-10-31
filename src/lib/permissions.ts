@@ -507,7 +507,7 @@ function buildModulePermissions(params: {
       grupo: params.grupo,
       modulo: params.modulo,
       acao,
-      sensivel: /editar_historico|editar_registros_mes_vigente|excluir_registro|reabrir_mes|reabrir_registro/.test(acao)
+      sensivel: /editar_historico|editar_registros_mes_vigente|excluir_registro|reabrir_mes|reabrir_registro/.test(acao) || params.modulo === "oleo" && ["assinar_historico", "assinar_dia", "assinar_fechamento_mensal"].includes(acao)
     };
   });
 }

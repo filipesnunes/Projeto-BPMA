@@ -1,3 +1,4 @@
+import {CleaningSupervisorForm} from "@/app/plano-limpeza/supervisor-signature-form";
 import { WeeklyExecutionFields } from "@/components/forms/weekly-execution-fields";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
 import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
@@ -18,7 +19,7 @@ import { canSignAsResponsible, getRoleLabel, type UserRole } from "@/lib/rbac";
 
 import {
   signWeeklyAreaPendingItemsAction,
-  signWeeklyAreaSupervisorAction,
+
   updateWeeklyRecordAction
 } from "../../actions";
 import { MONTH_OPTIONS, WEEKLY_STATUS_OPTIONS } from "../../constants";
@@ -751,60 +752,12 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
               selectedCanSignWeeklySupervisor &&
               selectedSummary.pendingItems > 0 ? (
                 <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                  Existem {selectedSummary.pendingItems} item(ns) sem responsável pela limpeza. Ao
-                  assinar como supervisor, você também será registrado como responsável pela
-                  limpeza desses itens pendentes. Deseja continuar?
+                  Existem {selectedSummary.pendingItems} item(ns) sem assinatura de execução. Conclua a execução separadamente antes da supervisão.
                 </p>
               ) : null}
 
               {canShowWeeklyAreaSignatureForm ? (
-                <form action={signWeeklyAreaSupervisorAction} className="mt-4 grid gap-3 md:grid-cols-2">
-                  <input type="hidden" name="area" value={selectedSummary.area} />
-                  <input
-                    type="hidden"
-                    name="weekStart"
-                    value={formatDateInput(selectedSummary.weekStart)}
-                  />
-{selectedSummary.pendingItems > 0 && <WeeklyExecutionFields defaultDate={firstParam(params.dataExecucaoRegistro)} weekStart={formatDateInput(selectedSummary.weekStart)} />}
-                  <input
-                    type="hidden"
-                    name="returnTo"
-                    value={buildOpenSummaryHref(selectedSummary)}
-                  />
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                    Senha para confirmar
-                    <input
-                      type="password"
-                      name="senhaConfirmacao"
-                      required
-                      autoComplete="current-password"
-                      className={INPUT_CLASS}
-                    />
-                  </label>
-                  <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                    Observação
-                    <input
-                      type="text"
-                      name="observacaoAssinatura"
-                      className={INPUT_CLASS}
-                      placeholder="Opcional"
-                    />
-                  </label>
-                  <div className="md:col-span-2">
-                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                      {selectedSummary.pendingItems > 0 ? (
-                        <Link href={filteredReturnTo} className="btn-secondary text-center">
-                          Cancelar
-                        </Link>
-                      ) : null}
-                      <button type="submit" className="btn-primary">
-                        {selectedSummary.pendingItems > 0
-                          ? "Assinar como supervisor e assumir itens pendentes"
-                          : "Assinar área da semana como supervisor"}
-                      </button>
-                    </div>
-                  </div>
-                </form>
+                <CleaningSupervisorForm module="limpeza_semanal" date={selectedSummary.weekStart} area={selectedSummary.area} returnTo={buildOpenSummaryHref(selectedSummary)}/>
               ) : null}
             </div>
 

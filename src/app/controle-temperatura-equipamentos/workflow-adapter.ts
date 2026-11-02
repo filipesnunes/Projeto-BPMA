@@ -1,3 +1,4 @@
+import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import "server-only";
 import { Prisma, type ControleTemperaturaEquipamento } from "@prisma/client";
 import type { WorkflowAdapter, WorkflowContent } from "@/lib/operational-workflow/contracts";
@@ -7,7 +8,7 @@ import { assertProcedureTime, operationalTime } from "@/lib/procedure-time";
 import { parseImageUploadFromFormData } from "@/lib/image-upload";
 import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
 import { getRegistroPayload } from "./record-payload";
-import { hasPermission, getDefaultPermissionCodes } from "@/lib/permissions";
+import { getDefaultPermissionCodes } from "@/lib/permissions";
 import { canSignModuleDay } from "@/lib/module-signatures";
 import { verifyPassword } from "@/lib/password";
 import type { AuthenticatedUser } from "@/lib/auth-session";
@@ -129,7 +130,12 @@ export function temperatureSignatureBridge(password: string, daily: boolean): Wo
     },
     async sign(tx, user, units, signedAt) {
       if(units.some(unit=>unit.dataReferencia>getAppDate()))throw Error("Não é possível assinar aferições de datas futuras.");
-      if (daily ? !canSignModuleDay(user, "temperatura") : !hasPermission(user, "modulo.temperatura.assinar_historico")) throw new Error("Sem permissão para esta assinatura.");
+      if (daily && !canSignModuleDay(user, "temperatura")) throw new Error("Sem permissão para esta assinatura.");
+      for (const unit of units) {
+        const eligibility = await workflowReviewEligibility(tx, user, "temperatura", unit.id, unit.versao,
+          daily ? "modulo.temperatura.assinar_dia" : "modulo.temperatura.assinar_historico");
+        if (!eligibility.allowed) throw Error(eligibility.reason);
+      }
       if (!daily && units.length !== 1) throw new Error("A revisão individual abrange uma única aferição.");
       const day = formatAppDateInput(units[0].dataReferencia);
       if (units.some(unit => formatAppDateInput(unit.dataReferencia) !== day)) throw new Error("A assinatura diária deve abranger uma única data.");

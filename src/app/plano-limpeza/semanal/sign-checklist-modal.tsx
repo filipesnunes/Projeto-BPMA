@@ -1,10 +1,11 @@
+import {CleaningSupervisorForm} from "@/app/plano-limpeza/supervisor-signature-form";
 import { WeeklyExecutionFields } from "@/components/forms/weekly-execution-fields";
 import { StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
 import {
   signWeeklyAreaPendingItemsAction,
-  signWeeklyAreaSupervisorAction,
+
   updateWeeklyRecordAction
 } from "../actions";
 import { StatusBadge } from "../status-badge";
@@ -63,7 +64,7 @@ export function WeeklySignChecklistModal({
   execution,
   items
 }: WeeklySignChecklistModalProps) {
-  const supervisorAssumesPendingItems = execution.pendingItems > 0;
+
 
   return (
     <div className="bpma-modal-backdrop">
@@ -146,53 +147,13 @@ export function WeeklySignChecklistModal({
           podeAssinarSupervisor &&
           execution.pendingItems > 0 ? (
             <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              Existem {execution.pendingItems} item(ns) sem responsável pela limpeza. Ao
-              assinar como supervisor, você também será registrado como responsável pela
-              limpeza desses itens pendentes. Deseja continuar?
+              Existem {execution.pendingItems} item(ns) sem assinatura de execução. Conclua a execução separadamente antes da supervisão.
             </p>
           ) : null}
 
           {!execution.assinaturaSupervisor.trim() &&
           podeAssinarSupervisor ? (
-            <form action={signWeeklyAreaSupervisorAction} className="mt-4 grid gap-3 md:grid-cols-2">
-              <input type="hidden" name="area" value={execution.area} />
-              <input type="hidden" name="weekStart" value={formatDateInput(execution.weekStart)} />
-{execution.pendingItems > 0 && <WeeklyExecutionFields defaultDate={selectedDate} weekStart={formatDateInput(execution.weekStart)} />}
-              <input type="hidden" name="returnTo" value={returnTo} />
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                Senha para confirmar
-                <input
-                  type="password"
-                  name="senhaConfirmacao"
-                  required
-                  autoComplete="current-password"
-                  className="bpma-input"
-                />
-              </label>
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
-                Observação
-                <input
-                  type="text"
-                  name="observacaoAssinatura"
-                  className="bpma-input"
-                  placeholder="Opcional"
-                />
-              </label>
-              <div className="md:col-span-2">
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
-                  {supervisorAssumesPendingItems ? (
-                    <Link href={closeHref} className="btn-secondary text-center">
-                      Cancelar
-                    </Link>
-                  ) : null}
-                  <button type="submit" className="btn-primary">
-                    {supervisorAssumesPendingItems
-                      ? "Assinar como supervisor e assumir itens pendentes"
-                      : "Assinar área da semana como supervisor"}
-                  </button>
-                </div>
-              </div>
-            </form>
+            <CleaningSupervisorForm module="limpeza_semanal" date={execution.weekStart} area={execution.area} returnTo={returnTo}/>
           ) : null}
         </div>
 

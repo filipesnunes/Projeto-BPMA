@@ -1,3 +1,4 @@
+import {canSignCleaningReview} from "@/lib/signature-authorization";
 import { hasAnyPermission, hasPermission, type PermissionAwareUser } from "@/lib/permissions";
 
 import { getCurrentWeekDateRange } from "./utils";
@@ -45,14 +46,9 @@ export function canSignWeeklyAreaSupervisor(params: {
   weekStart: Date;
   referenceDate: Date;
 }): boolean {
-  return hasAnyPermission(
-    params.user,
-    isHistoricalWeeklySignature(params.weekStart, params.referenceDate)
-      ? WEEKLY_HISTORY_SUPERVISOR_SIGNATURE_PERMISSION_CODES
-      : WEEKLY_CURRENT_SUPERVISOR_SIGNATURE_PERMISSION_CODES
-  );
+  return canSignCleaningReview(params.user,"modulo.limpeza_semanal.assinar_dia");
 }
 
 export function canSignWeeklyAreaSupervisorHistory(user: PermissionAwareUser): boolean {
-  return hasAnyPermission(user, WEEKLY_HISTORY_SUPERVISOR_SIGNATURE_PERMISSION_CODES);
+  return canSignCleaningReview(user,"modulo.limpeza_semanal.assinar_dia");
 }

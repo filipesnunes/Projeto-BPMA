@@ -1,8 +1,9 @@
 "use client";
+import Link from "next/link";
 
 import { useMemo, useState } from "react";
 
-import { signServicoNutricionistaAction } from "./actions";
+
 import { ItemStatusBadge, ServiceStatusBadge, TemperatureStatusBadge } from "./status-badges";
 import type { BuffetServiceHistoryGroup, BuffetServiceHistoryTotals } from "./service-history";
 import { normalizeSearchText } from "./utils";
@@ -36,9 +37,6 @@ function OperationalStatusPill({
   );
 }
 
-function canSignSupervisorReview(group: BuffetServiceHistoryGroup, canSign: boolean): boolean {
-  return canSign && group.status === "CONCLUIDO" && !group.assinadoNutricionista;
-}
 
 function shouldShowSupervisorReview(
   group: BuffetServiceHistoryGroup,
@@ -57,16 +55,13 @@ export function BuffetServiceHistoryList({
   groups,
   totals,
   emptyMessage,
-  canSignNutritionReview = false,
-  returnTo = "/controle-buffet-amostras/historico"
+  canSignNutritionReview = false
 }: BuffetServiceHistoryListProps) {
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
-  const [signingGroupKey, setSigningGroupKey] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState("");
 
   const selectedGroup =
     groups.find((group) => group.key === selectedGroupKey) ?? null;
-  const signingGroup = groups.find((group) => group.key === signingGroupKey) ?? null;
   const normalizedItemSearch = normalizeSearchText(itemSearch);
   const filteredItems = useMemo(() => {
     if (!selectedGroup) {
@@ -153,10 +148,6 @@ export function BuffetServiceHistoryList({
               group,
               canSignNutritionReview
             );
-            const supervisorReviewPending = canSignSupervisorReview(
-              group,
-              canSignNutritionReview
-            );
             const hasOperationalPending =
               canSignNutritionReview && group.status !== "CONCLUIDO";
 
@@ -205,15 +196,6 @@ export function BuffetServiceHistoryList({
                   ) : null}
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
-                  {supervisorReviewPending ? (
-                    <button
-                      type="button"
-                      className="btn-primary"
-                      onClick={() => setSigningGroupKey(group.key)}
-                    >
-                      Assinatura Supervisor
-                    </button>
-                  ) : null}
                   <button
                     type="button"
                     className="btn-action"
@@ -280,6 +262,7 @@ export function BuffetServiceHistoryList({
               </button>
             </div>
 
+            {selectedGroup.workflowId&&<Link className="btn-secondary mt-4 inline-block" href={`/controle-buffet-amostras/servico/${selectedGroup.servicoId}?data=${selectedGroup.dataInput}`}>Abrir serviço para validação e histórico</Link>}
             <label className="mt-4 block text-sm text-slate-700 dark:text-slate-200">
               Buscar item pelo nome
               <input
@@ -372,69 +355,7 @@ export function BuffetServiceHistoryList({
         </div>
       ) : null}
 
-      {signingGroup ? (
-        <div
-          className="bpma-modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Assinar supervisão do serviço ${signingGroup.servicoNome}`}
-        >
-          <section className="bpma-modal-panel max-w-lg">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  Assinatura do Supervisor
-                </h2>
-                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                  <p>
-                    Serviço: <strong>{signingGroup.servicoNome}</strong>
-                  </p>
-                  <p>
-                    Data: <strong>{signingGroup.dataLabel}</strong>
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn-secondary shrink-0"
-                onClick={() => setSigningGroupKey(null)}
-              >
-                Fechar
-              </button>
-            </div>
 
-            <form action={signServicoNutricionistaAction} className="mt-4 space-y-4">
-              <input type="hidden" name="servicoId" value={String(signingGroup.servicoId)} />
-              <input type="hidden" name="data" value={signingGroup.dataInput} />
-              <input type="hidden" name="returnTo" value={returnTo} />
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Deseja assinar este serviço como revisado pelo supervisor?
-              </p>
-              <label className="block text-sm text-slate-700 dark:text-slate-200">
-                Confirme sua senha *
-                <input
-                  type="password"
-                  name="senhaConfirmacao"
-                  required
-                  className="bpma-input"
-                />
-              </label>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setSigningGroupKey(null)}
-                >
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  Assinatura Supervisor
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
     </div>
   );
 }

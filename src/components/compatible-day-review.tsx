@@ -1,3 +1,5 @@
+import Link from "next/link";
+import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import { SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
 import { prisma } from "@/lib/prisma";
 import { parseAppDateInput } from "@/lib/date-time";
@@ -22,7 +24,8 @@ export async function CompatibleDayReview(props: {
       : prisma.rastreabilidadeRecebimentoNota.count({where:{data:date,fluxoId:null}}),
     prisma.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:code,dataReferencia:date}}})
   ]);
-  if (!units.length) return code === "oleo" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
+  if(code==="amostras")return <div className="space-y-2"><SupervisorSignatureStatus signature={legacySignature}/><p>Cada serviço é validado separadamente na tela do serviço. Assinaturas anteriores permanecem no histórico.</p><ul>{units.map(unit=><li key={unit.id}><Link href={`/controle-buffet-amostras/servico/${unit.chave.split(":")[0]}?data=${props.dateInput}`}>{unit.amostras[0]?.servico.nome??"Abrir serviço"} — {unit.assinaturaVigente?`Assinado por ${unit.assinaturaVigente.usuarioNome}`:"Consultar preenchimento e validação"}</Link></li>)}</ul>{legacyCount>0&&<p>Registros legados sem versão permanecem consultáveis. Novas assinaturas exigem regularização autorizada.</p>}</div>;
+  if (!units.length) return code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
   let eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
   if(code === "oleo") {
     const { getCurrentUser } = await import("@/lib/auth-session");
@@ -30,6 +33,11 @@ export async function CompatibleDayReview(props: {
     const user=await getCurrentUser();
     const eligibility=await Promise.all(eligible.map(async unit=>Boolean(props.canSign&&user&&unit.oleo&&(await oilRecordSignatureEligibility(prisma,user,unit.oleo,"daily",unit.versao)).allowed)));
     eligible=eligible.filter((_,index)=>eligibility[index]);
+  }
+  if(code==="temperatura"||code==="rastreabilidade"){
+    const {getCurrentUser}=await import("@/lib/auth-session");const user=await getCurrentUser();
+    const checks=await Promise.all(eligible.map(async unit=>Boolean(props.canSign&&user&&(await workflowReviewEligibility(prisma,user,code,unit.id,unit.versao,`modulo.${code}.assinar_dia`)).allowed)));
+    eligible=eligible.filter((_,index)=>checks[index]);
   }
   const label = (unit: typeof units[number]) => unit.temperatura ? `${unit.temperatura.equipamento} — ${unit.temperatura.turno === "MANHA" ? "Manhã" : "Tarde"}`
     : unit.oleo ? `Verificação do óleo #${unit.oleo.id} — ${unit.oleo.temperatura ?? "Sem utilização"}`
@@ -47,6 +55,6 @@ export async function CompatibleDayReview(props: {
       <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
       <button className="btn-primary">Assinar dia</button>
     </form>}
-    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/>{code === "oleo" ? props.canSign&&!legacySignature&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p> : <SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/>}</div>}
+    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/>{code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? props.canSign&&!legacySignature&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p> : <SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/>}</div>}
   </div>;
 }

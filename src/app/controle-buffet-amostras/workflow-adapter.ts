@@ -3,12 +3,12 @@ import { buffetProgress } from "./progress";
 import {assertGroupDeletion,auditGroupDeletion} from "@/lib/operational-workflow/group-deletion";
 ﻿import "server-only";
 import {Prisma, type ControleBuffetAmostraRegistro} from "@prisma/client";
-import {hasPermission} from "@/lib/permissions";
+
 import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
 import type {WorkflowAdapter} from "@/lib/operational-workflow/contracts";
 import {getAppNow,parseAppDateInput} from "@/lib/date-time";
 import {prepareBuffetRow} from "./row-save";
-import {verifyPassword} from "@/lib/password";
+
 import {isServicoDisponivelNaData} from "./utils";
 
 export {refreshWorkflowActor} from "../controle-temperatura-equipamentos/workflow-adapter";
@@ -18,7 +18,7 @@ export function parseBuffetKey(key:string){const m=/^(\d+):(\d{4}-\d{2}-\d{2})$/
 export function buffetSnapshot(records:ControleBuffetAmostraRegistro[],manifest:BuffetDraft['manifest']):Prisma.InputJsonObject{return JSON.parse(JSON.stringify({manifest,records:records.map(record=>{const{updatedAt,assinaturaNutricionistaUsuarioId,assinaturaNutricionistaNome,assinaturaNutricionistaPerfil,assinaturaNutricionistaDataHora,...data}=record;void updatedAt;void assinaturaNutricionistaUsuarioId;void assinaturaNutricionistaNome;void assinaturaNutricionistaPerfil;void assinaturaNutricionistaDataHora;return data;})}));}
 export const buffetAdapter:WorkflowAdapter={
  module:"amostras",
- authorizeSave(user,input,context){if(input instanceof FormData&&text(input,"operation")==="deleteItem"){assertGroupDeletion(user,"amostras",text(input,"justificativa"));}else if(input instanceof FormData&&text(input,"operation")==="signItem"){if(!hasPermission(user,"modulo.amostras.assinar_servico"))throw Error("Sem permissão para assinar item.");}else assertWorkflowEdit({user,module:"amostras",...context});},
+ authorizeSave(user,input,context){if(input instanceof FormData&&text(input,"operation")==="deleteItem"){assertGroupDeletion(user,"amostras",text(input,"justificativa"));}else if(input instanceof FormData&&text(input,"operation")==="signItem"){throw Error("Assine uma única vez o serviço completo pela Validação do Serviço.");}else assertWorkflowEdit({user,module:"amostras",...context});},
  async load(tx,key){const{serviceId,date}=parseBuffetKey(key);const legacy=await tx.controleBuffetAmostraRegistro.findFirst({where:{servicoId:serviceId,data:date,fluxoId:null}});return{date,legacy:Boolean(legacy),content:{snapshot:{},draft:{},complete:false,resolved:0,required:1}};},
  async save(tx,key,input,user,unit){
  if(!(input instanceof FormData))throw Error("Formulário inválido.");const{serviceId,date}=parseBuffetKey(key);
@@ -36,10 +36,7 @@ export const buffetAdapter:WorkflowAdapter={
  if(source.amostras.some(r=>r.itemExtra&&r.itemNome.trim().toLocaleLowerCase("pt-BR")===name.toLocaleLowerCase("pt-BR")))throw Error("Item extra já adicionado.");
  await tx.controleBuffetAmostraRegistro.create({data:{data:date,servicoId:serviceId,fluxoId:unit.id,itemExtra:true,itemNome:name,classificacao:classification as "QUENTE"|"FRIO"|"TEMPERATURA_AMBIENTE",status:"PENDENTE",responsavelUsuarioId:user.id,responsavelNome:user.nomeCompleto,responsavelPerfil:user.perfil,dataHoraRegistro:getAppNow()}});
  }else if(operation==="signItem"){
- const record=source.amostras.find(r=>r.id===Number(text(input,"registroId")));if(!record||record.status!=="PREENCHIDO")throw Error("Somente itens preenchidos podem ser assinados.");if(record.responsavelUsuarioId===user.id)throw Error("A assinatura de supervisor deve ser feita por outro usuário autorizado.");
- const credentials=await tx.usuario.findUniqueOrThrow({where:{id:user.id}});if(!verifyPassword(text(input,"senhaConfirmacao"),credentials.senhaHash))throw Error("Senha inválida.");
- await tx.controleBuffetAmostraRegistro.update({where:{id:record.id},data:{status:"ASSINADO",assinaturaUsuarioId:user.id,assinaturaNome:user.nomeCompleto,assinaturaPerfil:user.perfil,assinaturaDataHora:getAppNow()}});
- await tx.logAssinatura.create({data:{usuarioId:user.id,nomeUsuario:user.nomeUsuario,nomeCompleto:user.nomeCompleto,perfil:user.perfil,tipo:"SUPERVISOR",modulo:"controle-buffet-amostras/item",referenciaId:String(record.id),observacao:`Fluxo ${unit.id}, versão ${unit.versao+1}`}});
+ throw Error("Assine o serviço completo pela Validação do Serviço.");
  }else{
  const keys=input.getAll("rowKey").map(String);if(keys.some(key=>! /^(item|extra)-[1-9]\d*$/.test(key))||new Set(keys).size!==keys.length)throw Error("Linhas inválidas ou duplicadas.");
  for(const rowKey of keys){const itemId=rowKey.startsWith("item-")?Number(rowKey.slice(5)):null;const old=source.amostras.find(r=>itemId?r.itemId===itemId:r.itemExtra&&r.id===Number(rowKey.slice(6)));

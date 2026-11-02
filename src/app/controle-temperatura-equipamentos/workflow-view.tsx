@@ -1,3 +1,4 @@
+import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import { TemperatureSavedRecordPage } from "./saved-record-page";
 import { legacyTemperatureId } from "./legacy-workflow";
 import { currentTemperatureMonth, canReadTemperatureDate } from "./correction-policy";
@@ -43,7 +44,9 @@ export async function TemperatureWorkflowList({ query, history = false }: { quer
   const expected = history ? [] : equipment.flatMap(item => (["MANHA", "TARDE"] as const).filter(shift =>
     (shift === "MANHA" ? item.turnoManha : item.turnoTarde) && !known.has(`${item.id}:${today}:${shift}`) && !legacy.some(record => record.equipamento === item.nome && record.turno === shift)
   ).map(shift => ({ key: `${item.id}:${today}:${shift}`, name: item.nome, shift })));
-  const eligible = flows.filter(unit => unit.preenchimentoCompleto && ["COMPLETO", "REABERTO"].includes(unit.estado));
+  const candidates=flows.filter(unit=>unit.preenchimentoCompleto&&["COMPLETO","REABERTO"].includes(unit.estado));
+  const checks=await Promise.all(candidates.map(unit=>workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_dia")));
+  const eligible=candidates.filter((_,index)=>checks[index].allowed);
   return <div className="space-y-6">
     <header className="bpma-card"><h1 className="text-xl font-semibold">{history ? "Histórico — Temperatura dos Equipamentos" : "Controle de Temperatura dos Equipamentos"}</h1>
       <p>{history ? "Preenchimentos, aferições e validações por data." : "Pendências de hoje e aferições reabertas aguardando nova assinatura."}</p>
@@ -132,7 +135,7 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
         <div className="md:col-span-2 flex gap-3"><button className="btn-primary" name="intent" value="draft" formNoValidate>Salvar Registro</button></div>
       </fieldset>
     </form>
-    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && hasPermission(user,"modulo.temperatura.assinar_historico") && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
+    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && (await workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_historico")).allowed && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
     {unit?.temperatura && unit.preenchimentoCompleto && !formalClosed && !closedMonth && ["DEV","GERENTE","NUTRICIONISTA"].includes(user.perfil) && hasPermission(user,"modulo.temperatura.excluir_registro") && <details className="bpma-card"><summary>Excluir aferição</summary><form action={deleteTemperatureWorkflowAction}>{hidden}<input type="hidden" name="registroId" value={unit.temperatura.id} /><p>Excluir apenas esta aferição de {equipment.nome}, {formatAppDateInput(identity.date)}, {identity.shift}.</p><textarea className="bpma-input" name="justificativa" required maxLength={4000} placeholder="Justificativa obrigatória" /><button className="btn-secondary">Confirmar exclusão</button></form></details>}
     {unit && <section className="bpma-card"><h2>Histórico da aferição</h2><ol>{unit.eventos.map(event => <li key={event.id}>{event.criadoEm.toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})} — {event.operacao} — {event.usuarioNome} — versão {event.versaoNova}{event.justificativa ? ` — ${event.justificativa}` : ""}</li>)}</ol></section>}
   </div>;

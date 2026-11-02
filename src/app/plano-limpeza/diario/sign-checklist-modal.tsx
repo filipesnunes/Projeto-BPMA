@@ -18,6 +18,7 @@ type DailySignChecklistModalProps = {
   errorMessage?: string;
   record: {
     id: number;
+    updatedAt: Date;
     data: Date;
     area: string;
     itemDescricao: string | null;
@@ -102,6 +103,7 @@ export function DailySignChecklistModal({
         <form action={updateDailyRecordAction} className="mt-4 space-y-4">
  {etapa === "responsavel" && <ExecutionTimeFields date={record.data.toISOString().slice(0,10)} />}
           <input type="hidden" name="id" value={String(record.id)} />
+          <input type="hidden" name="originalUpdatedAt" value={record.updatedAt.toISOString()}/>
           <input type="hidden" name="returnTo" value={returnTo} />
           {successReturnTo ? (
             <input type="hidden" name="successReturnTo" value={successReturnTo} />

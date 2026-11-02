@@ -1,11 +1,17 @@
 "use server";
+import {Prisma} from "@prisma/client";
+import {refreshWorkflowActor} from "@/app/controle-temperatura-equipamentos/workflow-adapter";
+import {legacyReviewScope} from "@/lib/legacy-review-scope";
+import {isOperationalMonthClosed} from "@/lib/monthly-reopening";
+import {verifyPassword} from "@/lib/password";
+
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getCurrentUserForAction } from "@/lib/auth-session";
-import { createSignatureLog, validateSignaturePassword } from "@/lib/authz";
-import { formatAppDateInput, getAppNow, parseAppDateInput } from "@/lib/date-time";
+import { validateSignaturePassword } from "@/lib/authz";
+import { formatAppDateInput, getAppDate, getAppNow, parseAppDateInput } from "@/lib/date-time";
 import {
   canSignModuleDay,
   canSignModuleMonthlyClosure,
@@ -100,7 +106,7 @@ export async function signModuleDayAction(formData: FormData) {
 
     const dataReferencia = parseAppDateInput(getInputValue(formData, "dataReferencia"));
     const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    let observacao = getInputValue(formData, "observacao");
+    const observacao = getInputValue(formData, "observacao");
 
     if (!dataReferencia) {
       throw new Error("Data inválida para assinatura do dia.");
@@ -112,50 +118,25 @@ export async function signModuleDayAction(formData: FormData) {
       redirectWithFeedback(returnTo,"success","Dia assinado pelo supervisor com sucesso.");
     }
 
-    if (["temperatura", "oleo", "amostras", "rastreabilidade"].includes(moduleConfig.codigo) && await prisma.fluxoOperacional.findFirst({ where: { modulo: moduleConfig.codigo, dataReferencia, excluidoEm: null } })) {
-      const legacy = moduleConfig.codigo === "temperatura" ? await prisma.controleTemperaturaEquipamento.count({where:{data:dataReferencia,fluxoId:null}}) : moduleConfig.codigo === "amostras"
-        ? await prisma.controleBuffetAmostraRegistro.count({where:{data:dataReferencia,fluxoId:null}})
-        : moduleConfig.codigo === "rastreabilidade" ? await prisma.rastreabilidadeRecebimentoNota.count({where:{data:dataReferencia,fluxoId:null}}) : 0;
-      if(!legacy)throw new Error("Selecione as unidades e suas versões no histórico do módulo para assinar.");
-      observacao=[observacao,"Revisão dos registros legados. Unidades versionadas possuem assinatura e escopo próprios."].filter(Boolean).join(" ");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const existing = await prisma.assinaturaDiariaModulo.findUnique({
-      where: {
-          moduloCodigo_dataReferencia: {
-          moduloCodigo: moduleConfig.codigo,
-          dataReferencia
-        }
-      }
-    });
-
-    if (existing) {
-      throw new Error("Este dia já foi assinado pelo supervisor.");
-    }
-
-    const signedAt = getAppNow();
-    await prisma.assinaturaDiariaModulo.create({
-      data: {
-        moduloCodigo: moduleConfig.codigo,
-        dataReferencia,
-        usuarioId: actor.id,
-        usuarioNomeSnapshot: actor.nomeCompleto,
-        usuarioPerfilSnapshot: actor.perfil,
-        responsavelTecnico: true,
-        assinadoEm: signedAt,
-        observacao: observacao || null
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "RESPONSAVEL_TECNICO",
-      modulo: moduleConfig.codigo,
-      referenciaId: formatAppDateInput(dataReferencia),
-      observacao: observacao || "Assinatura diária em bloco."
-    });
+    if(["temperatura","amostras","rastreabilidade"].includes(moduleConfig.codigo))throw Error("Utilize a revisão das versões selecionadas. No Buffet, abra o serviço completo. Registros sem autoria comprovada exigem regularização autorizada.");
+    await prisma.$transaction(async tx=>{
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleConfig.codigo}),17326)`;
+      const reviewer=await refreshWorkflowActor(tx,actor);
+      if(!canSignModuleDay(reviewer,moduleConfig.codigo))throw Error("Sem habilitação e permissão para revisão técnica deste dia.");
+      if(dataReferencia>getAppDate())throw Error("Não é possível assinar dias futuros.");
+      if(await isOperationalMonthClosed(moduleConfig.codigo,dataReferencia.getUTCMonth()+1,dataReferencia.getUTCFullYear(),tx))throw Error("A competência está fechada.");
+      const scope=await legacyReviewScope(tx,moduleConfig.codigo,dataReferencia);
+      if(!scope.rows.length)throw Error("Não há registros elegíveis neste dia.");
+      if(getInputValue(formData,"escopo")!==scope.token)throw Error("O conteúdo mudou. Recarregue o dia antes de assinar.");
+      if(moduleConfig.codigo!=="hortifruti"&&scope.rows.some(row=>"status" in row&&row.status!=="CONCLUIDO"))throw Error("Conclua a execução e a supervisão dos itens antes da revisão técnica do dia.");
+      if(scope.rows.some(row=>"assinaturaResponsavelUsuarioId" in row&&(!row.assinaturaResponsavelUsuarioId||row.assinaturaResponsavelUsuarioId===reviewer.id)))throw Error("A revisão técnica exige executor identificado e independente.");
+      const credentials=await tx.usuario.findUniqueOrThrow({where:{id:reviewer.id},select:{senhaHash:true}});
+      if(!senhaConfirmacao||!verifyPassword(senhaConfirmacao,credentials.senhaHash))throw Error("Senha inválida para assinatura.");
+      if(await tx.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:moduleConfig.codigo,dataReferencia}}}))throw Error("Este dia já foi assinado pelo supervisor.");
+      const signedAt=getAppNow();
+      await tx.assinaturaDiariaModulo.create({data:{moduloCodigo:moduleConfig.codigo,dataReferencia,usuarioId:reviewer.id,usuarioNomeSnapshot:reviewer.nomeCompleto,usuarioPerfilSnapshot:reviewer.perfil,responsavelTecnico:true,assinadoEm:signedAt,observacao:observacao||null}});
+      await tx.logAssinatura.create({data:{usuarioId:reviewer.id,nomeUsuario:reviewer.nomeUsuario,nomeCompleto:reviewer.nomeCompleto,perfil:reviewer.perfil,tipo:"RESPONSAVEL_TECNICO",modulo:moduleConfig.codigo,referenciaId:formatAppDateInput(dataReferencia),assinadoEm:signedAt,observacao:JSON.stringify({responsabilidade:"revisao_tecnica_do_dia",escopo:scope.token,registros:scope.rows.map(row=>({id:row.id,updatedAt:row.updatedAt})),observacao})}});
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidatePath(moduleConfig.historyPath);
     revalidatePath(new URL(returnTo, "http://localhost").pathname);

@@ -1,3 +1,5 @@
+import {legacyReviewScope} from "@/lib/legacy-review-scope";
+import {parseAppDateInput} from "@/lib/date-time";
 import { formatAppDateTime } from "@/lib/date-time";
 import { getCurrentUser } from "@/lib/auth-session";
 import { findLegacyMonthlyClosure } from "@/lib/monthly-reopening";
@@ -45,7 +47,7 @@ export function SupervisorSignatureStatus({
   );
 }
 
-export function SignDayForm({
+export async function SignDayForm({
   moduleCode,
   dateInput,
   returnTo,
@@ -60,12 +62,16 @@ export function SignDayForm({
   alreadySigned: boolean;
   hasOperationalWarnings?: boolean;
 }) {
-  if (alreadySigned || !canSign) {
+  if (alreadySigned || !canSign || !["hortifruti","limpeza_diaria","limpeza_semanal"].includes(moduleCode)) {
     return null;
   }
 
+  const date=parseAppDateInput(dateInput);if(!date)return null;
+  const scope=await legacyReviewScope(prisma,moduleCode,date);
+  if(!scope.rows.length)return null;
   return (
     <form action={signModuleDayAction} className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+      <input type="hidden" name="escopo" value={scope.token} />
       <input type="hidden" name="moduloCodigo" value={moduleCode} />
       <input type="hidden" name="dataReferencia" value={dateInput} />
       <input type="hidden" name="returnTo" value={returnTo} />

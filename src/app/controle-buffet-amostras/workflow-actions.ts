@@ -2,13 +2,15 @@
 import {revalidatePath} from "next/cache";
 import {getCurrentUserForAction} from "@/lib/auth-session";
 import {saveWorkflow} from "@/lib/operational-workflow/service";
-import {buffetAdapter,refreshWorkflowActor} from "./workflow-adapter";
+import {buffetAdapter,refreshWorkflowActor,type BuffetDraft} from "./workflow-adapter";
 const text=(f:FormData,k:string)=>typeof f.get(k)==="string"?String(f.get(k)).trim():"";
 export async function saveBuffetWorkflowState(form:FormData,operation="save"){
  try{const version=text(form,"versao");if(!/^\d+$/.test(version))throw Error("Versão ausente. Recarregue a página.");const user=await getCurrentUserForAction();form.set("operation",operation);
- const unit=await saveWorkflow({actor:tx=>refreshWorkflowActor(tx,user),adapter:buffetAdapter,key:`${text(form,"servicoId")}:${text(form,"data")}`,expectedVersion:Number(version),input:form});
- revalidatePath("/controle-buffet-amostras","layout");revalidatePath("/relatorios","layout");revalidatePath("/");return{status:"success" as const,message:unit.estado==="COMPLETO"?"Serviço completo. Aguardando assinatura do supervisor.":unit.estado==="REABERTO"?"Preenchimento salvo. Serviço reaberto aguardando nova assinatura.":"Preenchimento parcial salvo com sucesso."};
- }catch(error){return{status:"error" as const,message:error instanceof Error&&!/prisma|transaction|p20\d|stack/i.test(error.message)?error.message:"Não foi possível salvar. Recarregue os dados."};}
+ let issues:BuffetDraft['issues'];
+ const unit=await saveWorkflow({actor:tx=>refreshWorkflowActor(tx,user),adapter:{...buffetAdapter,async save(...args){const content=await buffetAdapter.save(...args);issues=(content.draft as unknown as BuffetDraft).issues;return content;}},key:`${text(form,"servicoId")}:${text(form,"data")}`,expectedVersion:Number(version),input:form});
+ const pendingMessage=issues&&Object.keys(issues).length?" Pendências: "+Object.entries(issues).slice(0,8).map(([key,fields])=>`${key}: ${fields.join(", ")}`).join("; ")+".":"";
+ revalidatePath("/controle-buffet-amostras","layout");revalidatePath("/relatorios","layout");revalidatePath("/");return{status:"success" as const,message:(unit.estado==="COMPLETO"?"Serviço completo. Aguardando assinatura do supervisor.":unit.estado==="REABERTO"?"Preenchimento salvo. Serviço reaberto aguardando nova assinatura.":"Preenchimento parcial salvo com sucesso.")+pendingMessage};
+ }catch(error){return{status:"error" as const,message:error instanceof Error&&!/prisma|transaction|p20\d|stack/i.test(error.message)?error.message:"Não foi possível salvar. Recarregue os dados.",invalidRowKey:error&&typeof error==="object"&&"rowKey" in error?String(error.rowKey):undefined};}
 }
 
 export async function deleteBuffetItemWorkflowAction(form:FormData){const state=await saveBuffetWorkflowState(form,"deleteItem");const {redirect}=await import("next/navigation");redirect(`/controle-buffet-amostras/servico/${String(form.get("servicoId"))}?data=${encodeURIComponent(String(form.get("data")))}&feedback=${encodeURIComponent(state.message)}`);}

@@ -2,13 +2,14 @@ import type { Prisma, TipoServicoBuffetAmostra } from "@prisma/client";
 import { buildBuffetServiceHistoryGroups, type BuffetServiceRecord, type BuffetServiceHistoryGroup } from "./service-history";
 import type { BuffetDraft } from "./workflow-adapter";
 import { formatDateInput, formatDateDisplay, getClassificacaoLabel, getTipoServicoLabel } from "./utils";
+import { buffetProgress } from "./progress";
 
 export const buffetHistoryInclude={amostras:{where:{excluidoEm:null},include:{servico:{select:{nome:true,tipoServico:true,dataInicio:true,dataFim:true}}}},versoes:{orderBy:{versao:"desc"},take:1,select:{rascunho:true,obrigatorios:true,resolvidos:true,usuarioNome:true}},assinaturaVigente:true} satisfies Prisma.FluxoOperacionalInclude;
 export type BuffetHistoryFlow=Prisma.FluxoOperacionalGetPayload<{include:typeof buffetHistoryInclude}>;
 type Service={id:number;nome:string;tipoServico:TipoServicoBuffetAmostra};
 
 export function buffetDraftStarted(draft:BuffetDraft|undefined) {
-  return Object.values(draft?.rows??{}).some(row=>Object.entries(row).some(([key,value])=>key==="naoServido"?value==="true":Boolean(value.trim())));
+  return Object.values(draft?.rows??{}).some(row=>Object.entries(row).some(([key,value])=>["naoServido","horarioNaoInformado"].includes(key)?value==="true":Boolean(value.trim())));
 }
 
 // Read-only presentation. Draft fields never become sanitary measurements.
@@ -30,9 +31,11 @@ export function mergeBuffetWorkflowHistory(records:BuffetServiceRecord[],flows:B
     };
     const ids=new Set(rows.flatMap(row=>"itemId" in row&&row.itemId!==null?[row.itemId]:[]));
     for(const item of manifest.filter(item=>!ids.has(item.id)))group.items.push({id:-item.id,nome:item.nome,itemExtra:false,classificacaoLabel:getClassificacaoLabel(item.classificacao),tcEquipamentoLabel:"-",temperaturaInicialLabel:"-",temperaturaFinalLabel:null,statusTemperatura:null,acaoCorretiva:"-",observacao:draft?.rows[`item-${item.id}`]?"Rascunho salvo. Abra o serviço para consultar e continuar os campos digitados.":"Item pendente de preenchimento.",status:"PENDENTE",statusOperacionalLabel:"Incompleto",responsavelExecucao:version?.usuarioNome??"-",dataHoraRegistroLabel:"-",responsavelVerificacao:"-",assinaturaResumo:"-",assinaturaNutricionistaResumo:"-"});
-    group.totalItens=version?.obrigatorios??group.totalItens;
-    group.itensPendentes=Math.max(group.totalItens-(version?.resolvidos??group.itensPreenchidos+group.itensNaoServidos),0);
-    group.status=flow.preenchimentoCompleto?"CONCLUIDO":(flow.amostras.length||buffetDraftStarted(draft)?"PARCIAL":"PENDENTE");
+    const progress=buffetProgress(rows,manifest);
+    group.totalItens=progress.required;
+    group.itensPreenchidos=progress.filled;group.itensNaoServidos=progress.notServed;
+    group.itensPendentes=progress.pending;
+    group.status=progress.complete?"CONCLUIDO":(progress.resolved||buffetDraftStarted(draft)||rows.length?"PARCIAL":"PENDENTE");
     group.workflowId=flow.id;group.workflowState=flow.estado;
     group.assinadoNutricionista=flow.estado==="FECHADO"&&Boolean(flow.assinaturaVigente);
     group.assinaturaNutricionistaResumo=group.assinadoNutricionista?`${flow.assinaturaVigente!.usuarioNome}`:"-";

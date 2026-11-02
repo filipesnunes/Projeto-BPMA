@@ -1,0 +1,48 @@
+// Real Next server + headless Edge against the isolated compatibility fixtures.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {spawn}=require('node:child_process');
+const root=path.resolve(__dirname,'..'),dir=path.join(root,'.data/validation/buffet-pending');
+const fixtures=JSON.parse(fs.readFileSync(path.join(dir,'fixtures.json'),'utf8'));const database=fixtures.database;assert(/^buffetpending_[0-9]+$/.test(database));
+const url=`postgresql://postgres:isolated_test_only@127.0.0.1:55479/${database}`;
+process.env.DATABASE_URL=url;process.env.DIRECT_URL=url;
+const {PrismaClient}=require('@prisma/client'),prisma=new PrismaClient({datasources:{db:{url}}});
+const log=fs.openSync(path.join(dir,'next-browser.log'),'w');
+const server=spawn(process.execPath,[path.join(root,'node_modules/next/dist/bin/next'),'start','-p','3126'],{cwd:root,env:{...process.env,DATABASE_URL:url,DIRECT_URL:url},stdio:['ignore',log,log],windowsHide:true});
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+let browser,socket;
+(async()=>{
+ for(let i=0;i<120;i++){try{if((await fetch('http://localhost:3126/login')).ok)break;}catch{}await pause(250);if(i===119)throw Error('Server start timeout');}
+ const edge='C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+ browser=spawn(edge,['--headless=new','--disable-gpu','--no-first-run','--remote-debugging-port=9249',`--user-data-dir=${path.join(dir,'browser-'+Date.now())}`,'about:blank'],{stdio:'ignore',windowsHide:true});
+ let targets;for(let i=0;i<80;i++){try{targets=await(await fetch('http://localhost:9249/json')).json();if(targets.some(t=>t.type==='page'))break;}catch{}await pause(250);}
+ socket=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);await new Promise((r,j)=>{socket.onopen=r;socket.onerror=j;});
+ let id=0;const pending=new Map();socket.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}};
+ const send=(method,params={})=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});socket.send(JSON.stringify({id:n,method,params}));});
+ const evaluate=async(expression)=>{const r=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+ const wait=async(expression)=>{for(let i=0;i<120;i++){if(await evaluate(expression))return;await pause(150);}throw Error('Browser assertion timeout: '+expression+' '+await evaluate('document.body.innerText.slice(-1800)'));};
+ const navigate=async(route)=>{await send('Page.navigate',{url:'http://localhost:3126'+route});await wait(`document.readyState==='complete' && location.pathname===${JSON.stringify(route.split('?')[0])}`);};
+ const clickText=async(text)=>{assert(await evaluate(`(()=>{const b=[...document.querySelectorAll('button,a')].find(b=>b.textContent.trim()===${JSON.stringify(text)}&&!b.disabled);if(!b)return false;b.click();return true})()`),'Clickable '+text);};
+ const fill=async(name,value)=>evaluate(`(()=>{const e=document.querySelector('[name=${JSON.stringify(name)}]');Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+ const base='/controle-buffet-amostras',service=base+'/servico/'+fixtures.serviceId+'?data='+fixtures.day;
+ const record=async id=>(await prisma.fluxoOperacional.findUniqueOrThrow({where:{id:fixtures.flowId},include:{amostras:{where:{itemId:id,excluidoEm:null}}}})).amostras[0];
+ const input=(index,field)=>'item-'+fixtures.itemIds[index]+'-'+field;
+ const saved=async()=>wait("location.search.includes('feedbackType=success')&&!document.querySelector('form[aria-busy=true]')");
+ await send('Page.enable');await navigate('/login?next='+base);await fill('nomeUsuario',fixtures.username);await fill('senha','pending-password');await clickText('Entrar');await wait(`location.pathname===${JSON.stringify(base)}`);
+ await navigate(service);await wait("!!document.querySelector('[name=rowIntentVersion]')");const original=await record(fixtures.itemIds[0]);await clickText('Salvar Itens do Serviço');await saved();assert.equal((await record(fixtures.itemIds[0])).status,'PREENCHIDO');assert.equal((await record(fixtures.itemIds[0])).updatedAt.toISOString(),original.updatedAt.toISOString());
+ // Hidden-by-search rows remain mounted and must not be downgraded.
+ await navigate(service);await evaluate(`(()=>{const e=document.querySelector('input[type=search]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify('Quente normal')});e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);await fill(input(0,'primeiraTc'),'66');await clickText('Salvar Itens do Serviço');await saved();assert.equal((await record(fixtures.itemIds[0])).primeiraTc,66);assert.equal((await record(fixtures.itemIds[1])).status,'PREENCHIDO');assert.equal((await record(fixtures.itemIds[3])).status,'PREENCHIDO');
+ // Disabled input omission preserves persisted values while observation changes.
+ await navigate(service);await evaluate(`document.querySelector('[name=${input(0,'primeiraTc')}]').disabled=true`);await fill(input(0,'observacao'),'Campo desabilitado não apaga temperatura');await clickText('Salvar Itens do Serviço');await saved();assert.equal((await record(fixtures.itemIds[0])).primeiraTc,66);assert.equal((await record(fixtures.itemIds[0])).responsavelUsuarioId,original.responsavelUsuarioId);assert.equal((await record(fixtures.itemIds[0])).dataHoraRegistro.toISOString(),original.dataHoraRegistro.toISOString());
+ // A real invalid option is rejected without resetting DOM fields or the database.
+ await navigate(service);const critical=await record(fixtures.itemIds[1]);await evaluate(`(()=>{const e=document.querySelector('[name=${input(1,'acaoCorretiva')}]');e.add(new Option('Inválida de teste','Inválida de teste'));})()`);await fill(input(1,'acaoCorretiva'),'Inválida de teste');await fill(input(1,'observacao'),'Não perder texto após erro');await clickText('Salvar Itens do Serviço');await wait("document.body.innerText.includes('válida e ativa')");assert.equal(await evaluate(`document.querySelector('[name=${input(1,'observacao')}]').value`),'Não perder texto após erro');assert.equal((await record(fixtures.itemIds[1])).status,'PREENCHIDO');assert.equal((await record(fixtures.itemIds[1])).acaoCorretiva,critical.acaoCorretiva);
+ await fill(input(1,'acaoCorretiva'),fixtures.corrective);await clickText('Salvar Itens do Serviço');await saved();
+ // Explicit deletion of a mandatory field is an intentional pending edit.
+ await navigate(service);await fill(input(0,'primeiraTc'),'');await clickText('Salvar Itens do Serviço');await saved();assert.equal((await record(fixtures.itemIds[0])).status,'PENDENTE');assert.equal((await record(fixtures.itemIds[0])).primeiraTc,null);assert((await evaluate('document.body.innerText')).includes('Pendente: TC do Alimento'));
+ await fill(input(0,'primeiraTc'),'65');await fill(input(7,'tcEquipamento'),'65');await fill(input(7,'primeiraTc'),'65');await clickText('Salvar Itens do Serviço');await saved();await wait("document.body.innerText.includes('Preenchimento salvo — aguardando assinatura')");let unit=await prisma.fluxoOperacional.findUniqueOrThrow({where:{id:fixtures.flowId},include:{amostras:true}});assert.equal(unit.preenchimentoCompleto,true);assert.equal(unit.amostras.filter(r=>r.status==='PREENCHIDO').length,7);assert.equal(unit.amostras.filter(r=>r.status==='NAO_SERVIDO').length,1);assert.equal(unit.assinaturaVigenteId,null);
+ await navigate(service);assert.equal((await record(fixtures.itemIds[0])).status,'PREENCHIDO');
+ await navigate(base+'/historico?filtroData='+fixtures.day);await wait("document.body.innerText.includes('Histórico')");assert((await evaluate('document.body.innerText')).includes('Completo'));
+ await navigate(base+'/servico/'+fixtures.retroServiceId+'?data='+fixtures.retro);await wait("document.body.innerText.includes('horário da execução')");await fill(input(0,'horarioExecucao'),'08:15');await clickText('Salvar Itens do Serviço');await saved();assert((await evaluate('document.body.innerText')).includes('Preenchimento salvo — aguardando assinatura'));
+ for(const width of [1440,390]){await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<600});await navigate(service);assert(await evaluate('document.documentElement.scrollWidth<=innerWidth'));fs.writeFileSync(path.join(dir,'pending-'+width+'.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
+ unit=await prisma.fluxoOperacional.findUniqueOrThrow({where:{id:fixtures.flowId},include:{amostras:true}});assert.equal(new Set(unit.amostras.map(r=>r.itemId)).size,unit.amostras.length);
+ await send('Browser.close');console.log('PASS Buffet pending browser: unchanged save, active search, disabled field omission, original author/time, invalid action with retained form, explicit incomplete edit and reason, refill/complete independent of signature, reload/history, retroactive time, no duplicates and responsive layout.');
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{socket?.close();browser?.kill();server.kill();await prisma.$disconnect();});

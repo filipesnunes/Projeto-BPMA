@@ -1,8 +1,9 @@
 "use server";
 import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
 import {getAppDate} from "@/lib/date-time";
-import {buildRegistroPayload,buildNaoServidoPayload,getRegistroItemIssue,type RegistroItemPayload,type RegistroTemperaturaInput} from "./workflow-payload";
+import {buildRegistroPayload,buildNaoServidoPayload,type RegistroItemPayload} from "./workflow-payload";
 import {saveBuffetWorkflowState} from "./workflow-actions";
+import {prepareBuffetRow} from "./row-save";
 import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 
@@ -76,10 +77,6 @@ const FORM_ACTION_INITIAL_STATE: FormActionState = {
 function getInputValue(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function getRowInputValue(formData: FormData, rowKey: string, key: string): string {
-  return getInputValue(formData, `${rowKey}-${key}`);
 }
 
 function getInputNumberList(formData: FormData, key: string): number[] {
@@ -419,6 +416,7 @@ export async function saveRegistroItemAction(formData: FormData) {
       : await buildRegistroPayload({
           actor,
           item,
+          existingCorrectiveAction: existing?.acaoCorretiva,
           input: {
             execution: readExecutionTime(formData, data, "", !naoServido),
             tcEquipamentoInput,
@@ -430,6 +428,7 @@ export async function saveRegistroItemAction(formData: FormData) {
           }
         });
 
+    if(existing)Object.assign(payload,{responsavelUsuarioId:existing.responsavelUsuarioId,responsavelNome:existing.responsavelNome,responsavelPerfil:existing.responsavelPerfil,dataHoraRegistro:existing.dataHoraRegistro,...(!naoServido?{horarioExecucao:existing.horarioExecucao,horarioNaoInformado:existing.horarioNaoInformado,justificativaHorario:existing.justificativaHorario}:{})});
     await saveActiveBuffetRecord(prisma, {
           data,
           servicoId,
@@ -531,113 +530,23 @@ export async function saveServicoItemsStateAction(
         }
     > = [];
 
-    for (const rowKey of rowKeys) {
-      try {
-        const input: RegistroTemperaturaInput = {
-          tcEquipamentoInput: getRowInputValue(formData, rowKey, "tcEquipamento"),
-          primeiraTcInput: getRowInputValue(formData, rowKey, "primeiraTc"),
-          temperaturaTipo: getRowInputValue(formData, rowKey, "temperaturaTipo"),
-          acaoCorretivaInput: getRowInputValue(formData, rowKey, "acaoCorretiva"),
-          observacao: getRowInputValue(formData, rowKey, "observacao"),
-          naoServido: getRowInputValue(formData, rowKey, "naoServido") === "true"
-        };
-
-        if (rowKey.startsWith("item-")) {
-          const itemId = parsePositiveInt(rowKey.replace("item-", ""));
-          const item = itemId ? fixedItemsById.get(itemId) : null;
-          const existing = itemId ? registrosByItemId.get(itemId) : null;
-
-          if (!itemId || !item) {
-            throw new Error("Item não configurado para este serviço.");
-          }
-
-          if (existing?.status === StatusItemBuffetAmostra.ASSINADO) {
-            continue;
-          }
-
-          if (input.naoServido) {
-            updates.push({
-              type: "fixed",
-              itemId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
-
-          const issue = getRegistroItemIssue(item, input);
-          if (issue) continue;
-
-          updates.push({
-            type: "fixed",
-            itemId,
-            payload: await buildRegistroPayload({ actor, item, input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") } })
-          });
-          continue;
-        }
-
-        if (rowKey.startsWith("extra-")) {
-          const registroId = parsePositiveInt(rowKey.replace("extra-", ""));
-          const registro = registroId ? extraRegistrosById.get(registroId) : null;
-
-          if (!registroId || !registro) {
-            throw new Error("Item extra não encontrado para este serviço.");
-          }
-
-          if (registro.status === StatusItemBuffetAmostra.ASSINADO) {
-            continue;
-          }
-
-          const item = {
-            nome: registro.itemNome,
-            classificacao: registro.classificacao,
-            usaGarrafaTermica: registro.usaGarrafaTermica
-          };
-
-          if (input.naoServido) {
-            updates.push({
-              type: "extra",
-              registroId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
-
-          const issue = getRegistroItemIssue(item, input);
-          if (issue) continue;
-
-          updates.push({
-            type: "extra",
-            registroId,
-            payload: await buildRegistroPayload({
-              actor,
-              item,
-              input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") }
-            })
-          });
-          continue;
-        }
-
-        throw new Error("Linha inválida para salvar.");
-      } catch (error) {
-        return {
-          status: "error",
-          message: getErrorMessage(
-            error,
-            "Não foi possível salvar os itens. Verifique os campos obrigatórios."
-          ),
-          invalidRowKey: rowKey
-        };
-      }
+    const pendingMessages:string[]=[];
+    if(new Set(rowKeys).size!==rowKeys.length)throw Error("Linhas duplicadas.");
+    for(const rowKey of rowKeys){
+      try{
+        if(!/^(item|extra)-[1-9]\d*$/.test(rowKey))throw Error("Linha inválida para salvar.");
+        const fixed=rowKey.startsWith("item-"),id=Number(rowKey.slice(fixed?5:6));
+        const existing=fixed?registrosByItemId.get(id):extraRegistrosById.get(id);
+        const item=fixed?fixedItemsById.get(id):existing?{nome:existing.itemNome,classificacao:existing.classificacao,usaGarrafaTermica:existing.usaGarrafaTermica}:null;
+        if(!item)throw Error("Item não configurado para este serviço.");
+        if(existing?.status==="ASSINADO"||existing?.assinaturaDataHora)continue;
+        const prepared=await prepareBuffetRow(prisma,{form:formData,rowKey,item,date:data,actor,old:existing});
+        if(prepared.issues.length)pendingMessages.push(`${item.nome}: ${prepared.issues.join(", ")}`);
+        if(!prepared.payload)continue;
+        if(fixed)updates.push({type:"fixed",itemId:id,payload:prepared.payload});
+        else updates.push({type:"extra",registroId:id,payload:prepared.payload});
+      }catch(error){return{status:"error",message:getErrorMessage(error,"Não foi possível salvar os itens. Verifique os campos obrigatórios."),invalidRowKey:rowKey};}
     }
-
     await prisma.$transaction(async (tx) => {
       for (const update of updates) {
         if (update.type === "fixed") {
@@ -664,7 +573,7 @@ export async function saveServicoItemsStateAction(
     revalidateModulePaths(servicoId);
     return {
       status: "success",
-      message: "Itens do Serviço Salvos com Sucesso."
+      message: "Itens do Serviço Salvos com Sucesso."+(pendingMessages.length?" Pendências: "+pendingMessages.slice(0,8).join("; ")+".":"")
     };
   } catch (error) {
     return {
@@ -723,7 +632,7 @@ export async function updateHistoricoRegistroAction(formData: FormData) {
     };
     const payload = naoServido
       ? buildNaoServidoPayload({ actor, item, observacao })
-      : await buildRegistroPayload({ actor, item, input });
+      : await buildRegistroPayload({ actor, item, input, existingCorrectiveAction: registro.acaoCorretiva });
     const nextStatus = preserveHistoricalSignatureStatus({
       currentStatus: registro.status,
       nextStatus: payload.status,
@@ -736,6 +645,10 @@ export async function updateHistoricoRegistroAction(formData: FormData) {
         : registro.segundaTc;
     const updateData = {
       ...payload,
+      responsavelUsuarioId: registro.responsavelUsuarioId,
+      responsavelNome: registro.responsavelNome,
+      responsavelPerfil: registro.responsavelPerfil,
+      dataHoraRegistro: registro.dataHoraRegistro,
       segundaTc: nextSegundaTc,
       status: nextStatus
     };

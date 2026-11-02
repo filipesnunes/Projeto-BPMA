@@ -1,3 +1,4 @@
+import {buffetProgress} from "./progress";
 import { redirect } from "next/navigation";
 import { buffetDraftStarted } from "./workflow-history";
 import type { BuffetDraft } from "./workflow-adapter";
@@ -74,7 +75,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     }),
     prisma.controleBuffetAmostraRegistro.findMany({
-      where: { data: today },
+      where: { data: today, fluxoId: null },
       select: {
         id: true,
         servicoId: true,
@@ -88,7 +89,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
 
   // Draft item projections stay outside measurement queries, but the familiar
   // service card must still reflect an already initiated service.
-  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true,resolvidos:true,rascunho:true}}}});
+  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{amostras:{where:{excluidoEm:null},select:{itemId:true,itemExtra:true,status:true}},versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true,resolvidos:true,rascunho:true}}}});
   const flowsByService = new Map(serviceFlows.map(flow=>[Number(flow.chave.split(":")[0]),flow]));
 
   const registrosPorServico = new Map<number, typeof registrosDia>();
@@ -102,14 +103,16 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
     isServicoDisponivelNaData(servico, today)
   ).map((servico) => {
     const flow = flowsByService.get(servico.id);
-    const registrosServico = registrosPorServico.get(servico.id) ?? [];
+    const registrosServico = flow?.amostras ?? registrosPorServico.get(servico.id) ?? [];
+    const draft=flow?.versoes[0]?.rascunho as unknown as BuffetDraft|undefined;
+    const progress=flow?buffetProgress(registrosServico,draft?.manifest??servico.itens.map(link=>link.item)):null;
     const itensAtivos = servico.itens.map((vinculo) => vinculo.item.id);
     const registrosItensAtivos = registrosServico.filter(
       (registro) =>
         registro.itemExtra ||
         (registro.itemId !== null && itensAtivos.includes(registro.itemId))
     );
-    const quantidadeItens = flow?.versoes[0]?.obrigatorios ??
+    const quantidadeItens = progress?.required ??
       (itensAtivos.length + registrosServico.filter((registro) => registro.itemExtra).length);
 
     const itensAssinados = registrosItensAtivos.filter(
@@ -122,7 +125,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       (registro) => registro.status !== StatusItemBuffetAmostra.PENDENTE
     ).length;
 
-    const status = flow ? (flow.preenchimentoCompleto ? "CONCLUIDO" : (flow.versoes[0]?.resolvidos||buffetDraftStarted(flow.versoes[0]?.rascunho as unknown as BuffetDraft)?"PARCIAL":"PENDENTE")) : calcularStatusServico({
+    const status = progress ? (progress.complete ? "CONCLUIDO" : (progress.resolved||buffetDraftStarted(draft)?"PARCIAL":"PENDENTE")) : calcularStatusServico({
       totalItens: quantidadeItens,
       itensAssinados,
       itensNaoServidos,

@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
 const args=process.argv.slice(2),out=args.indexOf('--output'),local=args.indexOf('--local-database');
 if(!args.includes('--read-only')||out<0||!args[out+1])throw Error('Use --read-only --output <arquivo.json> e --local-database <base_sintetica> OU --allow-configured-database-read-only.');
-let url;if(local>=0){const name=args[local+1];if(!/^buffetpending_\d+$/.test(name))throw Error('Base local sintética inválida.');url=`postgresql://postgres:isolated_test_only@127.0.0.1:55479/${name}`;}else{if(!args.includes('--allow-configured-database-read-only'))throw Error('Leitura do destino configurado exige autorização explícita.');require('dotenv').config({quiet:true});url=process.env.DIRECT_URL||process.env.DATABASE_URL;}
+let url;if(local>=0){const name=args[local+1];if(!/^(buffetpending|historiccopy)_\d+$/.test(name))throw Error('Base local sintética inválida.');url=`postgresql://postgres:isolated_test_only@127.0.0.1:55479/${name}`;}else{if(!args.includes('--allow-configured-database-read-only'))throw Error('Leitura do destino configurado exige autorização explícita.');require('dotenv').config({quiet:true});url=process.env.DIRECT_URL||process.env.DATABASE_URL;}
 if(!url)throw Error('Conexão não configurada.');process.env.DATABASE_URL=url;process.env.DIRECT_URL=url;
 const root=path.resolve(__dirname,'..'),ts=require('typescript'),load=Module._load;
 Module._load=function(n,p,m){if(n==='server-only')return{};if(n.startsWith('@/'))n=path.join(root,'src',n.slice(2));return load.call(this,n,p,m);};

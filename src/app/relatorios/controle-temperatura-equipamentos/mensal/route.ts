@@ -46,11 +46,13 @@ type ShiftCell = {
   responsible: string;
   supervisor: string;
   timeJustification?: string | null;
+  observation?: string | null;
 };
 
 type EquipmentReport = {
   name: string;
   cellsByDayShift: Map<string, ShiftCell>;
+  actionLegend: Array<{code:string;text:string}>;
 };
 
 type MonthlyTemperatureReport = {
@@ -190,6 +192,8 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       horarioAfericao: true,
       horarioNaoInformado: true,
       fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true } } } },
+      observacoes: true, observacaoStatusOperacional: true,
+      assinaturaNutricionistaNome: true,
       justificativaHorario: true
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }]
@@ -260,6 +264,7 @@ function buildEquipmentReports(params: {
         cellsByDayShift.set(getCellKey(turno, day), {
           measurementTime: inOperation ? temperatureMeasurementTime(record) : "-",
           timeJustification: record.horarioNaoInformado ? record.justificativaHorario : null,
+          observation:[record.observacoes,record.observacaoStatusOperacional].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(" — "),
           temperature: inOperation ? formatTemperature(record.temperaturaAferida)
             : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.INATIVO ? "INATIVO" : "",
           correctiveAction: inOperation
@@ -270,15 +275,15 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }
 
-    return {
-      name,
-      cellsByDayShift
-    };
+    const counts=new Map<string,number>();for(const cell of cellsByDayShift.values())counts.set(cell.correctiveAction,(counts.get(cell.correctiveAction)??0)+1);
+    const actionLegend=[...counts].filter(([text,count])=>text.length>36&&count>1).map(([text],index)=>({code:"AC"+(index+1),text}));
+    for(const cell of cellsByDayShift.values()){const reference=actionLegend.find(a=>a.text===cell.correctiveAction);if(reference)cell.correctiveAction=reference.code;}
+    return { name, cellsByDayShift, actionLegend };
   });
 }
 
@@ -329,7 +334,7 @@ function renderStyles(): string {
 
       .equipment-page {
         display: flex;
-        min-height: 196mm;
+        min-height: 0;
         page-break-after: always;
         break-after: page;
         flex-direction: column;
@@ -474,7 +479,25 @@ function renderStyles(): string {
         text-align: center;
       }
 
+      .print-layout-warning { display:none; }
+      .print-layout-warning[hidden] { display:none !important; }
       @media print {
+        .equipment-page { width:283mm; gap:3px; break-after:auto; page-break-after:auto; break-before:page; page-break-before:always; }
+        .equipment-page:first-child { break-before:auto; page-break-before:auto; }
+        .equipment-page th,.equipment-page td { padding:1px 2px; }
+        .equipment-page .report-header { margin:0 0 3px; }
+        .equipment-page .report-header-cell { padding:4px; }
+        .equipment-page .report-header-title h1 { font-size:13px; line-height:1.15; }
+        .equipment-page .report-header-info { font-size:8.2px; line-height:1.2; padding-top:3px; gap:2px 10px; }
+        .equipment-page .report-staysafe-logo { width:105px; max-height:46px; }
+        .equipment-page .report-identity img { max-height:46px; }
+        .equipment-page .signature-table th,.equipment-page .signature-table td { white-space:normal; height:18px; }
+        .equipment-page .time-notes th,.equipment-page .time-notes td { text-align:left; border:0; padding:1px 0; overflow-wrap:anywhere; }
+        .equipment-page .time-notes .note-row { break-inside:auto; }
+        .equipment-page .time-notes { font-size:8.2px; line-height:1.15; }
+        .equipment-page .footer-block { margin-top:3px; }
+        .equipment-page .action-legend { font-size:8.2px; line-height:1.15; overflow-wrap:anywhere; }
+        .print-layout-warning { display:block; font-size:9px; font-weight:bold; }
         .screen-actions {
           display: none;
         }
@@ -532,10 +555,10 @@ function renderShiftCells(equipment: EquipmentReport, day: number, turno: TurnoT
 }
 
 function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTemperatureReport): string {
-  const notes = Array.from(equipment.cellsByDayShift.entries()).filter(([,cell]) => cell.timeJustification)
+  const notes = Array.from(equipment.cellsByDayShift.entries()).filter(([,cell]) => cell.timeJustification||cell.observation)
     .map(([key,cell]) => {
       const [shift,day] = key.split("|");
-      return `<p style="margin-top:4px;overflow-wrap:anywhere"><strong>Dia ${escapeHtml(day)} — ${escapeHtml(labelTurno(shift as TurnoTemperaturaEquipamento))}:</strong> Horário não informado. Justificativa: ${escapeHtml(cell.timeJustification)}</p>`;
+      return `<tr class="note-row"><td><strong>Dia ${escapeHtml(day)} — ${escapeHtml(labelTurno(shift as TurnoTemperaturaEquipamento))}:</strong> ${cell.timeJustification?`Horário não informado. Justificativa: ${escapeHtml(cell.timeJustification)}. `:""}${cell.observation?`Observação: ${escapeHtml(cell.observation)}`:""}</td></tr>`;
     }).join("");
   const rows = report.days
     .map(
@@ -562,7 +585,7 @@ function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTempera
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>${notes ? `<div class="time-notes">${notes}</div>` : ""}`;
+    </table>${notes ? `<table class="time-notes"><thead><tr><th>${escapeHtml(equipment.name)} — observações e justificativas</th></tr></thead><tbody>${notes}</tbody></table>` : ""}`;
 }
 
 function renderCorrectiveActionBlock(): string {
@@ -622,7 +645,9 @@ function renderEquipmentPage(equipment: EquipmentReport, report: MonthlyTemperat
     <section class="equipment-page">
       ${renderHeader(report)}
       ${renderEquipmentInfo(equipment, report)}
+      <p class="print-layout-warning" hidden>Conteúdo excepcionalmente longo: este equipamento requer continuação. Todos os dados foram preservados; o próximo equipamento inicia em nova página.</p>
       ${renderEquipmentTable(equipment, report)}
+      ${equipment.actionLegend.length?`<div class="action-legend"><strong>Ações corretivas referenciadas no quadro:</strong> ${equipment.actionLegend.map(a=>`<span><strong>${escapeHtml(a.code)}:</strong> ${escapeHtml(a.text)}</span>`).join(" · ")}</div>`:""}
       <div class="footer-block">
         ${renderCorrectiveActionBlock()}
         ${renderClosureSignature(report)}
@@ -665,6 +690,18 @@ function renderReportDocument(report: MonthlyTemperatureReport): string {
     <main>
       ${equipmentPages}
     </main>
+    <script>
+      function checkEquipmentPrintLayout(){
+        document.querySelectorAll('.equipment-page').forEach(page=>{
+          const warning=page.querySelector('.print-layout-warning');if(!warning)return;
+          warning.hidden=true;warning.style.display='none';
+          const overflow=page.getBoundingClientRect().height>196*96/25.4+1;
+          page.dataset.printOverflow=String(overflow);
+          if(overflow){warning.hidden=false;warning.style.display='block';}
+        });
+      }
+      window.addEventListener('beforeprint',checkEquipmentPrintLayout);
+    </script>
     ${REPORT_PRINT_SCRIPT}
   </body>
 </html>`;

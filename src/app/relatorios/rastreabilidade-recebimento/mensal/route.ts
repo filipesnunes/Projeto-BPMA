@@ -1,4 +1,3 @@
-import { renderExecutionReportNotes } from "@/lib/execution-report-notes";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -711,7 +710,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report).replace("</body>", renderExecutionReportNotes(records) + "</body>"), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

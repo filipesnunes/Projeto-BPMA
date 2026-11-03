@@ -9,6 +9,7 @@ import { oilAuthorizationEvidence, oilRecordSignatureEligibility } from "./signa
 import { verifyPassword } from "@/lib/password";
 import { getRegistroPayload, preserveOilStrip } from "./record-payload";
 import { oilCorrectionAudit } from "./correction-audit";
+import { pendingOilSignatureRevocation } from "./signature-revocation";
 export { refreshWorkflowActor } from "../controle-temperatura-equipamentos/workflow-adapter";
 export type OilDraft = Record<string,string>;
 export function parseOilKey(key: string) {
@@ -33,6 +34,7 @@ export const oilAdapter: WorkflowAdapter = {
     return { date: parseOilKey(key).date, legacy: false, content: { snapshot:{}, draft:{}, complete:false, resolved:0, required:1 } };
   },
   async save(tx, key, input, user, unit) {
+    if(await pendingOilSignatureRevocation(tx,unit.id))throw Error("Esta regularização permite somente nova assinatura válida. Os dados operacionais permanecem bloqueados para edição.");
     if (!(input instanceof FormData)) throw new Error("Formulário inválido.");
     const previous = await tx.fluxoOperacional.findUniqueOrThrow({where:{id:unit.id},include:{oleo:true,versoes:{orderBy:{versao:"desc"},take:1}}});
     const date=previous.oleo?.data??parseOilKey(key).date;

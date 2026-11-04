@@ -355,7 +355,7 @@ export default async function ExecucaoServicoBuffetPage({
           </p>
         ) : null}
 
-        <ServiceItemsForm
+        <ServiceItemsForm key={`${servico.id}:${dataReferenciaInput}`}
           servicoId={servico.id}
           dataInput={dataReferenciaInput}
           returnTo={returnTo}

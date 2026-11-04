@@ -3,16 +3,25 @@ import { useEffect, useRef, useState } from "react";
 import { formatAppDateInput, getAppDate } from "@/lib/date-time";
 import { UnreportedTimeFields } from "./unreported-time-fields";
 
-export function ExecutionTimeFields({ date, prefix = "", defaultTime = "", defaultUnknown = false, defaultJustification = "", required = true }: {
+export type ExecutionTimeValue = { horarioExecucao: string; horarioNaoInformado: boolean; justificativaHorario: string };
+
+export function ExecutionTimeFields({ date, prefix = "", defaultTime = "", defaultUnknown = false, defaultJustification = "", required = true, value, onValueChange }: {
   date: string; prefix?: string; defaultTime?: string; defaultUnknown?: boolean; defaultJustification?: string; required?: boolean;
+  value?: ExecutionTimeValue; onValueChange?: (value: ExecutionTimeValue) => void;
 }) {
-  const [unknown, setUnknown] = useState(defaultUnknown);
+  const [localUnknown, setUnknown] = useState(defaultUnknown);
+  const unknown = value?.horarioNaoInformado ?? localUnknown;
   const today = formatAppDateInput(getAppDate());
   if (date >= today) return <p className="text-xs text-slate-500">O horário de execução será registrado automaticamente.</p>;
   return <fieldset className="space-y-2 rounded-lg border p-3">
     <legend className="text-sm">Horário real da execução</legend>
-    <UnreportedTimeFields unknown={unknown} onChange={setUnknown} justification={defaultJustification} prefix={prefix} />
-    {!unknown && <label className="block text-sm">Horário da execução *<input type="time" name={prefix + "horarioExecucao"} required={required} defaultValue={defaultTime} className="bpma-input" /></label>}
+    <UnreportedTimeFields unknown={unknown} onChange={next => {
+      if (value && onValueChange) onValueChange({ ...value, horarioNaoInformado: next, horarioExecucao: next ? "" : value.horarioExecucao, justificativaHorario: next ? value.justificativaHorario : "" });
+      else setUnknown(next);
+    }} justification={value?.justificativaHorario ?? defaultJustification} prefix={prefix}
+      onJustificationChange={value && onValueChange ? next => onValueChange({ ...value, justificativaHorario: next }) : undefined} />
+    {!unknown && <label className="block text-sm">Horário da execução *<input type="time" name={prefix + "horarioExecucao"} required={required}
+      {...(value ? { value: value.horarioExecucao, onChange: (event: React.ChangeEvent<HTMLInputElement>) => onValueChange?.({ ...value, horarioExecucao: event.target.value }) } : { defaultValue: defaultTime })} className="bpma-input" /></label>}
   </fieldset>;
 }
 

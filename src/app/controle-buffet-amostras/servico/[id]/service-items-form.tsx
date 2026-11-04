@@ -1,6 +1,9 @@
 "use client";
 import { validateBuffetRow, suggestedBuffetAction, type BuffetRowIssue, type BuffetValues } from "../../row-validation";
-import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
+import { formatAppDateInput, getAppDate } from "@/lib/date-time";
+import { CollectiveTimeFields } from "./collective-time-fields";
+import type { CollectiveTimeTarget } from "../../collective-time";
+import { ExecutionTimeFields, type ExecutionTimeValue } from "@/components/forms/execution-time-fields";
 
 import { startTransition, useCallback, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
@@ -209,6 +212,10 @@ export function ServiceItemsForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const [pendingIssues, setPendingIssues] = useState<BuffetRowIssue[]>([]);
   const [temperatures, setTemperatures] = useState<Record<string, string>>({});
+  const initialTimes = () => Object.fromEntries(rows.map(row=>[row.rowKey,{horarioExecucao:row.horarioExecucao??"",horarioNaoInformado:Boolean(row.horarioNaoInformado),justificativaHorario:row.justificativaHorario??""}]));
+  const [executionTimes, setExecutionTimes] = useState<Record<string,ExecutionTimeValue>>(initialTimes);
+  const executionTimesRef = useRef(executionTimes);
+  const retroactive = dataInput < formatAppDateInput(getAppDate());
   const [itemSearch, setItemSearch] = useState("");
   const [ambientRows, setAmbientRows] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(rows.map((row) => [row.rowKey, row.temperaturaAmbiente]))
@@ -231,6 +238,8 @@ export function ServiceItemsForm({
   }, [router, state.status]);
 
   useEffect(() => {
+    const times=Object.fromEntries(rows.map(row=>[row.rowKey,{horarioExecucao:row.horarioExecucao??"",horarioNaoInformado:Boolean(row.horarioNaoInformado),justificativaHorario:row.justificativaHorario??""}]));
+    executionTimesRef.current=times;setExecutionTimes(times);
     setAmbientRows(Object.fromEntries(rows.map((row) => [row.rowKey, row.temperaturaAmbiente])));
     setNonServedRows(
       Object.fromEntries(rows.map((row) => [row.rowKey, row.status === "NAO_SERVIDO"]))
@@ -241,8 +250,9 @@ export function ServiceItemsForm({
     const values: BuffetValues = {tcEquipamento:row.tcEquipamento,primeiraTc:row.primeiraTc,temperaturaTipo:getTemperatureTypeDefault(row),acaoCorretiva:row.acaoCorretiva,observacao:row.observacao,naoServido:String(row.status==="NAO_SERVIDO"),horarioExecucao:row.horarioExecucao??"",horarioNaoInformado:String(Boolean(row.horarioNaoInformado)),justificativaHorario:row.justificativaHorario??""};
     for(const field of Object.keys(values))if(data.has(row.rowKey+"-"+field))values[field]=String(data.get(row.rowKey+"-"+field)??"");
     if(changedFields.current.has(row.rowKey+"-horarioNaoInformado")&&!data.has(row.rowKey+"-horarioNaoInformado"))values.horarioNaoInformado="false";
+    if(retroactive){const time=executionTimesRef.current[row.rowKey];if(time){values.horarioExecucao=time.horarioExecucao;values.horarioNaoInformado=String(time.horarioNaoInformado);values.justificativaHorario=time.justificativaHorario;}}
     return values;
-  }, []);
+  }, [retroactive]);
   const collectPendingIssues = useCallback((data: FormData): BuffetRowIssue[] => rows.filter(row=>!row.bloqueado).flatMap(row=>{
     const missingFields=validateBuffetRow(row,valuesFor(row,data),{date:dataInput,actions:acoesCorretivas,historicalAction:row.acaoCorretiva});
     return missingFields.length?[{rowKey:row.rowKey,nome:row.nome,missingFields}]:[];
@@ -260,6 +270,16 @@ export function ServiceItemsForm({
   },[collectPendingIssues,rows,valuesFor,acoesCorretivas]);
   useEffect(()=>{if(state.status==="error"&&state.issues)setPendingIssues(state.issues);},[state]);
   const recheck = () => {if(formRef.current)setPendingIssues(collectPendingIssues(new FormData(formRef.current)));};
+  const updateExecutionTimes = (changes:Record<string,ExecutionTimeValue>) => {
+    const next={...executionTimesRef.current};
+    for(const [rowKey,value] of Object.entries(changes)){
+      const previous=next[rowKey];
+      for(const field of ["horarioExecucao","horarioNaoInformado","justificativaHorario"] as const)if(previous?.[field]!==value[field])changedFields.current.add(rowKey+"-"+field);
+      next[rowKey]=value;
+    }
+    executionTimesRef.current=next;setExecutionTimes(next);recheck();
+  };
+  const applyCollectiveTime = (time:string,targets:CollectiveTimeTarget[]) => updateExecutionTimes(Object.fromEntries(targets.map(target=>[target.rowKey,{horarioExecucao:time,horarioNaoInformado:false,justificativaHorario:""}])));
   const changeRow = (event: FormEvent<HTMLFormElement>) => {
     const target=event.target as HTMLInputElement;
     const row=rows.find(row=>target.name?.startsWith(row.rowKey+"-"));if(!row)return;
@@ -280,6 +300,10 @@ export function ServiceItemsForm({
     event.preventDefault();if(isSaving)return;
     const form=event.currentTarget;
     const data=new FormData(form);
+    if(retroactive)for(const row of rows){
+      if(row.bloqueado||valuesFor(row,data).naoServido==="true")continue;
+      const time=executionTimesRef.current[row.rowKey];if(time)for(const [field,value]of Object.entries(time))data.set(row.rowKey+"-"+field,String(value));
+    }
     for(const name of changedFields.current)data.append("changedField",name);
     const issues=collectPendingIssues(data);setPendingIssues(issues);
     if(issues.length)return;
@@ -350,6 +374,7 @@ export function ServiceItemsForm({
         <input type="hidden" name="servicoId" value={String(servicoId)} />
         <input type="hidden" name="data" value={dataInput} />
         <input type="hidden" name="returnTo" value={returnTo} />
+        {retroactive&&<CollectiveTimeFields rows={rows} read={target=>{const row=rows.find(row=>row.rowKey===target.rowKey);return row&&formRef.current?valuesFor(row,new FormData(formRef.current)):{};}} onApply={applyCollectiveTime} disabled={fechamentoAssinado||!hasEditableRows||isSaving}/>}
         {normalizedItemSearch && !hasSearchMatches ? (
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
             Nenhum item encontrado.
@@ -389,7 +414,7 @@ export function ServiceItemsForm({
               >
                 {pendingIssues.filter(issue=>issue.rowKey===row.rowKey).map(issue=><p key={issue.rowKey} role="status" className="mb-3 text-sm text-red-800 dark:text-red-200">Pendente: {issue.missingFields.join("; ")}.</p>)}
                 <input type="hidden" name="rowKey" value={row.rowKey} />
-                {!row.bloqueado && !naoServido && <ExecutionTimeFields required={false} date={dataInput} prefix={row.rowKey + "-"} defaultTime={row.horarioExecucao ?? ""} defaultUnknown={row.horarioNaoInformado} defaultJustification={row.justificativaHorario ?? ""} />}
+                {!row.bloqueado && !naoServido && <ExecutionTimeFields required={false} date={dataInput} prefix={row.rowKey + "-"} defaultTime={row.horarioExecucao ?? ""} defaultUnknown={row.horarioNaoInformado} defaultJustification={row.justificativaHorario ?? ""} value={retroactive?(executionTimes[row.rowKey]??{horarioExecucao:row.horarioExecucao??"",horarioNaoInformado:Boolean(row.horarioNaoInformado),justificativaHorario:row.justificativaHorario??""}):undefined} onValueChange={retroactive?value=>updateExecutionTimes({[row.rowKey]:value}):undefined} />}
                 <input
                   type="hidden"
                   name={`${row.rowKey}-naoServido`}

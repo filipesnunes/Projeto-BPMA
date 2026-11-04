@@ -1,5 +1,10 @@
 # Buffet / Amostras — correção de registros seguida de assinatura
 
+Evolução posterior: o pedido de [horário coletivo retroativo](buffet-horario-coletivo-2026-11-03.md)
+passou a autorizar substituição explícita de horários editáveis. O bloqueio absoluto
+de alteração de horário descrito nesta etapa foi substituído por edição explícita
+com preservação do antes/depois nas versões e auditoria do fluxo versionado.
+
 Nova política aprovada pelo responsável: nutricionista habilitada pode corrigir
 informações já registradas por outra pessoa e assinar o serviço completo.
 Branch: `estabilizacao/experiencia-anterior-2026-10-28`, inicialmente limpa,

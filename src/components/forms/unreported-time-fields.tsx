@@ -1,7 +1,8 @@
 "use client";
 
-export function UnreportedTimeFields({ unknown, onChange, justification = "", prefix = "" }: {
+export function UnreportedTimeFields({ unknown, onChange, justification = "", prefix = "", onJustificationChange }: {
   unknown: boolean; onChange: (value: boolean) => void; justification?: string | null; prefix?: string;
+  onJustificationChange?: (value: string) => void;
 }) {
   return <div className="space-y-2 md:col-span-2">
     <p className="text-sm">Lançamento retroativo. Informe apenas procedimentos efetivamente realizados.</p>
@@ -10,7 +11,8 @@ export function UnreportedTimeFields({ unknown, onChange, justification = "", pr
         onChange={event => onChange(event.currentTarget.checked)} />Horário não informado
     </label>
     {unknown ? <label className="block text-sm">Justificativa da ausência do horário *
-      <textarea name={prefix + "justificativaHorario"} required maxLength={1000} defaultValue={justification ?? ""} className="bpma-input" rows={2} />
+      <textarea name={prefix + "justificativaHorario"} required maxLength={1000}
+        {...(onJustificationChange ? { value: justification ?? "", onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => onJustificationChange(event.target.value) } : { defaultValue: justification ?? "" })} className="bpma-input" rows={2} />
     </label> : null}
   </div>;
 }

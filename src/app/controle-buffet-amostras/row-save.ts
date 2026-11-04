@@ -53,7 +53,6 @@ export async function prepareBuffetRow(db: Prisma.TransactionClient, params: { f
     }
     if (!["", "NUMERICA", "AMBIENTE"].includes(row.temperaturaTipo)) throw Error("Tipo de temperatura inválido.");
     if (!["", "true", "false"].includes(row.naoServido) || !["", "true", "false"].includes(row.horarioNaoInformado)) throw Error("Condição do item inválida.");
-    if(old?.horarioExecucao && ["horarioExecucao","horarioNaoInformado"].some(field=>changed.has(rowKey+"-"+field)) && row.naoServido!=="true" && (row.horarioExecucao!==old.horarioExecucao || row.horarioNaoInformado==="true"))throw Error("O horário original da aferição deve ser preservado. Registre a informação complementar na observação ou justificativa da correção.");
     const originalActor = old ? { ...actor, id: old.responsavelUsuarioId, nomeCompleto: old.responsavelNome, perfil: old.responsavelPerfil } : actor;
     const preserve = (payload: RegistroItemPayload): RegistroItemPayload => old ? { ...payload, dataHoraRegistro: old.dataHoraRegistro } : payload;
     if (row.naoServido === "true") return { row, payload: preserve(buildNaoServidoPayload({ actor: originalActor, item, observacao: row.observacao })), issues: [], unchanged: false };

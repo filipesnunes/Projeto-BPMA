@@ -80,18 +80,18 @@ export async function CompatibleDayReview(props: {
     : unit.oleo ? `Verificação do óleo #${unit.oleo.id} — ${unit.oleo.temperatura ?? "Sem utilização"}`
     : unit.recebimento ? `Nota ${unit.recebimento.notaFiscal} — ${unit.recebimento.fornecedor}`
     : unit.amostras[0]?.servico.nome ?? `Serviço ${unit.chave.split(":")[0]}`;
-  const action = code === "temperatura" ? signTemperatureWorkflowAction : code === "oleo" ? signOilWorkflowAction : groupWorkflowAction;
+  const action = code === "temperatura" ? signTemperatureWorkflowAction : groupWorkflowAction;
   return <div className="mt-4 space-y-4">
     <p className="text-sm">As assinaturas recentes validam somente os registros e versões indicados. Uma assinatura anterior do dia não valida alterações posteriores.</p>
     <ul className="text-sm">{units.map(unit => <li key={unit.id}>{label(unit)}: {unit.estado === "REABERTO" ? "Revisão pendente — nova assinatura necessária" : unit.assinaturaVigente ? `Assinado por ${unit.assinaturaVigente.usuarioNome}` : unit.preenchimentoCompleto ? "Aguardando assinatura" : "Preenchimento em andamento"}</li>)}</ul>
     {props.canSign && eligible.length > 0 && <form action={action} className="space-y-3 rounded-lg border p-4">
       <input type="hidden" name="modulo" value={code}/><input type="hidden" name="returnTo" value={props.returnTo}/>
-      <input type="hidden" name="mecanismo" value={code === "temperatura" || code === "oleo" ? "diaria" : "DIARIA"}/>
+      <input type="hidden" name="mecanismo" value={code === "temperatura" ? "diaria" : "DIARIA"}/>
       <p className="font-medium">Assinatura do dia — registros salvos</p>
       {eligible.map(unit=><label className="block text-sm" key={unit.id}><input type="checkbox" name="unidade" value={`${unit.id}:${unit.versao}`} defaultChecked/> {label(unit)} — versão {unit.versao}</label>)}
       <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
       <button className="btn-primary">Assinar dia</button>
     </form>}
-    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/>{code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? props.canSign&&!legacySignature&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p> : <SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/>}</div>}
+    {legacyCount > 0 && <div><p className="text-sm">A revisão abaixo abrange somente os registros anteriores sem vínculo de versão.</p><SupervisorSignatureStatus signature={legacySignature}/>{code === "temperatura" || code === "rastreabilidade" ? props.canSign&&!legacySignature&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p> : <SignDayForm {...props} alreadySigned={Boolean(legacySignature)}/>}</div>}
   </div>;
 }

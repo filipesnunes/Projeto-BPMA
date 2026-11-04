@@ -46,7 +46,7 @@ export async function getItens(activeOnly = false) {
         }
       }
     },
-    orderBy: [{ ativo: "desc" }, { ordem: "asc" }, { nome: "asc" }]
+    orderBy: [{ ativo: "desc" }, { ordem: "asc" }, { nome: "asc" }, {id:"asc"}]
   });
 }
 
@@ -59,7 +59,7 @@ export async function getItensPorServico(servicoId: number, activeOnly = true) {
     include: {
       item: true
     },
-    orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }]
+    orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }, { item: { id: "asc" } }]
   });
 }
 

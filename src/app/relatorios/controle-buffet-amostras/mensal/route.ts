@@ -1,4 +1,3 @@
-import { renderExecutionReportNotes } from "@/lib/execution-report-notes";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -45,6 +44,8 @@ type BuffetServiceTable = {
   key: string;
   title: string;
   rows: BuffetReportRow[];
+  situation?: string;
+  emptyMessage?: string;
 };
 
 type MonthlyBuffetReport = {
@@ -62,7 +63,7 @@ type MonthlyBuffetReport = {
 
 type BuffetRecord = Awaited<
   ReturnType<typeof getMonthlyBuffetRecords>
->[number];
+>["records"][number];
 
 function parseMonth(value: string | null): number | null {
   const parsed = Number.parseInt(value ?? "", 10);
@@ -187,7 +188,6 @@ function buildServiceTables(
   >();
 
   for (const record of records) {
-    if (record.status === StatusItemBuffetAmostra.NAO_SERVIDO) continue;
     const dataInput = formatAppDateInput(record.data);
     const key = `${dataInput}:${record.servicoId}`;
     const group = groupsByKey.get(key) ?? {
@@ -216,8 +216,9 @@ function buildServiceTables(
     .map(([key, group]) => ({
       key,
       title: group.title,
+      situation: group.records.some(r=>r.status==="PENDENTE"||r.fluxo&&!r.fluxo.preenchimentoCompleto)?"Preenchimento parcial — contém itens pendentes; valores salvos não significam conclusão do serviço.":"Itens persistidos resolvidos. A assinatura do serviço é uma etapa independente.",
       rows: group.records.sort(compareBuffetRecords).map((record) => ({
-        produto: getProductLabel(record),
+        produto: getProductLabel(record)+(record.status==="PENDENTE"?" — Pendente de preenchimento":""),
         temperaturaEquipamento: formatRecordTemperature(record, "equipamento"),
         temperaturaProduto: formatRecordTemperature(record, "produto"),
         acaoCorretiva:
@@ -225,7 +226,7 @@ function buildServiceTables(
             ? "-"
             : valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelNome),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
       }))
     }));
 }
@@ -487,13 +488,14 @@ function renderServiceTable(service: BuffetServiceTable, report: MonthlyBuffetRe
       : `
         <tr>
           <td colspan="6" class="empty-message">
-            Nenhum registro encontrado para o período.
+            ${escapeHtml(service.emptyMessage??"Nenhum registro encontrado para o período.")}
           </td>
         </tr>`;
 
   return `
     <section class="service-block">
       <h2 class="service-title">${escapeHtml(service.title)}</h2>
+      ${service.situation?`<p>${escapeHtml(service.situation)}</p>`:""}
       <table class="service-table">
         <thead>
           <tr>
@@ -556,15 +558,8 @@ function renderReportDocument(report: MonthlyBuffetReport): string {
 async function getMonthlyBuffetRecords(month: number, year: number) {
   const monthRange = getAppMonthDateRange(month, year);
 
-  return prisma.controleBuffetAmostraRegistro.findMany({
-    where: {
-      data: {
-        gte: monthRange.start,
-        lte: monthRange.end
-      }
-    },
-    select: {
-      fluxo: {select:{estado:true,assinaturaVigente:{select:{usuarioNome:true}}}},
+  const select={
+      fluxo: {select:{estado:true,preenchimentoCompleto:true,assinaturaVigente:{select:{usuarioNome:true}}}},
       horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, createdAt: true,
       id: true,
       data: true,
@@ -591,15 +586,17 @@ async function getMonthlyBuffetRecords(month: number, year: number) {
           ordem: true
         }
       }
-    },
-    orderBy: [
-      { data: "asc" },
-      { servico: { ordem: "asc" } },
-      { servico: { nome: "asc" } },
-      { dataHoraRegistro: "asc" },
-      { id: "asc" }
-    ]
-  });
+    } satisfies import("@prisma/client").Prisma.ControleBuffetAmostraRegistroSelect;
+  const [legacy,flows]=await Promise.all([
+    prisma.controleBuffetAmostraRegistro.findMany({where:{data:{gte:monthRange.start,lte:monthRange.end},fluxoId:null},select}),
+    prisma.fluxoOperacional.findMany({where:{modulo:"amostras",excluidoEm:null,dataReferencia:{gte:monthRange.start,lte:monthRange.end}},select:{chave:true,dataReferencia:true,amostras:{where:{excluidoEm:null},select},versoes:{orderBy:{versao:"desc"},take:1,select:{rascunho:true}}}})
+  ]);
+  // Nested workflow reads expose saved partial items without changing the shared
+  // completeness filter used by other modules. Draft-only fields never become measurements.
+  const records=[...new Map([...legacy,...flows.flatMap(f=>f.amostras)].map(r=>[r.id,r])).values()];
+  const draftFlows=flows.filter(f=>!f.amostras.length&&Object.values((f.versoes[0]?.rascunho as {rows?:Record<string,Record<string,string>>})?.rows??{}).some(row=>Object.entries(row).some(([k,v])=>["naoServido","horarioNaoInformado"].includes(k)?v==="true":Boolean(v))));
+  const services=draftFlows.length?await prisma.controleBuffetAmostraServico.findMany({where:{id:{in:draftFlows.map(f=>Number(f.chave.split(":")[0]))}},select:{id:true,nome:true}}):[];
+  return{records,drafts:draftFlows.map(f=>({key:f.chave,title:(services.find(s=>s.id===Number(f.chave.split(":")[0]))?.nome??"Serviço")+" — "+formatAppDate(f.dataReferencia),rows:[],situation:"Rascunho salvo — serviço não concluído.",emptyMessage:"Existem campos somente no rascunho. Nenhuma aferição foi concluída para esses itens; os valores digitados continuam disponíveis no Histórico."} satisfies BuffetServiceTable))};
 }
 
 export async function GET(request: NextRequest) {
@@ -618,7 +615,7 @@ export async function GET(request: NextRequest) {
   const monthRange = getAppMonthDateRange(month, year);
   const generatedAt = getAppNow();
 
-  const [records, dailySignatures, genericMonthlyClosure, legacyMonthlyClosure] = await Promise.all([
+  const [content, dailySignatures, genericMonthlyClosure, legacyMonthlyClosure] = await Promise.all([
     getMonthlyBuffetRecords(month, year),
     prisma.assinaturaDiariaModulo.findMany({
       where: {
@@ -647,6 +644,7 @@ export async function GET(request: NextRequest) {
     })
   ]);
 
+  const records=content.records;
   const legacySigned =
     legacyMonthlyClosure?.status === StatusFechamentoBuffetAmostra.ASSINADO;
   const closureResponsible =
@@ -675,13 +673,13 @@ export async function GET(request: NextRequest) {
     logoLargura: identity.logoLargura,
     logoAlturaMaxima: identity.logoAlturaMaxima,
     emittedAt: formatAppDateTime(generatedAt),
-    services: buildServiceTables(records, supervisorByDate),
+    services: [...buildServiceTables(records, supervisorByDate),...content.drafts],
     closureResponsible,
     closureDate,
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report).replace("</body>", renderExecutionReportNotes(records) + "</body>"), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

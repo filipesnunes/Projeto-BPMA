@@ -18,7 +18,7 @@ import {
   type StatusServicoBuffet
 } from "./utils";
 
-type BuffetServiceRecord = {
+export type BuffetServiceRecord = {
   id: number;
   data: Date;
   servicoId: number;
@@ -85,6 +85,9 @@ export type BuffetServiceHistoryGroup = {
   itensNaoServidos: number;
   itensComAcaoCorretiva: number;
   items: BuffetServiceHistoryItem[];
+  workflowId?: string;
+  workflowState?: string;
+  itensPendentes?: number;
 };
 
 export type BuffetServiceHistoryTotals = {
@@ -255,6 +258,7 @@ export function buildBuffetServiceHistoryGroups(
       itensNaoServidos: group.itensNaoServidos,
       itensIniciados
     });
+    group.itensPendentes = Math.max(group.totalItens-group.itensPreenchidos-group.itensNaoServidos,0);
   }
 
   return groups;

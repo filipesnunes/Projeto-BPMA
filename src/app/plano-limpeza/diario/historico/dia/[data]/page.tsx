@@ -1,14 +1,16 @@
+import {canSignCleaningReview} from "@/lib/signature-authorization";
+import {CleaningSupervisorForm} from "@/app/plano-limpeza/supervisor-signature-form";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
 
-import { SignatureContextCard } from "@/components/auth/signature-context-card";
+
 import { getCurrentUser } from "@/lib/auth-session";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { getRoleLabel } from "@/lib/rbac";
 
-import { bulkSignDailyByDateAction } from "@/app/plano-limpeza/actions";
+
+
 import { StatusBadge } from "@/app/plano-limpeza/status-badge";
 import {
   consolidateDailyRecordsByDay,
@@ -17,8 +19,8 @@ import {
 import {
   formatDateDisplay,
   formatDateInput,
-  formatDateTimeDisplay,
-  getCurrentSystemDateTime,
+
+
   getMonthYear,
   getTurnoLabel,
   parseDateInput
@@ -26,9 +28,6 @@ import {
 
 const CARD_CLASS =
   "bpma-card";
-const INPUT_CLASS =
-  "bpma-input";
-
 type Params = { data: string };
 type PageProps = { params: Promise<Params>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -43,12 +42,9 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
   searchParams
 }: PageProps) {
   const authUser = await getCurrentUser();
-  const responsavelLogado = authUser?.nomeCompleto ?? "Usuário logado";
-  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
   const canBulkSign = authUser
-    ? hasPermission(authUser, "modulo.limpeza_diaria.assinar_todos")
+    ? canSignCleaningReview(authUser,"modulo.limpeza_diaria.assinar_historico") && hasPermission(authUser, "modulo.limpeza_diaria.assinar_todos")
     : false;
-  const now = getCurrentSystemDateTime();
 
   const { data } = await params;
   const query = await searchParams;
@@ -114,12 +110,6 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
     (item) =>
       item.status === StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR &&
       item.assinaturaResponsavel.trim() &&
-      !item.assinaturaSupervisor.trim()
-  ).length;
-  const pendentesSemResponsavel = registros.filter(
-    (item) =>
-      item.status === StatusPlanoLimpeza.PENDENTE &&
-      !item.assinaturaResponsavel.trim() &&
       !item.assinaturaSupervisor.trim()
   ).length;
   const possuiPendencias = aguardandoSupervisor > 0;
@@ -208,53 +198,7 @@ export default async function PlanoLimpezaDiarioHistoricoDiaPage({
             Não há pendências elegíveis para assinatura retroativa neste dia.
           </p>
         ) : (
-          <form action={bulkSignDailyByDateAction} className="grid gap-4 md:grid-cols-2">
-            <input type="hidden" name="data" value={normalizedDate} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-
-            <div className="md:col-span-2">
-              <SignatureContextCard
-                nomeUsuario={responsavelLogado}
-                perfil={perfilLogado}
-                dataHora={formatDateTimeDisplay(now)}
-              />
-            </div>
-
-            <label className="text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
-              Confirme sua Senha *
-              <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
-            </label>
-
-            <label className="text-sm text-slate-700 dark:text-slate-200 md:col-span-2">
-              Observação (opcional)
-              <textarea
-                name="observacao"
-                rows={3}
-                className={INPUT_CLASS}
-                placeholder="Observação da supervisão retroativa, se houver."
-              />
-            </label>
-
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800 md:col-span-2">
-              <p>
-                Pendências aguardando supervisor: <strong>{aguardandoSupervisor}</strong>
-              </p>
-              <p>
-                Pendências sem responsável: <strong>{pendentesSemResponsavel}</strong>
-              </p>
-              {pendentesSemResponsavel > 0 ? (
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Registros sem responsável precisam ser assinados primeiro por quem executou a limpeza.
-                </p>
-              ) : null}
-            </div>
-
-            <div className="md:col-span-2">
-              <button type="submit" className="btn-primary">
-                Assinar Pendências do Dia
-              </button>
-            </div>
-          </form>
+          <CleaningSupervisorForm module="limpeza_diaria" date={dateDb} returnTo={returnTo}/>
         )}
       </section>
 

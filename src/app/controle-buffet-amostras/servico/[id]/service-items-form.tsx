@@ -1,7 +1,7 @@
 "use client";
 import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 
-import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type {
@@ -62,6 +62,7 @@ export type ServiceItemFormRow = {
   justificativaHorario?: string | null;
   assinaturaResumo: string | null;
   bloqueado: boolean;
+  pendingReason?: string;
 };
 
 type ServiceItemsFormProps = {
@@ -217,7 +218,8 @@ export function ServiceItemsForm({
   inputClassName
 }: ServiceItemsFormProps) {
   const router = useRouter();
-  const [state, formAction] = useActionState(saveServicoItemsStateAction, INITIAL_STATE);
+  const [state, formAction, isSaving] = useActionState(saveServicoItemsStateAction, INITIAL_STATE);
+  const changedFields = useRef(new Set<string>());
   const formRef = useRef<HTMLFormElement | null>(null);
   const confirmPendingInputRef = useRef<HTMLInputElement | null>(null);
   const bypassConfirmationRef = useRef(false);
@@ -346,7 +348,7 @@ export function ServiceItemsForm({
       if (temperaturaAmbiente) {
         if (
           acaoCorretiva &&
-          !acoesCorretivas.some((option) => option.nome === acaoCorretiva)
+          !acoesCorretivas.some((option) => option.nome === acaoCorretiva) && acaoCorretiva !== row.acaoCorretiva
         ) {
           missingFields.push("ação corretiva válida");
         }
@@ -380,7 +382,7 @@ export function ServiceItemsForm({
 
       if (
         acaoCorretiva &&
-        !acoesCorretivas.some((option) => option.nome === acaoCorretiva)
+        !acoesCorretivas.some((option) => option.nome === acaoCorretiva) && acaoCorretiva !== row.acaoCorretiva
       ) {
         missingFields.push("ação corretiva válida");
       }
@@ -399,9 +401,15 @@ export function ServiceItemsForm({
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    if(workflowVersion!==undefined)return;
-    if (bypassConfirmationRef.current) {
+    event.preventDefault();
+    if(isSaving)return;
+    const form=event.currentTarget;
+    form.querySelectorAll('input[data-row-change]').forEach(input=>input.remove());
+    for(const name of changedFields.current){const hidden=document.createElement('input');hidden.type='hidden';hidden.name='changedField';hidden.value=name;hidden.dataset.rowChange='true';form.appendChild(hidden);}
+    if (workflowVersion!==undefined || bypassConfirmationRef.current) {
       bypassConfirmationRef.current = false;
+      const data=new FormData(form);
+      startTransition(()=>formAction(data));
       return;
     }
 
@@ -413,6 +421,8 @@ export function ServiceItemsForm({
     if (issues.length === 0) {
       setPendingIssues([]);
       setHighlightedRows(new Set());
+      const data=new FormData(form);
+      startTransition(()=>formAction(data));
       return;
     }
 
@@ -483,7 +493,8 @@ export function ServiceItemsForm({
         />
       </label>
 
-      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={workflowVersion===undefined?undefined:handleSubmit} noValidate={workflowVersion!==undefined}>{workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
+      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={handleSubmit} aria-busy={isSaving} onChangeCapture={event=>{const target=event.target as HTMLInputElement;if(/^(item|extra)-\d+-/.test(target.name))changedFields.current.add(target.name);}} noValidate={workflowVersion!==undefined}>{workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
+        <input type="hidden" name="rowIntentVersion" value="1"/>
         <input type="hidden" name="servicoId" value={String(servicoId)} />
         <input type="hidden" name="data" value={dataInput} />
         <input type="hidden" name="returnTo" value={returnTo} />
@@ -574,12 +585,11 @@ export function ServiceItemsForm({
                 <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                   <input
                     type="checkbox"
+                    name={`${row.rowKey}-naoServidoToggle`}
                     checked={naoServido}
                     disabled={row.bloqueado}
                     className="h-5 w-5"
-                    onChange={(event) =>
-                      setRowNonServed(row.rowKey, event.target.checked)
-                    }
+                    onChange={(event) => {changedFields.current.add(`${row.rowKey}-naoServido`);setRowNonServed(row.rowKey, event.target.checked);}}
                   />
                   <span>Não servido</span>
                 </label>
@@ -693,6 +703,7 @@ export function ServiceItemsForm({
                   <p>
                     Status: <ItemStatusBadge status={row.status} />
                   </p>
+                  {row.status==="PENDENTE"&&row.pendingReason&&<p className="sm:col-span-2">Pendente: {row.pendingReason}.</p>}
                   <p>
                     Assinatura: <strong>{row.assinaturaResumo ?? "-"}</strong>
                   </p>
@@ -703,7 +714,7 @@ export function ServiceItemsForm({
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <SubmitItemsButton disabled={!hasEditableRows} />
+          <SubmitItemsButton disabled={!hasEditableRows||isSaving} />
         </div>
       </form>
 

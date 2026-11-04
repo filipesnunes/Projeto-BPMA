@@ -1,3 +1,7 @@
+import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
+import { TemperatureSavedRecordPage } from "./saved-record-page";
+import { legacyTemperatureId } from "./legacy-workflow";
+import { currentTemperatureMonth, canReadTemperatureDate } from "./correction-policy";
 import { randomUUID } from "node:crypto";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -40,7 +44,9 @@ export async function TemperatureWorkflowList({ query, history = false }: { quer
   const expected = history ? [] : equipment.flatMap(item => (["MANHA", "TARDE"] as const).filter(shift =>
     (shift === "MANHA" ? item.turnoManha : item.turnoTarde) && !known.has(`${item.id}:${today}:${shift}`) && !legacy.some(record => record.equipamento === item.nome && record.turno === shift)
   ).map(shift => ({ key: `${item.id}:${today}:${shift}`, name: item.nome, shift })));
-  const eligible = flows.filter(unit => unit.preenchimentoCompleto && ["COMPLETO", "REABERTO"].includes(unit.estado));
+  const candidates=flows.filter(unit=>unit.preenchimentoCompleto&&["COMPLETO","REABERTO"].includes(unit.estado));
+  const checks=await Promise.all(candidates.map(unit=>workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_dia")));
+  const eligible=candidates.filter((_,index)=>checks[index].allowed);
   return <div className="space-y-6">
     <header className="bpma-card"><h1 className="text-xl font-semibold">{history ? "Histórico — Temperatura dos Equipamentos" : "Controle de Temperatura dos Equipamentos"}</h1>
       <p>{history ? "Preenchimentos, aferições e validações por data." : "Pendências de hoje e aferições reabertas aguardando nova assinatura."}</p>
@@ -73,14 +79,9 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
   const user = await workflowUser(); const today = formatAppDateInput(getAppDate());
   let key = first(query.chave);
   if (!key && first(query.equipamento) && first(query.data) && first(query.turno)) key = `${first(query.equipamento)}:${first(query.data)}:${first(query.turno)}`;
-  if (!key) {
-    const options = await prisma.controleTemperaturaEquipamentoOpcao.findMany({ where: { tipo: "EQUIPAMENTO", ativo: true }, orderBy: { nome: "asc" } });
-    return <section className="bpma-card"><h1 className="text-xl">Selecionar aferição</h1><form method="get" className="grid gap-4">
-      <label>Equipamento<select className="bpma-input" name="equipamento" required>{options.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
-      <label>Data<input className="bpma-input" name="data" type="date" defaultValue={today} max={today} required /></label>
-      <label>Turno<select className="bpma-input" name="turno"><option value="MANHA">Manhã</option><option value="TARDE">Tarde</option></select></label><button className="btn-primary">Abrir preenchimento</button><Link href={base}>Cancelar</Link>
-    </form></section>;
-  }
+  if (!key) return redirect(`${base}?new=1`);
+  const legacyId=legacyTemperatureId(key);
+  if(legacyId)return TemperatureSavedRecordPage({id:legacyId,query});
   let identity: ReturnType<typeof parseTemperatureKey>;
   try { identity = parseTemperatureKey(key); } catch { return <p>Selecione equipamento, data e turno válidos.</p>; }
   const [unit, equipment, closedMonth] = await Promise.all([
@@ -88,6 +89,7 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
     prisma.controleTemperaturaEquipamentoOpcao.findUnique({ where: { id: identity.equipmentId } }),
     isOperationalMonthClosed("temperatura", identity.date.getUTCMonth()+1, identity.date.getUTCFullYear())
   ]);
+  if (unit?.temperatura && !unit.excluidoEm) return TemperatureSavedRecordPage({id:unit.temperatura.id,query});
   if (!equipment) return <p>Registro indisponível.</p>;
   if (unit?.excluidoEm) return <p>Registro excluído com auditoria. <Link href={`${base}/fluxo?chave=${encodeURIComponent(key.split(":").slice(0,3).join(":") + ":" + randomUUID())}`}>Criar nova aferição</Link></p>;
   if (!unit) {
@@ -95,12 +97,12 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
     const active = await prisma.fluxoOperacional.findFirst({ where: { modulo: "temperatura", excluidoEm: null, OR: [{ chave: identityKey }, { chave: { startsWith: identityKey + ":" } }] } });
     if (active) redirect(`${base}/fluxo?chave=${encodeURIComponent(active.chave)}`);
   }
-  if (formatAppDateInput(identity.date) < today && unit?.estado !== "REABERTO" && !hasPermission(user,"modulo.temperatura.acessar_historico") && !hasPermission(user,"modulo.temperatura.editar_historico")) return <p>Sem permissão de consulta a esta data.</p>;
+  if (!canReadTemperatureDate(user,identity.date)) return <p>Sem permissão de consulta a esta data.</p>;
   const legacy = !unit && await prisma.controleTemperaturaEquipamento.findFirst({ where: { equipamento: equipment.nome, data: identity.date, turno: identity.shift, fluxoId: null } });
   if (legacy) return <section className="bpma-card">Esta aferição é legada e foi preservada. <Link href={`${base}/historico/legado?dia=${formatAppDateInput(identity.date)}`}>Consultar histórico legado</Link></section>;
   let canEdit = !closedMonth;
   try { assertWorkflowEdit({ user, module: "temperatura", date: identity.date, today: getAppDate(), creating: !unit }); } catch { canEdit = false; }
-  const canReopen = !closedMonth && hasPermission(user,"modulo.temperatura.reabrir_registro");
+  const canReopen = !closedMonth && currentTemperatureMonth(identity.date) && hasPermission(user,"modulo.temperatura.reabrir_registro");
   const draft = (unit?.versoes[0]?.rascunho ?? {}) as TemperatureDraft;
   const formalClosed = unit?.estado === "FECHADO";
   const confirm = formalClosed && first(query.confirmar) === "reabrir";
@@ -108,7 +110,7 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
   const url = `${base}/fluxo?chave=${encodeURIComponent(key)}`;
   const hidden = <><input type="hidden" name="chave" value={key} /><input type="hidden" name="id" value={unit?.id ?? ""} /><input type="hidden" name="versao" value={unit?.versao ?? 0} /></>;
   return <div className="space-y-5"><header className="bpma-card"><h1 className="text-xl font-semibold">{equipment.nome} — {formatAppDateInput(identity.date)} — {identity.shift}</h1>
-    <p>{unit?.estado ?? "PENDENTE"}{unit?.estado === "REABERTO" ? " — Nova assinatura obrigatória" : ""}</p><Link href={`${base}/historico?data=${formatAppDateInput(identity.date)}`}>Histórico</Link></header>
+    <p>{unit?.estado === "REABERTO" ? "Revisão pendente — nova assinatura necessária" : unit?.assinaturaVigente ? "Registro assinado" : "Preenchimento salvo"}</p><Link href={`${base}/historico?data=${formatAppDateInput(identity.date)}`}>Histórico</Link></header>
     <Feedback query={query} />
     {closedMonth && <p className="bpma-card">Competência fechada. Disponível somente para consulta.</p>}
     {formalClosed && <section className="bpma-card"><p>Validado por {unit.assinaturaVigente?.usuarioNome}. A assinatura anterior fica preservada no histórico.</p>
@@ -130,10 +132,10 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
         <ImageUploadField name="fotoDesvio" label="Foto da evidência" existingImageDataUrl={draft.fotoBase64 ? `data:${draft.fotoMimeType};base64,${draft.fotoBase64}` : draft.fotoUrl || null} existingFileName={draft.fotoNome || null} maxBytes={1024*1024} compressBeforeUpload inputClassName="bpma-input" />
         <p className="md:col-span-2">A avaliação sanitária e a ação corretiva são calculadas pelas regras do equipamento ao concluir. Inativo e Manutenção dispensam aferição numérica.</p>
         {unit?.temperatura && unit.preenchimentoCompleto && <p className="md:col-span-2">{unit.temperatura.status} — {unit.temperatura.acaoCorretiva ?? "Aferição não aplicável"}</p>}
-        <div className="md:col-span-2 flex gap-3"><button className="btn-secondary" name="intent" value="draft" formNoValidate>Salvar preenchimento</button><button className="btn-primary" name="intent" value="complete">Concluir preenchimento</button></div>
+        <div className="md:col-span-2 flex gap-3"><button className="btn-primary" name="intent" value="draft" formNoValidate>Salvar Registro</button></div>
       </fieldset>
     </form>
-    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && hasPermission(user,"modulo.temperatura.assinar_historico") && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
+    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && (await workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_historico")).allowed && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
     {unit?.temperatura && unit.preenchimentoCompleto && !formalClosed && !closedMonth && ["DEV","GERENTE","NUTRICIONISTA"].includes(user.perfil) && hasPermission(user,"modulo.temperatura.excluir_registro") && <details className="bpma-card"><summary>Excluir aferição</summary><form action={deleteTemperatureWorkflowAction}>{hidden}<input type="hidden" name="registroId" value={unit.temperatura.id} /><p>Excluir apenas esta aferição de {equipment.nome}, {formatAppDateInput(identity.date)}, {identity.shift}.</p><textarea className="bpma-input" name="justificativa" required maxLength={4000} placeholder="Justificativa obrigatória" /><button className="btn-secondary">Confirmar exclusão</button></form></details>}
     {unit && <section className="bpma-card"><h2>Histórico da aferição</h2><ol>{unit.eventos.map(event => <li key={event.id}>{event.criadoEm.toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})} — {event.operacao} — {event.usuarioNome} — versão {event.versaoNova}{event.justificativa ? ` — ${event.justificativa}` : ""}</li>)}</ol></section>}
   </div>;

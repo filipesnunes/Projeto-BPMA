@@ -89,7 +89,7 @@ const reopen = (unit, extra = {}) => service.reopenWorkflow({ actor, module: 'te
 (async () => {
   reset();
   for (const role of ['GERENTE', 'NUTRICIONISTA', 'COLABORADOR']) {
-    assert.equal(permissions.hasPermission({perfil: role}, 'modulo.temperatura.reabrir_registro'), false);
+    assert.equal(permissions.hasPermission({perfil: role}, 'modulo.temperatura.reabrir_registro'), role === 'NUTRICIONISTA');
   }
   assert.equal(policy.stateAfterSave('COMPLETO', false), 'PENDENTE');
   assert.equal(policy.stateAfterSave('REABERTO', true), 'REABERTO');

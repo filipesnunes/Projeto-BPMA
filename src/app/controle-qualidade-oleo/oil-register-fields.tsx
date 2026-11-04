@@ -3,6 +3,7 @@
 import { StatusQualidadeOleo } from "@prisma/client";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NO_OIL_STRIP } from "./strip-choice";
 
 import {
   getStatusLabel,
@@ -96,8 +97,6 @@ export function OilRegisterFields({
             className={semUtilizacao ? "btn-primary" : "btn-secondary"}
             onClick={() => {
               setSemUtilizacao(true);
-              setFitaSelecionada("");
-              setTemperaturaInput("");
             }}
           >
             Sem Utilização no Período
@@ -110,7 +109,11 @@ export function OilRegisterFields({
         <legend className="text-sm text-slate-700 dark:text-slate-200">% da Fita do Óleo (opcional)</legend>
         <p className="mt-1 text-xs text-slate-500">Teste da fita previsto a cada 3 dias. A temperatura pode ser registrada diariamente sem fita.</p>
         {previsaoFita ? <p className="mt-1 text-xs text-slate-500">{previsaoFita}</p> : null}
-        <button type="button" disabled={semUtilizacao} className="btn-secondary mt-2" onClick={() => setFitaSelecionada("")}>Sem aferição da fita</button>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="radio" name="fitaOleo" value={NO_OIL_STRIP} disabled={semUtilizacao} required={!semUtilizacao}
+            checked={fitaSelecionada === NO_OIL_STRIP} onChange={() => setFitaSelecionada(NO_OIL_STRIP)} />
+          Sem aferição da fita
+        </label>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {options.map((option) => {
             const isSelected = fitaSelecionada === option.rotulo;
@@ -129,6 +132,7 @@ export function OilRegisterFields({
                   name="fitaOleo"
                   value={option.rotulo}
                   disabled={semUtilizacao}
+                  required={!semUtilizacao}
                   checked={isSelected}
                   onChange={(event) => {
                     setFitaSelecionada(event.target.value);
@@ -208,7 +212,7 @@ export function OilRegisterFields({
           Status Automático
         </p>
         <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-          {statusAutomatico || "Sem aferição da fita"}
+          {statusAutomatico || (fitaSelecionada === NO_OIL_STRIP ? "Sem aferição da fita" : "Selecione a fita ou confirme Sem aferição")}
         </p>
       </div>
 
@@ -235,7 +239,7 @@ export function OilRegisterFields({
           </div>
         ) : (
           <p className="text-sm text-slate-800 dark:text-slate-100">
-            Sem aferição da fita neste registro.
+            {fitaSelecionada === NO_OIL_STRIP ? "Sem aferição da fita neste registro." : "Nenhuma opção confirmada."}
           </p>
         )}
       </div>

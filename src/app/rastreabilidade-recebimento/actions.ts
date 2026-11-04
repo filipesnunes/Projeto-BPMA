@@ -588,7 +588,10 @@ export async function deleteItemAction(formData: FormData) {
 export async function deleteNoteAction(formData: FormData) {
  const returnTo = getReturnToPath(formData);
  try {
- await deleteOperationalRecord({ user: await getCurrentUserForAction(), target: "nota", id: Number(getInputValue(formData,"notaId")), reason: getInputValue(formData,"justificativaExclusao") });
+ const actor = await getCurrentUserForAction();
+ const note = await prisma.rastreabilidadeRecebimentoNota.findUnique({where:{id:Number(getInputValue(formData,"notaId"))}});
+ if (note?.fluxoId) redirect(`/rastreabilidade-recebimento/nota/${note.id}`);
+ await deleteOperationalRecord({ user: actor, target: "nota", id: Number(getInputValue(formData,"notaId")), reason: getInputValue(formData,"justificativaExclusao") });
  revalidateModulePaths();
  redirectWithFeedback(returnTo,"success","Registro excluído com auditoria.");
  } catch(error) { rethrowIfRedirectError(error); redirectWithFeedback(returnTo,"error",getErrorMessage(error)); }

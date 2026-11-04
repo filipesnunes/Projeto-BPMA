@@ -1,4 +1,8 @@
 "use server";
+import {signCleaningReview} from "./signature-policy";
+import {canSignCleaningReview} from "@/lib/signature-authorization";
+import {refreshWorkflowActor} from "@/app/controle-temperatura-equipamentos/workflow-adapter";
+import {verifyPassword} from "@/lib/password";
 import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 
 import { closeOperationalMonth } from "@/lib/monthly-periods";
@@ -43,7 +47,7 @@ import {
   parsePositiveInt
 } from "./utils";
 import {
-  canSignWeeklyAreaSupervisor,
+
   canSignHistoricalWeeklyItems,
   canSignWeeklyItems,
   isHistoricalWeeklySignature,
@@ -237,20 +241,6 @@ function ensureNonEmpty(value: string, label: string) {
   }
 }
 
-function isSameResponsibleUser(
-  record: {
-    assinaturaResponsavel: string;
-    assinaturaResponsavelUsuarioId?: number | null;
-  },
-  actor: ActionUser
-): boolean {
-  if (record.assinaturaResponsavelUsuarioId !== null && record.assinaturaResponsavelUsuarioId !== undefined) {
-    return record.assinaturaResponsavelUsuarioId === actor.id;
-  }
-
-  return record.assinaturaResponsavel.trim() === actor.nomeCompleto.trim();
-}
-
 function ensureCanRegularizeDailyResponsible(actor: ActionUser) {
   if (
     hasPermission(actor, "modulo.limpeza_diaria.assinar_historico") ||
@@ -283,112 +273,37 @@ async function ensureWeeklyAreaName(value: string): Promise<string> {
 }
 
 export async function updateDailyRecordAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, DIARIO_PATH);
-  const successReturnToRaw = getInputValue(formData, "successReturnTo");
-  const successReturnTo = successReturnToRaw.startsWith(MODULE_PATH)
-    ? successReturnToRaw
-    : returnTo;
-
-  try {
-    const actor = await getCurrentUserForAction();
-    const id = parsePositiveInt(getInputValue(formData, "id"));
-    if (!id) {
-      throw new Error("Registro diário inválido para edição.");
-    }
-
-    const existing = await prisma.planoLimpezaDiarioRegistro.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      throw new Error("Registro diário não encontrado.");
-    }
-
-    const period = getMonthYear(existing.data);
-    if (await isMonthSigned(TipoPlanoLimpeza.DIARIO, period.mes, period.ano)) {
-      throw new Error("Este registro pertence a um período fechado e não pode ser alterado.");
-    }
-
-    const etapa = getInputValue(formData, "etapa");
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const observacaoAssinatura = getInputValue(formData, "observacaoAssinatura");
-
-    const etapaPermitida = getDailySignStage(existing);
-    if (!etapaPermitida) {
-      throw new Error("Este checklist não está disponível para nova assinatura.");
-    }
-
-    if (etapa !== etapaPermitida) {
-      throw new Error("A etapa de assinatura informada é inválida para este checklist.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    if (etapaPermitida === "responsavel") {
-      ensureCanSignResponsible(actor);
-      const signedAt = getCurrentSystemDateTime();
-
-      await prisma.planoLimpezaDiarioRegistro.update({
-        where: { id },
-        data: {
-          ...readExecutionTime(formData, existing.data),
-          assinaturaResponsavel: actor.nomeCompleto,
-          assinaturaResponsavelUsuarioId: actor.id,
-          assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
-          assinaturaResponsavelPerfil: actor.perfil,
-          assinaturaResponsavelDataHora: signedAt,
-          status: StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,
-          observacaoResponsavel: observacaoAssinatura || null
-        }
-      });
-      await createSignatureLog({
-        user: actor,
-        tipo: "RESPONSAVEL",
-        modulo: "plano-limpeza/diario",
-        referenciaId: String(id),
-        observacao: observacaoAssinatura || null
-      });
-    } else {
-      ensurePermission(
-        actor,
-        "modulo.limpeza_diaria.assinar_historico",
-        "Seu perfil não pode assinar a supervisão do plano diário."
-      );
-      if (!existing.assinaturaResponsavel) {
-        throw new Error("A assinatura do responsável é obrigatória antes da assinatura do supervisor.");
+  const returnTo=getReturnToPath(formData,DIARIO_PATH);
+  try{
+    const authenticated=await getCurrentUserForAction(),id=parsePositiveInt(getInputValue(formData,"id"));
+    if(!id)throw Error("Registro diário inválido.");
+    await prisma.$transaction(async tx=>{
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('limpeza_diaria'),17326)`;
+      const actor=await refreshWorkflowActor(tx,authenticated);
+      ensurePermission(actor,"modulo.limpeza_diaria.acessar");
+      const record=await tx.planoLimpezaDiarioRegistro.findUniqueOrThrow({where:{id,excluidoEm:null}});
+      assertProcedureDate(record.data);
+      if(await isOperationalMonthClosed("limpeza_diaria",record.data.getUTCMonth()+1,record.data.getUTCFullYear(),tx))throw Error("A competência está fechada.");
+      if(getInputValue(formData,"originalUpdatedAt")!==record.updatedAt.toISOString())throw Error("O checklist mudou. Recarregue antes de assinar.");
+      const stage=getDailySignStage(record);
+      if(!stage||getInputValue(formData,"etapa")!==stage)throw Error("A etapa não está disponível para assinatura.");
+      if(stage==="responsavel")ensureCanSignResponsible(actor);
+      else{
+        if(!canSignCleaningReview(actor,"modulo.limpeza_diaria.assinar_historico"))throw Error("Sem autorização para supervisão operacional.");
+        if(!record.assinaturaResponsavelUsuarioId)throw Error("Executor sem identificação comprovada. Solicite regularização autorizada.");
+        if(record.assinaturaResponsavelUsuarioId===actor.id)throw Error(SELF_SUPERVISION_MESSAGE);
       }
-      if (isSameResponsibleUser(existing, actor)) {
-        throw new Error(SELF_SUPERVISION_MESSAGE);
-      }
-      const signedAt = getCurrentSystemDateTime();
-
-      await prisma.planoLimpezaDiarioRegistro.update({
-        where: { id },
-        data: {
-          assinaturaSupervisor: actor.nomeCompleto,
-          assinaturaSupervisorUsuarioId: actor.id,
-          assinaturaSupervisorNomeUsuario: actor.nomeUsuario,
-          assinaturaSupervisorPerfil: actor.perfil,
-          assinaturaSupervisorDataHora: signedAt,
-          status: StatusPlanoLimpeza.CONCLUIDO,
-          observacaoSupervisor: observacaoAssinatura || null
-        }
-      });
-      await createSignatureLog({
-        user: actor,
-        tipo: "SUPERVISOR",
-        modulo: "plano-limpeza/diario",
-        referenciaId: String(id),
-        observacao: observacaoAssinatura || null
-      });
-    }
-
+      const credentials=await tx.usuario.findUniqueOrThrow({where:{id:actor.id},select:{senhaHash:true}}),password=getInputValue(formData,"senhaConfirmacao");
+      if(!password||!verifyPassword(password,credentials.senhaHash))throw Error("Senha inválida para assinatura.");
+      const signedAt=getCurrentSystemDateTime(),observation=getInputValue(formData,"observacaoAssinatura")||null;
+      const data=stage==="responsavel"?{...readExecutionTime(formData,record.data),assinaturaResponsavel:actor.nomeCompleto,assinaturaResponsavelUsuarioId:actor.id,assinaturaResponsavelNomeUsuario:actor.nomeUsuario,assinaturaResponsavelPerfil:actor.perfil,assinaturaResponsavelDataHora:signedAt,status:StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR,observacaoResponsavel:observation}:{assinaturaSupervisor:actor.nomeCompleto,assinaturaSupervisorUsuarioId:actor.id,assinaturaSupervisorNomeUsuario:actor.nomeUsuario,assinaturaSupervisorPerfil:actor.perfil,assinaturaSupervisorDataHora:signedAt,status:StatusPlanoLimpeza.CONCLUIDO,observacaoSupervisor:observation};
+      await tx.planoLimpezaDiarioRegistro.update({where:{id,updatedAt:record.updatedAt},data});
+      await tx.logAssinatura.create({data:{usuarioId:actor.id,nomeUsuario:actor.nomeUsuario,nomeCompleto:actor.nomeCompleto,perfil:actor.perfil,tipo:stage==="responsavel"?"RESPONSAVEL":"SUPERVISOR",modulo:"plano-limpeza/diario",referenciaId:String(id),assinadoEm:signedAt,observacao:JSON.stringify({etapa:stage,updatedAt:record.updatedAt,observacao:observation})}});
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
     revalidateModulePaths();
-    redirectWithFeedback(successReturnTo, "success", "Checklist Diário Assinado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
+    const success=getInputValue(formData,"successReturnTo");
+    redirectWithFeedback(success.startsWith(MODULE_PATH)?success:returnTo,"success","Checklist Diário Assinado com Sucesso.");
+  }catch(error){rethrowIfRedirectError(error);redirectWithFeedback(returnTo,"error",getErrorMessage(error));}
 }
 
 export async function signDailyAreaPendingItemsAction(formData: FormData) {
@@ -1081,136 +996,14 @@ export async function deleteDailyItemConfigAction(formData: FormData) {
 }
 
 export async function bulkSignDailyByDateAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, DIARIO_HISTORY_PATH);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(
-      actor,
-      "modulo.limpeza_diaria.assinar_todos",
-      "Seu perfil não pode usar Assinar Todos no plano diário."
-    );
-
-    const dataRaw = getInputValue(formData, "data");
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const assinarComoResponsavel = formData.get("assinarComoResponsavel") === "on";
-    const observacao = getInputValue(formData, "observacao");
-    if (assinarComoResponsavel) {
-      throw new Error(
-        "A assinatura em lote não pode registrar o mesmo usuário como responsável e supervisor."
-      );
-    }
-
-    const data = parseDateInput(dataRaw);
-    if (!data) {
-      throw new Error("Data inválida para assinatura retroativa.");
-    }
-
-    const period = getMonthYear(data);
-    if (await isMonthSigned(TipoPlanoLimpeza.DIARIO, period.mes, period.ano)) {
-      throw new Error("Este dia pertence a um período fechado e não pode ser alterado.");
-    }
-
-    const registrosDoDia = await prisma.planoLimpezaDiarioRegistro.findMany({
-      where: { data },
-      select: {
-        id: true,
-        status: true,
-        assinaturaResponsavel: true,
-        assinaturaResponsavelUsuarioId: true,
-        assinaturaSupervisor: true
-      }
-    });
-
-    if (registrosDoDia.length === 0) {
-      throw new Error("Não há registros para este dia.");
-    }
-
-    const aguardandoIds: number[] = [];
-    const pendentesSemResponsavelIds: number[] = [];
-    const selfSupervisorIds: number[] = [];
-
-    for (const registro of registrosDoDia) {
-      const hasResponsavel = registro.assinaturaResponsavel.trim().length > 0;
-      const hasSupervisor = registro.assinaturaSupervisor.trim().length > 0;
-
-      if (
-        registro.status === StatusPlanoLimpeza.AGUARDANDO_SUPERVISOR &&
-        hasResponsavel &&
-        !hasSupervisor
-      ) {
-        if (isSameResponsibleUser(registro, actor)) {
-          selfSupervisorIds.push(registro.id);
-          continue;
-        }
-        aguardandoIds.push(registro.id);
-      }
-
-      if (
-        registro.status === StatusPlanoLimpeza.PENDENTE &&
-        !hasResponsavel &&
-        !hasSupervisor
-      ) {
-        pendentesSemResponsavelIds.push(registro.id);
-      }
-    }
-
-    if (selfSupervisorIds.length > 0) {
-      throw new Error(SELF_SUPERVISION_MESSAGE);
-    }
-
-    if (aguardandoIds.length === 0 && (!assinarComoResponsavel || pendentesSemResponsavelIds.length === 0)) {
-      throw new Error("Não há pendências elegíveis para assinatura retroativa neste dia.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-    const signedAt = getCurrentSystemDateTime();
-
-    await prisma.$transaction(async (tx) => {
-      if (aguardandoIds.length > 0) {
-        const updateData: {
-          assinaturaSupervisor: string;
-          assinaturaSupervisorUsuarioId: number;
-          assinaturaSupervisorNomeUsuario: string;
-          assinaturaSupervisorPerfil: typeof actor.perfil;
-          assinaturaSupervisorDataHora: Date;
-          status: StatusPlanoLimpeza;
-          observacaoSupervisor?: string;
-        } = {
-          assinaturaSupervisor: actor.nomeCompleto,
-          assinaturaSupervisorUsuarioId: actor.id,
-          assinaturaSupervisorNomeUsuario: actor.nomeUsuario,
-          assinaturaSupervisorPerfil: actor.perfil,
-          assinaturaSupervisorDataHora: signedAt,
-          status: StatusPlanoLimpeza.CONCLUIDO
-        };
-        if (observacao) {
-          updateData.observacaoSupervisor = observacao;
-        }
-
-        await tx.planoLimpezaDiarioRegistro.updateMany({
-          where: { id: { in: aguardandoIds } },
-          data: updateData
-        });
-      }
-    });
-
-    if (aguardandoIds.length > 0) {
-      await createSignatureLog({
-        user: actor,
-        tipo: "SUPERVISOR",
-        modulo: "plano-limpeza/diario",
-        referenciaId: dataRaw
-      });
-    }
-
-    revalidatePath(returnTo.split("?")[0]);
-    revalidateModulePaths();
-    redirectWithFeedback(returnTo, "success", "Assinatura Retroativa do Dia Aplicada com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
+  const returnTo=getReturnToPath(formData,DIARIO_HISTORY_PATH);
+  try{
+    const actor=await getCurrentUserForAction(),date=parseDateInput(getInputValue(formData,"data"));
+    if(!date)throw Error("Data inválida.");
+    if(formData.get("assinarComoResponsavel")==="on")throw Error("A supervisão não pode assumir a execução dos itens.");
+    await signCleaningReview({authenticated:actor,module:"limpeza_diaria",date,token:getInputValue(formData,"escopo"),password:getInputValue(formData,"senhaConfirmacao"),observation:getInputValue(formData,"observacaoAssinatura")||getInputValue(formData,"observacao")});
+    revalidateModulePaths();redirectWithFeedback(returnTo,"success","Revisão do supervisor registrada para as atividades selecionadas do dia.");
+  }catch(error){rethrowIfRedirectError(error);redirectWithFeedback(returnTo,"error",getErrorMessage(error));}
 }
 
 export async function updateWeeklyRecordAction(formData: FormData) {
@@ -1424,152 +1217,13 @@ export async function signWeeklyAreaPendingItemsAction(formData: FormData) {
 }
 
 export async function signWeeklyAreaSupervisorAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, SEMANAL_HISTORY_PATH);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    const area = getInputValue(formData, "area");
-    ensureNonEmpty(area, "Área");
-
-    const weekStartRaw = getInputValue(formData, "weekStart");
-    const weekStart = parseDateInput(weekStartRaw);
-    if (!weekStart) {
-      throw new Error("Semana inválida para assinatura.");
-    }
-
-    const weekRange = getWeekDateRangeForDate(weekStart);
-    if (
-      !canSignWeeklyAreaSupervisor({
-        user: actor,
-        weekStart: weekRange.start,
-        referenceDate: getCurrentSystemDateTime()
-      })
-    ) {
-      throw new Error("Seu perfil não possui permissão para assinar esta área da semana.");
-    }
-
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-    const observacaoAssinatura = getInputValue(formData, "observacaoAssinatura");
-
-    const records = await prisma.planoLimpezaSemanalExecucao.findMany({
-      where: {
-        area,
-        dataExecucao: {
-          gte: weekRange.start,
-          lte: weekRange.end
-        }
-      },
-      select: {
-        id: true,
-        dataExecucao: true,
-        assinaturaResponsavel: true,
-        assinaturaResponsavelUsuarioId: true,
-        assinaturaSupervisor: true,
-        observacaoResponsavel: true
-      }
-    });
-
-    if (records.length === 0) {
-      throw new Error("Não há registros para esta área e semana.");
-    }
-
-    const periods = new Map(
-      records.map((record) => {
-        const period = getMonthYear(record.dataExecucao);
-        return [`${period.ano}-${period.mes}`, period];
-      })
-    );
-    for (const period of periods.values()) {
-      if (await isMonthSigned(TipoPlanoLimpeza.SEMANAL, period.mes, period.ano)) {
-        throw new Error("Esta área/semana pertence a um período fechado e não pode ser alterada.");
-      }
-    }
-
-    const pendingResponsibleRecords = records.filter(
-      (record) => record.assinaturaResponsavel.trim().length === 0
-    );
-    const pendingSupervisorRecords = records.filter(
-      (record) => record.assinaturaSupervisor.trim().length === 0
-    );
-    if (pendingSupervisorRecords.length === 0) {
-      throw new Error("Esta área/semana já foi assinada pelo supervisor.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-    const signedAt = getCurrentSystemDateTime();
-    const executionDate = pendingResponsibleRecords.length ? validateWeeklyExecutionDate(formData, weekRange) : weekRange.start;
-    const executionTime = pendingResponsibleRecords.length ? readExecutionTime(formData, executionDate) : { horarioExecucao: null, horarioNaoInformado: false, justificativaHorario: null };
-    const supervisorUpdateData: Prisma.PlanoLimpezaSemanalExecucaoUpdateManyMutationInput = {
-      assinaturaSupervisor: actor.nomeCompleto,
-      assinaturaSupervisorUsuarioId: actor.id,
-      assinaturaSupervisorNomeUsuario: actor.nomeUsuario,
-      assinaturaSupervisorPerfil: actor.perfil,
-      assinaturaSupervisorDataHora: signedAt,
-      status: StatusPlanoLimpeza.CONCLUIDO
-    };
-    if (observacaoAssinatura) {
-      supervisorUpdateData.observacaoSupervisor = observacaoAssinatura;
-    }
-
-    await prisma.$transaction(async (tx) => {
-      for (const record of pendingResponsibleRecords) {
-        await tx.planoLimpezaSemanalExecucao.update({
-          where: { id: record.id },
-          data: {
-            ...executionTime,
-        dataExecucao: executionDate,
-        assinaturaResponsavel: actor.nomeCompleto,
-            assinaturaResponsavelUsuarioId: actor.id,
-            assinaturaResponsavelNomeUsuario: actor.nomeUsuario,
-            assinaturaResponsavelPerfil: actor.perfil,
-            assinaturaResponsavelDataHora: signedAt,
-            quando: executionTime.horarioNaoInformado ? "Horário não informado" : `${formatDateInput(executionDate)} ${executionTime.horarioExecucao}`,
-            observacaoResponsavel: record.observacaoResponsavel?.trim()
-              ? record.observacaoResponsavel
-              : "Assumido durante assinatura do supervisor da área/semana."
-          }
-        });
-      }
-
-      await tx.planoLimpezaSemanalExecucao.updateMany({
-        where: { id: { in: pendingSupervisorRecords.map((record) => record.id) } },
-        data: supervisorUpdateData
-      });
-    });
-
-    if (pendingResponsibleRecords.length > 0) {
-      await createSignatureLog({
-        user: actor,
-        tipo: "RESPONSAVEL",
-        modulo: "plano-limpeza/semanal/regularizacao-supervisor",
-        referenciaId: `${area}|${formatDateInput(weekRange.start)}`,
-        observacao: `${pendingResponsibleRecords.length} item(ns) assumido(s) durante assinatura do supervisor da área/semana.`
-      });
-    }
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "SUPERVISOR",
-      modulo: "plano-limpeza/semanal",
-      referenciaId: `${area}|${formatDateInput(weekRange.start)}`,
-      observacao:
-        observacaoAssinatura ||
-        (pendingResponsibleRecords.length > 0
-          ? `Assinado com regularização - ${pendingResponsibleRecords.length} item(ns) assumido(s).`
-          : "Assinado sem pendências.")
-    });
-
-    revalidateModulePaths();
-    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData),
-      "success",
-      pendingResponsibleRecords.length > 0
-        ? `Área da semana assinada pelo supervisor com regularização de ${pendingResponsibleRecords.length} item(ns).`
-        : "Área da semana assinada pelo supervisor sem pendências."
-    );
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(weeklyExecutionReturnTo(returnTo, formData), "error", getErrorMessage(error));
-  }
+  const returnTo=getReturnToPath(formData,SEMANAL_HISTORY_PATH);
+  try{
+    const actor=await getCurrentUserForAction(),date=parseDateInput(getInputValue(formData,"weekStart"));
+    if(!date)throw Error("Semana inválida.");
+    await signCleaningReview({authenticated:actor,module:"limpeza_semanal",date,area:getInputValue(formData,"area"),token:getInputValue(formData,"escopo"),password:getInputValue(formData,"senhaConfirmacao"),observation:getInputValue(formData,"observacaoAssinatura")});
+    revalidateModulePaths();redirectWithFeedback(weeklyExecutionReturnTo(returnTo,formData),"success","Área da semana assinada pelo supervisor sem alterar os executores.");
+  }catch(error){rethrowIfRedirectError(error);redirectWithFeedback(weeklyExecutionReturnTo(returnTo,formData),"error",getErrorMessage(error));}
 }
 
 async function normalizeWeeklyOrderForArea(

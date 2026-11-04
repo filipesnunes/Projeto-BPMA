@@ -4,6 +4,10 @@ import {
   TipoServicoBuffetAmostra
 } from "@prisma/client";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { hasPermission } from "@/lib/permissions";
+import { buffetCatalogRevision } from "../catalog-order";
+import { buffetManagementItemOrder } from "../item-ordering";
 
 import { ModuleHeaderTextSettings } from "@/components/documentos/module-header-text-settings";
 import { getCurrentUser } from "@/lib/auth-session";
@@ -49,6 +53,8 @@ export default async function ControleBuffetAmostrasOpcoesPage({
   searchParams
 }: PageProps) {
   const authUser = await getCurrentUser();
+  if(!authUser)redirect("/login");
+  if(!hasPermission(authUser,"modulo.amostras.gerenciar_cadastros"))redirect("/acesso-negado");
   const usuarioLogado = authUser?.nomeCompleto ?? "Usuário logado";
   const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
 
@@ -71,7 +77,7 @@ export default async function ControleBuffetAmostrasOpcoesPage({
           orderBy: { servico: { ordem: "asc" } }
         }
       },
-      orderBy: [{ ordem: "asc" }, { nome: "asc" }]
+      orderBy: buffetManagementItemOrder
     }),
     prisma.controleBuffetAmostraAcaoCorretiva.findMany({
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
@@ -91,6 +97,7 @@ export default async function ControleBuffetAmostrasOpcoesPage({
   const itemEdicaoServicos = new Set(
     itemEdicao?.servicos.map((vinculo) => vinculo.servicoId) ?? []
   );
+  const catalogRevision=buffetCatalogRevision(itens);
   const itensGerenciamento = itens.map((item) => ({
     id: item.id,
     nome: item.nome,
@@ -305,6 +312,7 @@ export default async function ControleBuffetAmostrasOpcoesPage({
           action={itemEdicao ? updateItemAction : createItemAction}
           className="grid gap-3 rounded-lg bg-slate-50 p-4 md:grid-cols-2 dark:bg-slate-800"
         >
+          <input type="hidden" name="catalogRevision" value={catalogRevision} />
           <input type="hidden" name="returnTo" value={PAGE_PATH} />
           {itemEdicao ? <input type="hidden" name="itemId" value={String(itemEdicao.id)} /> : null}
 
@@ -342,7 +350,7 @@ export default async function ControleBuffetAmostrasOpcoesPage({
               name="ordem"
               min={1}
               required
-              defaultValue={itemEdicao?.ordem ?? 1}
+              defaultValue={itemEdicao?.ordem ?? itens.filter(item=>item.ativo).length+1}
               className={INPUT_CLASS}
             />
           </label>
@@ -412,7 +420,7 @@ export default async function ControleBuffetAmostrasOpcoesPage({
           </div>
         </form>
 
-        <BuffetItemsManagementTable items={itensGerenciamento} pagePath={PAGE_PATH} />
+        <BuffetItemsManagementTable items={itensGerenciamento} pagePath={PAGE_PATH} revision={catalogRevision} />
       </section>
 
       <section className={CARD_CLASS}>

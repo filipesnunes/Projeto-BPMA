@@ -1,4 +1,3 @@
-import { renderExecutionReportNotes } from "@/lib/execution-report-notes";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -400,7 +399,8 @@ export async function GET(request: NextRequest) {
         temperatura: true,
         responsavel: true,
         orientacao: true,
-        fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true } } } },
+        assinaturaSupervisorNome: true, assinaturaSupervisorEm: true,
+        fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, assinadoEm: true } } } },
         observacao: true
       },
       orderBy: [{ data: "asc" }, { createdAt: "asc" }, { id: "asc" }]
@@ -415,7 +415,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         dataReferencia: true,
-        usuarioNomeSnapshot: true
+        usuarioNomeSnapshot: true, assinadoEm: true
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -468,7 +468,7 @@ export async function GET(request: NextRequest) {
         fitaOleo: formatOilStrip(record.fitaOleo),
         temperatura: formatTemperature(record.temperatura),
         responsavel: valueOrDash(record.responsavel),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(dailySignature?.usuarioNomeSnapshot),
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome)+(record.fluxo.assinaturaVigente?.assinadoEm?` — ${formatAppDateTime(record.fluxo.assinaturaVigente.assinadoEm)}`:"") : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
         observacao: valueOrDash(record.observacao?.trim() || record.orientacao)
       };
     }),
@@ -477,7 +477,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report).replace("</body>", renderExecutionReportNotes(records) + "</body>"), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

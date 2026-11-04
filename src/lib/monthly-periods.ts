@@ -75,12 +75,12 @@ async function updateLegacyClosing(db: Prisma.TransactionClient, code: Operation
   }
 }
 
-export async function closeReopenedOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string }) {
+export async function closeReopenedOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string }) {
   return closeOperationalMonth(params, "management");
 }
 
 // This context is chosen by server code, never by a submitted form field.
-export async function closeOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string }, context: "history" | "legacy" | "management" = "history") {
+export async function closeOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string }, context: "history" | "legacy" | "management" = "history") {
   const { moduleCode, mes, ano } = params;
   let user = params.user;
   const management = context === "management";
@@ -94,6 +94,16 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
       if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
     }
     const period = await tx.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes, ano } } });
+    let oilAuthorization;
+    if(moduleCode === "oleo") {
+      const { canSignOilSupervisor } = await import("./oil-signature-permissions");
+      if(!canSignOilSupervisor(user,"monthly"))throw new Error("Sem habilitação e permissão para o fechamento mensal do óleo.");
+      const { verifyPassword } = await import("./password");
+      const credentials=await tx.usuario.findUniqueOrThrow({where:{id:user.id},select:{senhaHash:true}});
+      if(!params.password?.trim()||!verifyPassword(params.password.trim(),credentials.senhaHash))throw new Error("Senha inválida para confirmar a assinatura.");
+      const { oilAuthorizationEvidence } = await import("@/app/controle-qualidade-oleo/signature-policy");
+      oilAuthorization=oilAuthorizationEvidence(user,"monthly");
+    }
     if (management && period?.status !== "REABERTO") throw new Error("Este período não está reaberto. Atualize a página.");
     if (!management && period?.status === "REABERTO") throw new Error("Feche este mês reaberto pela área Gerenciamento de Períodos.");
     const legacy = await findLegacyMonthlyClosure(moduleCode, mes, ano, tx);
@@ -103,7 +113,7 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
     await tx.logAssinatura.create({ data: {
       usuarioId: user.id, nomeUsuario: user.nomeUsuario, nomeCompleto: user.nomeCompleto, perfil: user.perfil,
       tipo: "FECHAMENTO_MENSAL", modulo: moduleCode, referenciaId: `${String(mes).padStart(2, "0")}/${ano}`, assinadoEm: signedAt,
-      observacao: JSON.stringify({ operacao: management ? "NOVO_FECHAMENTO_MENSAL" : "FECHAMENTO_MENSAL", mes, ano, modulo: moduleCode, fechamentoAnterior: period, fechamentoEspecificoAnterior: legacy, observacao: params.observacao || null })
+      observacao: JSON.stringify({ operacao: management ? "NOVO_FECHAMENTO_MENSAL" : "FECHAMENTO_MENSAL", mes, ano, modulo: moduleCode, fechamentoAnterior: period, fechamentoEspecificoAnterior: legacy, observacao: params.observacao || null, ...(oilAuthorization?{autorizacao:oilAuthorization}:{}) })
     } });
     const data = {
       status: "FECHADO", usuarioId: user.id, usuarioNomeSnapshot: user.nomeCompleto, usuarioPerfilSnapshot: user.perfil,

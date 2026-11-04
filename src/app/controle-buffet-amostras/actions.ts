@@ -1,8 +1,9 @@
 "use server";
 import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
 import {getAppDate} from "@/lib/date-time";
-import {buildRegistroPayload,buildNaoServidoPayload,getRegistroItemIssue,type RegistroItemPayload,type RegistroTemperaturaInput} from "./workflow-payload";
+import {buildRegistroPayload,buildNaoServidoPayload,type RegistroItemPayload} from "./workflow-payload";
 import {saveBuffetWorkflowState} from "./workflow-actions";
+import {prepareBuffetRow} from "./row-save";
 import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 
@@ -10,10 +11,12 @@ import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 import { closeOperationalMonth } from "@/lib/monthly-periods";
 
 import {
+  Prisma,
   StatusFechamentoBuffetAmostra,
   StatusItemBuffetAmostra,
   TipoServicoBuffetAmostra
 } from "@prisma/client";
+import { lockBuffetCatalog, writeActiveBuffetOrder } from "./catalog-order";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { rethrowIfRedirectError } from "@/lib/redirect-error";
@@ -54,9 +57,6 @@ const SERVICE_PATH = "/controle-buffet-amostras/servico";
 const HISTORY_PATH = "/controle-buffet-amostras/historico";
 const OPTIONS_PATH = "/controle-buffet-amostras/opcoes";
 
-const SELF_SUPERVISION_MESSAGE =
-  "Este registro foi executado por você. A assinatura de supervisor deve ser feita por outro usuário autorizado.";
-
 type FeedbackType = "success" | "error";
 type FormActionState = {
   status: "idle" | "success" | "error";
@@ -74,10 +74,6 @@ const FORM_ACTION_INITIAL_STATE: FormActionState = {
 function getInputValue(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function getRowInputValue(formData: FormData, rowKey: string, key: string): string {
-  return getInputValue(formData, `${rowKey}-${key}`);
 }
 
 function getInputNumberList(formData: FormData, key: string): number[] {
@@ -417,6 +413,7 @@ export async function saveRegistroItemAction(formData: FormData) {
       : await buildRegistroPayload({
           actor,
           item,
+          existingCorrectiveAction: existing?.acaoCorretiva,
           input: {
             execution: readExecutionTime(formData, data, "", !naoServido),
             tcEquipamentoInput,
@@ -428,6 +425,7 @@ export async function saveRegistroItemAction(formData: FormData) {
           }
         });
 
+    if(existing)Object.assign(payload,{responsavelUsuarioId:existing.responsavelUsuarioId,responsavelNome:existing.responsavelNome,responsavelPerfil:existing.responsavelPerfil,dataHoraRegistro:existing.dataHoraRegistro,...(!naoServido?{horarioExecucao:existing.horarioExecucao,horarioNaoInformado:existing.horarioNaoInformado,justificativaHorario:existing.justificativaHorario}:{})});
     await saveActiveBuffetRecord(prisma, {
           data,
           servicoId,
@@ -529,113 +527,23 @@ export async function saveServicoItemsStateAction(
         }
     > = [];
 
-    for (const rowKey of rowKeys) {
-      try {
-        const input: RegistroTemperaturaInput = {
-          tcEquipamentoInput: getRowInputValue(formData, rowKey, "tcEquipamento"),
-          primeiraTcInput: getRowInputValue(formData, rowKey, "primeiraTc"),
-          temperaturaTipo: getRowInputValue(formData, rowKey, "temperaturaTipo"),
-          acaoCorretivaInput: getRowInputValue(formData, rowKey, "acaoCorretiva"),
-          observacao: getRowInputValue(formData, rowKey, "observacao"),
-          naoServido: getRowInputValue(formData, rowKey, "naoServido") === "true"
-        };
-
-        if (rowKey.startsWith("item-")) {
-          const itemId = parsePositiveInt(rowKey.replace("item-", ""));
-          const item = itemId ? fixedItemsById.get(itemId) : null;
-          const existing = itemId ? registrosByItemId.get(itemId) : null;
-
-          if (!itemId || !item) {
-            throw new Error("Item não configurado para este serviço.");
-          }
-
-          if (existing?.status === StatusItemBuffetAmostra.ASSINADO) {
-            continue;
-          }
-
-          if (input.naoServido) {
-            updates.push({
-              type: "fixed",
-              itemId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
-
-          const issue = getRegistroItemIssue(item, input);
-          if (issue) continue;
-
-          updates.push({
-            type: "fixed",
-            itemId,
-            payload: await buildRegistroPayload({ actor, item, input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") } })
-          });
-          continue;
-        }
-
-        if (rowKey.startsWith("extra-")) {
-          const registroId = parsePositiveInt(rowKey.replace("extra-", ""));
-          const registro = registroId ? extraRegistrosById.get(registroId) : null;
-
-          if (!registroId || !registro) {
-            throw new Error("Item extra não encontrado para este serviço.");
-          }
-
-          if (registro.status === StatusItemBuffetAmostra.ASSINADO) {
-            continue;
-          }
-
-          const item = {
-            nome: registro.itemNome,
-            classificacao: registro.classificacao,
-            usaGarrafaTermica: registro.usaGarrafaTermica
-          };
-
-          if (input.naoServido) {
-            updates.push({
-              type: "extra",
-              registroId,
-              payload: buildNaoServidoPayload({
-                actor,
-                item,
-                observacao: input.observacao
-              })
-            });
-            continue;
-          }
-
-          const issue = getRegistroItemIssue(item, input);
-          if (issue) continue;
-
-          updates.push({
-            type: "extra",
-            registroId,
-            payload: await buildRegistroPayload({
-              actor,
-              item,
-              input: { ...input, execution: readExecutionTime(formData, data, rowKey + "-") }
-            })
-          });
-          continue;
-        }
-
-        throw new Error("Linha inválida para salvar.");
-      } catch (error) {
-        return {
-          status: "error",
-          message: getErrorMessage(
-            error,
-            "Não foi possível salvar os itens. Verifique os campos obrigatórios."
-          ),
-          invalidRowKey: rowKey
-        };
-      }
+    const pendingMessages:string[]=[];
+    if(new Set(rowKeys).size!==rowKeys.length)throw Error("Linhas duplicadas.");
+    for(const rowKey of rowKeys){
+      try{
+        if(!/^(item|extra)-[1-9]\d*$/.test(rowKey))throw Error("Linha inválida para salvar.");
+        const fixed=rowKey.startsWith("item-"),id=Number(rowKey.slice(fixed?5:6));
+        const existing=fixed?registrosByItemId.get(id):extraRegistrosById.get(id);
+        const item=fixed?fixedItemsById.get(id):existing?{nome:existing.itemNome,classificacao:existing.classificacao,usaGarrafaTermica:existing.usaGarrafaTermica}:null;
+        if(!item)throw Error("Item não configurado para este serviço.");
+        if(existing?.status==="ASSINADO"||existing?.assinaturaDataHora)continue;
+        const prepared=await prepareBuffetRow(prisma,{form:formData,rowKey,item,date:data,actor,old:existing});
+        if(prepared.issues.length)pendingMessages.push(`${item.nome}: ${prepared.issues.join(", ")}`);
+        if(!prepared.payload)continue;
+        if(fixed)updates.push({type:"fixed",itemId:id,payload:prepared.payload});
+        else updates.push({type:"extra",registroId:id,payload:prepared.payload});
+      }catch(error){return{status:"error",message:getErrorMessage(error,"Não foi possível salvar os itens. Verifique os campos obrigatórios."),invalidRowKey:rowKey};}
     }
-
     await prisma.$transaction(async (tx) => {
       for (const update of updates) {
         if (update.type === "fixed") {
@@ -662,7 +570,7 @@ export async function saveServicoItemsStateAction(
     revalidateModulePaths(servicoId);
     return {
       status: "success",
-      message: "Itens do Serviço Salvos com Sucesso."
+      message: "Itens do Serviço Salvos com Sucesso."+(pendingMessages.length?" Pendências: "+pendingMessages.slice(0,8).join("; ")+".":"")
     };
   } catch (error) {
     return {
@@ -721,7 +629,7 @@ export async function updateHistoricoRegistroAction(formData: FormData) {
     };
     const payload = naoServido
       ? buildNaoServidoPayload({ actor, item, observacao })
-      : await buildRegistroPayload({ actor, item, input });
+      : await buildRegistroPayload({ actor, item, input, existingCorrectiveAction: registro.acaoCorretiva });
     const nextStatus = preserveHistoricalSignatureStatus({
       currentStatus: registro.status,
       nextStatus: payload.status,
@@ -734,6 +642,10 @@ export async function updateHistoricoRegistroAction(formData: FormData) {
         : registro.segundaTc;
     const updateData = {
       ...payload,
+      responsavelUsuarioId: registro.responsavelUsuarioId,
+      responsavelNome: registro.responsavelNome,
+      responsavelPerfil: registro.responsavelPerfil,
+      dataHoraRegistro: registro.dataHoraRegistro,
       segundaTc: nextSegundaTc,
       status: nextStatus
     };
@@ -883,283 +795,21 @@ export async function createExtraItemStateAction(
 }
 
 export async function signRegistroItemAction(formData: FormData) {
+  await getCurrentUserForAction();
   const returnTo = getReturnToPath(formData, MODULE_PATH);
-
-  if (formData.has("versao")) { const state=await saveBuffetWorkflowState(formData,"signItem");redirectWithFeedback(returnTo,state.status,state.message); }
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.amostras.assinar_servico", "Você não tem permissão para assinar este serviço.");
-
-    const registroId = parsePositiveInt(getInputValue(formData, "registroId"));
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-
-    if (!registroId) {
-      throw new Error("Registro inválido para assinatura.");
-    }
-
-    const registro = await prisma.controleBuffetAmostraRegistro.findUnique({
-      where: { id: registroId }
-    });
-
-    if (!registro) {
-      throw new Error("Registro não encontrado.");
-    }
-
-    await ensurePeriodIsOpen(registro.data);
-
-    if (registro.status !== StatusItemBuffetAmostra.PREENCHIDO) {
-      throw new Error("Somente itens preenchidos podem ser assinados.");
-    }
-
-    if (registro.responsavelUsuarioId === actor.id) {
-      throw new Error(SELF_SUPERVISION_MESSAGE);
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const now = getCurrentSystemDateTime();
-
-    await prisma.controleBuffetAmostraRegistro.update({
-      where: { id: registro.id },
-      data: {
-        assinaturaUsuarioId: actor.id,
-        assinaturaNome: actor.nomeCompleto,
-        assinaturaPerfil: actor.perfil,
-        assinaturaDataHora: now,
-        status: StatusItemBuffetAmostra.ASSINADO
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "SUPERVISOR",
-      modulo: "controle-buffet-amostras/item",
-      referenciaId: String(registro.id)
-    });
-
-    revalidateModulePaths(registro.servicoId);
-    redirectWithFeedback(returnTo, "success", "Item Assinado com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(
-        error,
-        "Não foi possível concluir a assinatura. Verifique sua senha e tente novamente."
-      )
-    );
-  }
+  redirectWithFeedback(returnTo, "error", "Utilize a Validação do Serviço completo. Assinaturas individuais e revisões alternativas não estão disponíveis para novas validações. Registros sem versão exigem regularização autorizada.");
 }
 
 export async function signServicoItensAction(formData: FormData) {
+  await getCurrentUserForAction();
   const returnTo = getReturnToPath(formData, MODULE_PATH);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.amostras.assinar_servico", "Você não tem permissão para assinar este serviço.");
-
-    const servicoId = parsePositiveInt(getInputValue(formData, "servicoId"));
-    const dataInput = getInputValue(formData, "data");
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-
-    if (!servicoId) {
-      throw new Error("Serviço inválido para assinatura.");
-    }
-
-    const data = parseDateInput(dataInput);
-    if (!data) {
-      throw new Error("Data inválida para assinatura do serviço.");
-    }
-
-    await ensurePeriodIsOpen(data);
-
-    const servico = await prisma.controleBuffetAmostraServico.findUnique({
-      where: { id: servicoId },
-      include: {
-        itens: {
-          where: {
-            item: { ativo: true }
-          },
-          include: { item: true },
-          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }]
-        }
-      }
-    });
-
-    if (!servico) {
-      throw new Error("Serviço não encontrado.");
-    }
-    ensureServicoPrevistoNaData(servico, data);
-
-    const registros = await prisma.controleBuffetAmostraRegistro.findMany({
-      where: {
-        data,
-        servicoId
-      }
-    });
-
-    if (servico.itens.length === 0 && registros.length === 0) {
-      throw new Error("Não há itens ativos configurados neste serviço para assinatura.");
-    }
-
-    const registroPorItem = new Map<number, (typeof registros)[number]>();
-    for (const registro of registros) {
-      if (registro.itemId !== null) {
-        registroPorItem.set(registro.itemId, registro);
-      }
-    }
-
-    const itensPendentes = servico.itens.filter((vinculo) => {
-      const registro = registroPorItem.get(vinculo.itemId);
-      return !registro || registro.status === StatusItemBuffetAmostra.PENDENTE;
-    });
-    const itensExtrasPendentes = registros.filter(
-      (registro) =>
-        registro.itemExtra && registro.status === StatusItemBuffetAmostra.PENDENTE
-    );
-
-    if (itensPendentes.length > 0 || itensExtrasPendentes.length > 0) {
-      throw new Error(
-        "Ainda existem itens não preenchidos neste serviço. Preencha todos os itens antes de assinar."
-      );
-    }
-
-    const registrosParaAssinar = registros.filter(
-      (registro) => registro.status === StatusItemBuffetAmostra.PREENCHIDO
-    );
-
-    if (registrosParaAssinar.length === 0) {
-      throw new Error("Não há itens preenchidos aguardando assinatura neste serviço.");
-    }
-
-    if (registrosParaAssinar.some((registro) => registro.responsavelUsuarioId === actor.id)) {
-      throw new Error(SELF_SUPERVISION_MESSAGE);
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const now = getCurrentSystemDateTime();
-
-    await prisma.$transaction(async (tx) => {
-      await tx.controleBuffetAmostraRegistro.updateMany({
-        where: {
-          id: { in: registrosParaAssinar.map((registro) => registro.id) }
-        },
-        data: {
-          assinaturaUsuarioId: actor.id,
-          assinaturaNome: actor.nomeCompleto,
-          assinaturaPerfil: actor.perfil,
-          assinaturaDataHora: now,
-          status: StatusItemBuffetAmostra.ASSINADO
-        }
-      });
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "SUPERVISOR",
-      modulo: "controle-buffet-amostras/servico",
-      referenciaId: `${servicoId}:${dataInput || formatDateInput(now)}`
-    });
-
-    revalidateModulePaths(servicoId);
-    redirectWithFeedback(returnTo, "success", "Todos os Itens do Serviço Foram Assinados com Sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(
-        error,
-        "Não foi possível concluir a assinatura. Verifique sua senha e tente novamente."
-      )
-    );
-  }
+  redirectWithFeedback(returnTo, "error", "Utilize a Validação do Serviço completo. Assinaturas individuais e revisões alternativas não estão disponíveis para novas validações. Registros sem versão exigem regularização autorizada.");
 }
 
 export async function signServicoNutricionistaAction(formData: FormData) {
-  const returnTo = getReturnToPath(formData, HISTORY_PATH);
-
-  try {
-    const actor = await getCurrentUserForAction();
-    ensurePermission(actor, "modulo.amostras.assinar_historico", "Você não tem permissão para assinar o histórico de amostras.");
-
-    const servicoId = parsePositiveInt(getInputValue(formData, "servicoId"));
-    const dataInput = getInputValue(formData, "data");
-    const senhaConfirmacao = getInputValue(formData, "senhaConfirmacao");
-
-    if (!servicoId) {
-      throw new Error("Serviço inválido para assinatura do supervisor.");
-    }
-
-    const data = parseDateInput(dataInput);
-    if (!data) {
-      throw new Error("Data inválida para assinatura do supervisor.");
-    }
-
-    const registros = await prisma.controleBuffetAmostraRegistro.findMany({
-      where: { data, servicoId },
-      select: {
-        id: true,
-        status: true,
-        assinaturaNutricionistaDataHora: true
-      }
-    });
-
-    if (registros.length === 0) {
-      throw new Error("Não há registros para assinar neste serviço.");
-    }
-
-    const registrosPendentes = registros.filter(
-      (registro) => registro.status === StatusItemBuffetAmostra.PENDENTE
-    );
-    if (registrosPendentes.length > 0) {
-      throw new Error("Finalize os itens pendentes antes da assinatura do supervisor.");
-    }
-
-    const registrosParaAssinar = registros.filter(
-      (registro) => !registro.assinaturaNutricionistaDataHora
-    );
-    if (registrosParaAssinar.length === 0) {
-      throw new Error("Este serviço já foi assinado pelo supervisor.");
-    }
-
-    await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
-
-    const now = getCurrentSystemDateTime();
-    await prisma.controleBuffetAmostraRegistro.updateMany({
-      where: {
-        id: { in: registrosParaAssinar.map((registro) => registro.id) }
-      },
-      data: {
-        assinaturaNutricionistaUsuarioId: actor.id,
-        assinaturaNutricionistaNome: actor.nomeCompleto,
-        assinaturaNutricionistaPerfil: actor.perfil,
-        assinaturaNutricionistaDataHora: now
-      }
-    });
-
-    await createSignatureLog({
-      user: actor,
-      tipo: "REVISAO_NUTRICIONISTA",
-      modulo: "controle-buffet-amostras/servico",
-      referenciaId: `${servicoId}:${dataInput}`
-    });
-
-    revalidateModulePaths(servicoId);
-    redirectWithFeedback(returnTo, "success", "Serviço assinado com sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(
-      returnTo,
-      "error",
-      getErrorMessage(
-        error,
-        "Não foi possível assinar o serviço como revisado pelo supervisor."
-      )
-    );
-  }
+  await getCurrentUserForAction();
+  const returnTo = getReturnToPath(formData, MODULE_PATH);
+  redirectWithFeedback(returnTo, "error", "Utilize a Validação do Serviço completo. Assinaturas individuais e revisões alternativas não estão disponíveis para novas validações. Registros sem versão exigem regularização autorizada.");
 }
 
 export async function closeMonthAction(formData: FormData) {
@@ -1433,6 +1083,8 @@ export async function createItemAction(formData: FormData) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const ids=catalog.filter(item=>item.ativo).map(item=>item.id);
       const item = await tx.controleBuffetAmostraItem.create({
         data: {
           nome,
@@ -1450,7 +1102,9 @@ export async function createItemAction(formData: FormData) {
         })),
         skipDuplicates: true
       });
-    });
+      ids.splice(Math.min(Math.max(ordem-1,0),ids.length),0,item.id);
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Cadastrado com Sucesso.");
@@ -1512,6 +1166,9 @@ export async function updateItemAction(formData: FormData) {
     }
 
     await prisma.$transaction(async (tx) => {
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const active=catalog.filter(item=>item.ativo),ids=active.filter(item=>item.id!==existing.id).map(item=>item.id);
+      if(ativo){const position=!existing.ativo?ids.length:ordem===existing.ordem?active.findIndex(item=>item.id===existing.id):ordem-1;ids.splice(Math.min(Math.max(position,0),ids.length),0,existing.id);}
       await tx.controleBuffetAmostraItem.update({
         where: { id: existing.id },
         data: {
@@ -1524,7 +1181,7 @@ export async function updateItemAction(formData: FormData) {
       });
 
       await tx.controleBuffetAmostraItemServico.deleteMany({
-        where: { itemId: existing.id }
+        where: { itemId: existing.id,servicoId:{notIn:servicoIds} }
       });
 
       await tx.controleBuffetAmostraItemServico.createMany({
@@ -1534,7 +1191,8 @@ export async function updateItemAction(formData: FormData) {
         })),
         skipDuplicates: true
       });
-    });
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(returnTo, "success", "Item Atualizado com Sucesso.");
@@ -1569,10 +1227,16 @@ export async function toggleItemStatusAction(formData: FormData) {
       throw new Error("Item não encontrado.");
     }
 
-    await prisma.controleBuffetAmostraItem.update({
-      where: { id: existing.id },
-      data: { ativo }
-    });
+    await prisma.$transaction(async tx=>{
+      const catalog=await lockBuffetCatalog(tx,actor,getInputValue(formData,"catalogRevision"));
+      const current=catalog.find(item=>item.id===existing.id);
+      if(!current)throw Error("Item não encontrado.");
+      if(current.ativo===ativo)return;
+      const ids=catalog.filter(item=>item.ativo&&item.id!==current.id).map(item=>item.id);
+      if(ativo)ids.push(current.id);
+      await tx.controleBuffetAmostraItem.update({where:{id:current.id},data:{ativo}});
+      await writeActiveBuffetOrder(tx,ids);
+    },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
     revalidateModulePaths();
     redirectWithFeedback(

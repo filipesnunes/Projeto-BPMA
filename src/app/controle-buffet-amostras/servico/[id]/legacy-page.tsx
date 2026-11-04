@@ -6,13 +6,13 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { SignatureContextCard } from "@/components/auth/signature-context-card";
+
 import { getCurrentUser } from "@/lib/auth-session";
 import { hasPermission } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { canViewManagementSections, getRoleLabel } from "@/lib/rbac";
+import { canViewManagementSections } from "@/lib/rbac";
 
-import { signServicoItensAction } from "../../actions";
+
 import {
   avaliarTemperaturaBuffet,
   formatDateDisplay,
@@ -78,7 +78,6 @@ export default async function ExecucaoServicoBuffetPage({
 }: PageProps) {
   const authUser = await getCurrentUser();
   const usuarioLogado = authUser?.nomeCompleto ?? "Usuário logado";
-  const perfilLogado = authUser ? getRoleLabel(authUser.perfil) : "";
   const isColaborador = authUser?.perfil === "COLABORADOR";
   const podeAssinarSupervisor = authUser
     ? hasPermission(authUser, "modulo.amostras.assinar_servico")
@@ -112,7 +111,7 @@ export default async function ExecucaoServicoBuffetPage({
           include: {
             item: true
           },
-          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }]
+          orderBy: [{ item: { ordem: "asc" } }, { item: { nome: "asc" } }, { item: { id: "asc" } }]
         }
       }
     }),
@@ -435,28 +434,7 @@ export default async function ExecucaoServicoBuffetPage({
             Este registro foi executado por você. A assinatura de supervisor deve ser feita por outro usuário autorizado.
           </p>
         ) : (
-          <form action={signServicoItensAction} className="grid gap-3 md:grid-cols-2">
-            <input type="hidden" name="servicoId" value={String(servico.id)} />
-            <input type="hidden" name="data" value={dataReferenciaInput} />
-            <input type="hidden" name="returnTo" value={returnTo} />
-
-            <label className="text-sm text-slate-700 dark:text-slate-200">
-              Confirme sua Senha *
-              <input type="password" name="senhaConfirmacao" required className={INPUT_CLASS} />
-            </label>
-
-            <SignatureContextCard
-              nomeUsuario={usuarioLogado}
-              perfil={perfilLogado}
-              dataHora={formatDateTimeDisplay(now)}
-            />
-
-            <div className="md:col-span-2">
-              <button type="submit" className="btn-primary">
-                Assinatura Supervisor
-              </button>
-            </div>
-          </form>
+          <p className="text-sm">Assinaturas antigas permanecem consultáveis. Este serviço não possui versão operacional: uma nova validação exige regularização autorizada, sem converter as assinaturas existentes.</p>
         )}
       </section>
     </div>

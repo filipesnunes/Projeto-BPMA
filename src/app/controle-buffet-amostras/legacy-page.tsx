@@ -1,3 +1,7 @@
+import {buffetProgress} from "./progress";
+import { redirect } from "next/navigation";
+import { buffetDraftStarted } from "./workflow-history";
+import type { BuffetDraft } from "./workflow-adapter";
 import { OperationalDeletionPanel } from "@/components/operational-deletion-panel";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { ModuloDocumento,  StatusItemBuffetAmostra } from "@prisma/client";
@@ -36,6 +40,8 @@ function firstParam(value: string | string[] | undefined): string {
 
 export default async function ControleBuffetAmostrasPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
+  if (!authUser) redirect("/login");
+  if (!hasPermission(authUser,"modulo.amostras.acessar")) redirect("/acesso-negado");
   const podeGerenciarOpcoes = authUser
     ? hasPermission(authUser, "modulo.amostras.gerenciar_cadastros")
     : false;
@@ -69,7 +75,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       orderBy: [{ ordem: "asc" }, { nome: "asc" }]
     }),
     prisma.controleBuffetAmostraRegistro.findMany({
-      where: { data: today, fluxoId:null },
+      where: { data: today, fluxoId: null },
       select: {
         id: true,
         servicoId: true,
@@ -81,6 +87,11 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
     isOperationalMonthClosed("amostras", currentPeriod.mes, currentPeriod.ano)
   ]);
 
+  // Draft item projections stay outside measurement queries, but the familiar
+  // service card must still reflect an already initiated service.
+  const serviceFlows = await prisma.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:today,excluidoEm:null},include:{amostras:{where:{excluidoEm:null},select:{itemId:true,itemExtra:true,status:true}},versoes:{orderBy:{versao:"desc"},take:1,select:{obrigatorios:true,resolvidos:true,rascunho:true}}}});
+  const flowsByService = new Map(serviceFlows.map(flow=>[Number(flow.chave.split(":")[0]),flow]));
+
   const registrosPorServico = new Map<number, typeof registrosDia>();
   for (const registro of registrosDia) {
     const current = registrosPorServico.get(registro.servicoId) ?? [];
@@ -91,15 +102,18 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
   const servicosDoDia = servicos.filter((servico) =>
     isServicoDisponivelNaData(servico, today)
   ).map((servico) => {
-    const registrosServico = registrosPorServico.get(servico.id) ?? [];
+    const flow = flowsByService.get(servico.id);
+    const registrosServico = flow?.amostras ?? registrosPorServico.get(servico.id) ?? [];
+    const draft=flow?.versoes[0]?.rascunho as unknown as BuffetDraft|undefined;
+    const progress=flow?buffetProgress(registrosServico,draft?.manifest??servico.itens.map(link=>link.item)):null;
     const itensAtivos = servico.itens.map((vinculo) => vinculo.item.id);
     const registrosItensAtivos = registrosServico.filter(
       (registro) =>
         registro.itemExtra ||
         (registro.itemId !== null && itensAtivos.includes(registro.itemId))
     );
-    const quantidadeItens =
-      itensAtivos.length + registrosServico.filter((registro) => registro.itemExtra).length;
+    const quantidadeItens = progress?.required ??
+      (itensAtivos.length + registrosServico.filter((registro) => registro.itemExtra).length);
 
     const itensAssinados = registrosItensAtivos.filter(
       (registro) => registro.status === StatusItemBuffetAmostra.ASSINADO
@@ -111,7 +125,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
       (registro) => registro.status !== StatusItemBuffetAmostra.PENDENTE
     ).length;
 
-    const status = calcularStatusServico({
+    const status = progress ? (progress.complete ? "CONCLUIDO" : (progress.resolved||buffetDraftStarted(draft)?"PARCIAL":"PENDENTE")) : calcularStatusServico({
       totalItens: quantidadeItens,
       itensAssinados,
       itensNaoServidos,
@@ -233,6 +247,7 @@ export default async function ControleBuffetAmostrasPage({ searchParams }: PageP
         </div>
       </section>
       <OperationalDeletionPanel target="amostras" selectedDate={params.exclusaoData} />
+
     </div>
   );
 }

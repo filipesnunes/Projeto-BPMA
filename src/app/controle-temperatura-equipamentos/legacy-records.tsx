@@ -1,7 +1,11 @@
+import { canCorrectTemperature } from "./correction-policy";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
-import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
+import { parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
+import { getAppDate } from "@/lib/date-time";
 import {
   ModuloDocumento,
   Prisma,
@@ -59,7 +63,7 @@ import {
   periodKey
 } from "./utils";
 
-const MODULE_PATH = "/controle-temperatura-equipamentos/legado";
+const MODULE_PATH = "/controle-temperatura-equipamentos";
 const CARD_CLASS =
   "bpma-card";
 const INPUT_CLASS =
@@ -149,13 +153,13 @@ export default async function ControleTemperaturaEquipamentosPage({
   const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "temperatura");
 
   const params = await searchParams;
-  if (firstParam(params.new) === "1") redirect("/controle-temperatura-equipamentos/fluxo");
   const exigirFotoEmAlertaCritico = await getExigirFotoEmAlertaCritico();
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
   const now = getCurrentSystemDateTime();
-  const todayDateInput = formatDateInput(now);
+  const today = getAppDate(now);
+  const todayDateInput = formatDateInput(today);
   const dataRegistroInput = firstParam(params.dataRegistro).trim();
   const dataRegistro = /^\d{4}-\d{2}-\d{2}$/.test(dataRegistroInput) ? parseDateInput(dataRegistroInput) : null;
   const turnoRegistroInput = firstParam(params.turnoRegistro);
@@ -171,24 +175,21 @@ export default async function ControleTemperaturaEquipamentosPage({
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
-  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = { fluxoId: null };
+  // The daily workspace may be narrowed by filters, never expanded to other dates.
+  const where: Prisma.ControleTemperaturaEquipamentoWhereInput = { data: today };
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
-    where.data = dataFiltro;
+    where.AND = { data: dataFiltro };
   } else if (filtroMes && filtroAno && filtroMes <= 12) {
     const { start, end } = getMonthDateRange(filtroMes, filtroAno);
-    where.data = { gte: start, lte: end };
+    where.AND = { data: { gte: start, lte: end } };
   } else if (filtroAno) {
     const { start, end } = getYearDateRange(filtroAno);
-    where.data = { gte: start, lte: end };
+    where.AND = { data: { gte: start, lte: end } };
   } else if (filtroMes) {
-    const bounds = await prisma.controleTemperaturaEquipamento.aggregate({
-      _min: { data: true },
-      _max: { data: true }
-    });
-    where.OR = getMonthRangesForBounds(filtroMes, bounds._min.data, bounds._max.data)
-      .map(({ start, end }) => ({ data: { gte: start, lte: end } }));
+    const { start, end } = getMonthDateRange(filtroMes, today.getUTCFullYear());
+    where.AND = { data: { gte: start, lte: end } };
   }
 
   if (filtroEquipamento) {
@@ -204,7 +205,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
 
-  const [registros, options, categoryRules] = await Promise.all([
+  const [rawRegistros, options, categoryRules] = await Promise.all([
     prisma.controleTemperaturaEquipamento.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -223,6 +224,7 @@ export default async function ControleTemperaturaEquipamentosPage({
     (option) =>
       option.tipo === TipoOpcaoTemperaturaEquipamento.EQUIPAMENTO && option.ativo
   );
+  const registros = await currentRecordSignatures(rawRegistros,"temperatura");
   const equipamentoOptionsAtivas = equipamentoCatalogOptionsAtivas.map((option) => option.nome);
   const equipamentosCategoria: Array<{
     nome: string;
@@ -262,11 +264,17 @@ export default async function ControleTemperaturaEquipamentosPage({
   const fotoId = parsePositiveInt(firstParam(params.fotoId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
   const registroEmEdicao = editId
-    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: editId, fluxoId: null } })
+    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: editId } })
     : null;
   const registroParaExcluir = deleteId
-    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: deleteId, fluxoId: null } })
+    ? await prisma.controleTemperaturaEquipamento.findFirst({ where: { id: deleteId } })
     : null;
+
+  const managedRecord = registroEmEdicao ?? registroParaExcluir;
+  if (managedRecord?.fluxoId) {
+    const flow = await prisma.fluxoOperacional.findUnique({where:{id:managedRecord.fluxoId}});
+    if (flow && !flow.excluidoEm) redirect(`/controle-temperatura-equipamentos/fluxo?chave=${encodeURIComponent(flow.chave)}`);
+  }
   const fotoRegistroEmEdicao = registroEmEdicao
     ? getStoredImageSrc({
         url: registroEmEdicao.fotoUrl,
@@ -305,9 +313,9 @@ export default async function ControleTemperaturaEquipamentosPage({
   const closedPeriods = await Promise.all(Array.from(periodos.values()).map(async period => ({ ...period, closed: await isOperationalMonthClosed("temperatura", period.mes, period.ano) })));
   const assinadosSet = new Set(closedPeriods.filter(p => p.closed).map(p => periodKey(p.mes, p.ano)));
   const periodoEdicao = registroEmEdicao ? getMonthYear(registroEmEdicao.data) : null;
-  const registroEmEdicaoBloqueado = periodoEdicao
+  const registroEmEdicaoBloqueado = Boolean(registroEmEdicao?.assinaturaNutricionistaDataHora) || Boolean(registroEmEdicao && !canCorrectTemperature(authUser,registroEmEdicao.data)) || (periodoEdicao
     ? assinadosSet.has(periodKey(periodoEdicao.mes, periodoEdicao.ano))
-    : false;
+    : false);
   const periodoExclusao = registroParaExcluir ? getMonthYear(registroParaExcluir.data) : null;
   const registroParaExcluirBloqueado = periodoExclusao
     ? assinadosSet.has(periodKey(periodoExclusao.mes, periodoExclusao.ano))
@@ -451,7 +459,7 @@ export default async function ControleTemperaturaEquipamentosPage({
         modulePath={MODULE_PATH}
         searchParams={params}
         managementHref={podeGerenciarOpcoes ? "/controle-temperatura-equipamentos/opcoes" : undefined}
-        historyHref={podeVerGestao ? "/controle-temperatura-equipamentos/historico" : undefined}
+        historyHref={podeVerGestao || hasPermission(authUser,"modulo.temperatura.editar_registros_mes_vigente") || hasPermission(authUser,"modulo.temperatura.reabrir_registro") ? "/controle-temperatura-equipamentos/historico" : undefined}
         maintenanceHref="/chamados-manutencao?origem=TEMPERATURA"
       />
 
@@ -505,7 +513,7 @@ export default async function ControleTemperaturaEquipamentosPage({
             </p>
           ) : registroEmEdicao && registroEmEdicaoBloqueado ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-              Este registro pertence a um mês fechado e não pode ser alterado.
+              {registroEmEdicao.assinaturaNutricionistaDataHora ? "Registro assinado. Solicite a reabertura a um usuário autorizado para realizar alterações." : "Registro bloqueado para edição por permissão ou fechamento da competência."}
             </p>
           ) : (
             <form
@@ -515,6 +523,7 @@ export default async function ControleTemperaturaEquipamentosPage({
             >
               <TemperatureReferenceFields referenceDate={formatDateInput(dataFormulario)} todayDate={todayDateInput} editable={!registroEmEdicao}>
               <input type="hidden" name="returnTo" value={formReturnTo} />
+              {registroEmEdicao && <input type="hidden" name="originalUpdatedAt" value={registroEmEdicao.updatedAt.toISOString()}/>}
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             {semEquipamentosDisponiveis ? <p className="text-sm md:col-span-2">Todos os equipamentos previstos para esta data já foram registrados. Selecione outra data para consultar as pendências.</p> : null}
@@ -712,11 +721,11 @@ export default async function ControleTemperaturaEquipamentosPage({
         )}
 
         <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          A listagem principal inicia sem filtro de data.
+          A listagem principal mostra somente os registros de hoje.
           {podeVerGestao ? (
             <>
               {" "}
-              Use os filtros ou o <strong>Histórico</strong> para outras consultas.
+              Consulte o <strong>Histórico</strong> para outras datas.
             </>
           ) : null}
         </p>
@@ -906,6 +915,8 @@ export default async function ControleTemperaturaEquipamentosPage({
           )}
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="temperatura" history={false} query={params} operationalDate={today} />
     </div>
   );
 }

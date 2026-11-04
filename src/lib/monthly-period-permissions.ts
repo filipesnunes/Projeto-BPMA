@@ -1,5 +1,6 @@
 import { hasPermission, type PermissionAwareUser } from "@/lib/permissions";
 import { getOperationalSignatureModule, type OperationalSignatureModuleCode } from "@/lib/module-signatures";
+import { canSignOilSupervisor } from "./oil-signature-permissions";
 
 export function canViewMonthlyPeriods(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {
   const prefix = getOperationalSignatureModule(code).permissionPrefix;
@@ -15,6 +16,7 @@ export function canReopenMonthlyPeriod(user: PermissionAwareUser, code: Operatio
 }
 
 export function canCloseMonthlyPeriod(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {
+  if (code === "oleo" && !canSignOilSupervisor(user, "monthly")) return false;
   return hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.fechar_mes`);
 }
 

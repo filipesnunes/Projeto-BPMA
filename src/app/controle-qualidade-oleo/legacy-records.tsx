@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { CompatibleWorkflowRecords } from "@/components/compatible-workflow-records";
 import { redirect } from "next/navigation";
 import { isOperationalMonthClosed } from "@/lib/monthly-reopening";
 import { canDeleteOperationalRecord } from "@/lib/operational-deletion-permission";
@@ -22,6 +25,8 @@ import {
   updateRegistroAction
 } from "./actions";
 import { OilRegisterFields } from "./oil-register-fields";
+import { MONTH_EDIT } from "./correction-policy";
+import { NO_OIL_STRIP } from "./strip-choice";
 import { OilStatusBadge } from "./oil-status-badge";
 import { OIL_OPERATION_GUIDELINES } from "./options";
 import {
@@ -39,7 +44,7 @@ import {
   periodKey
 } from "./utils";
 
-const MODULE_PATH = "/controle-qualidade-oleo/legado";
+const MODULE_PATH = "/controle-qualidade-oleo";
 const CARD_CLASS =
   "bpma-card";
 const INPUT_CLASS =
@@ -98,6 +103,7 @@ function parseStatusFilter(value: string): StatusQualidadeOleo | null {
   return null;
 }
 
+function openSavedOil(id:number):void { redirect(`/controle-qualidade-oleo/registro/${id}`); }
 export default async function ControleQualidadeOleoPage({ searchParams }: PageProps) {
   const authUser = await getCurrentUser();
   if (!authUser) redirect("/login");
@@ -107,12 +113,11 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     ? hasPermission(authUser, "modulo.oleo.gerenciar_cadastros")
     : false;
   const podeVerGestao = authUser
-    ? hasPermission(authUser, "modulo.oleo.acessar_historico") || podeGerenciarOpcoes
+    ? hasPermission(authUser, "modulo.oleo.acessar_historico") || hasPermission(authUser, MONTH_EDIT) || hasPermission(authUser,"modulo.oleo.reabrir_registro") || podeGerenciarOpcoes
     : false;
   const podeExcluirRegistros = canDeleteOperationalRecord(authUser, "oleo");
 
   const params = await searchParams;
-  if (params.new === "1") redirect("/controle-qualidade-oleo/fluxo");
   const feedback = firstParam(params.feedback).trim();
   const feedbackType = firstParam(params.feedbackType) === "error" ? "error" : "success";
 
@@ -136,7 +141,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const filtroAno = parseFilterYear(filtroAnoRaw);
   const filtroStatus = parseStatusFilter(filtroStatusRaw);
 
-  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = { fluxoId: null };
+  const where: Prisma.ControleQualidadeOleoRegistroWhereInput = {};
   const dataFiltro = parseDateInput(filtroData);
 
   if (dataFiltro) {
@@ -167,8 +172,10 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   if (filtroResponsavel) {
     where.responsavel = { contains: filtroResponsavel, mode: "insensitive" };
   }
+  // The initial screen is strictly today's work; filters cannot expand its scope.
+  where.AND = {data:getTodaySystemDate()};
 
-  const [registros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
+  const [rawRegistros, fitaOptions, ultimaAfericaoFita] = await Promise.all([
     prisma.controleQualidadeOleoRegistro.findMany({
       where,
       orderBy: [{ data: "desc" }, { createdAt: "desc" }]
@@ -183,17 +190,25 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
     })
   ]);
 
+  const registros = await currentRecordSignatures(rawRegistros,"oleo");
   const fitaOptionsAtivas = fitaOptions.filter((option) => option.ativo);
 
   const editId = parsePositiveInt(firstParam(params.editId));
   const deleteId = parsePositiveInt(firstParam(params.deleteId));
   const novoRegistroSelecionado = firstParam(params.new) === "1";
   const registroEmEdicao = editId
-    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: editId, fluxoId: null } })
+    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: editId } })
     : null;
+  if(registroEmEdicao)openSavedOil(registroEmEdicao.id);
   const registroParaExcluir = deleteId
-    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: deleteId, fluxoId: null } })
+    ? await prisma.controleQualidadeOleoRegistro.findFirst({ where: { id: deleteId } })
     : null;
+  const managedRecord = registroEmEdicao ?? registroParaExcluir;
+  if (managedRecord?.fluxoId) {
+    const flow = await prisma.fluxoOperacional.findUnique({where:{id:managedRecord.fluxoId}});
+    if (flow && !flow.excluidoEm) redirect(`/controle-qualidade-oleo/fluxo?chave=${encodeURIComponent(flow.chave)}`);
+  }
+
 
   let fitaFormOptions = fitaOptionsAtivas;
   if (
@@ -289,7 +304,7 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
   const shouldRestoreFormValues = Boolean(modalError) && mostrarFormulario;
   const formFita = shouldRestoreFormValues
     ? firstParam(params.formFita).trim()
-    : registroEmEdicao?.fitaOleo ?? "";
+    : registroEmEdicao ? registroEmEdicao.fitaOleo || NO_OIL_STRIP : "";
   const formTemperatura = shouldRestoreFormValues
     ? firstParam(params.formTemperatura).trim()
     : registroEmEdicao?.temperatura !== null && registroEmEdicao?.temperatura !== undefined
@@ -381,10 +396,12 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
             </p>
           ) : (
             <form
+              key={registroEmEdicao?.id ?? "new"}
               action={registroEmEdicao ? updateRegistroAction : createRegistroAction}
               className="grid gap-4 md:grid-cols-2"
             >
               <input type="hidden" name="returnTo" value={formReturnTo} />
+              <input type="hidden" name="workflowRequestId" value={randomUUID()} />
               {registroEmEdicao ? <input type="hidden" name="id" value={registroEmEdicao.id} /> : null}
 
             {registroEmEdicao ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 md:col-span-2 dark:border-slate-700 dark:bg-slate-800">
@@ -669,6 +686,8 @@ export default async function ControleQualidadeOleoPage({ searchParams }: PagePr
           )}
         </ActionModal>
       ) : null}
+
+      <CompatibleWorkflowRecords module="oleo" history={false} query={params} operationalDate={getTodaySystemDate()} />
     </div>
   );
 }

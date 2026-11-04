@@ -53,8 +53,9 @@ export async function buildRegistroPayload(params: {
   actor: Awaited<ReturnType<typeof getCurrentUserForAction>>;
   item: RegistroItemSource;
   input: RegistroTemperaturaInput;
+  existingCorrectiveAction?: string | null;
 }, db: Prisma.TransactionClient = prisma): Promise<RegistroItemPayload> {
-  const findAction = (name: string) => findAcaoCorretivaByName(name,false,db);
+  const findAction = (name: string) => findAcaoCorretivaByName(name, !(params.existingCorrectiveAction && normalizeOption(name) === normalizeOption(params.existingCorrectiveAction)), db);
   const temperaturaAmbiente = params.input.temperaturaTipo === "AMBIENTE";
   const usaGarrafaTermica = params.item.usaGarrafaTermica;
   const acaoCorretivaOption = params.input.acaoCorretivaInput

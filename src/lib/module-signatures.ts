@@ -1,4 +1,6 @@
 import { hasPermission, type PermissionAwareUser } from "@/lib/permissions";
+import { canSignTechnicalReview } from "./signature-authorization";
+import { canSignOilSupervisor } from "./oil-signature-permissions";
 
 export const OPERATIONAL_SIGNATURE_MODULES = {
   hortifruti: {
@@ -65,17 +67,16 @@ export function canSignModuleDay(
   user: PermissionAwareUser,
   moduleCode: OperationalSignatureModuleCode
 ): boolean {
+  if (moduleCode === "oleo") return canSignOilSupervisor(user, "daily");
   const moduleConfig = OPERATIONAL_SIGNATURE_MODULES[moduleCode];
-  return (
-    hasPermission(user, "usuarios.responsavel_tecnico") &&
-    hasPermission(user, `${moduleConfig.permissionPrefix}.assinar_dia`)
-  );
+  return moduleCode !== "amostras" && canSignTechnicalReview(user, `${moduleConfig.permissionPrefix}.assinar_dia`);
 }
 
 export function canSignModuleMonthlyClosure(
   user: PermissionAwareUser,
   moduleCode: OperationalSignatureModuleCode
 ): boolean {
+  if (moduleCode === "oleo") return canSignOilSupervisor(user, "monthly");
   const moduleConfig = OPERATIONAL_SIGNATURE_MODULES[moduleCode];
   return (
     hasPermission(user, "usuarios.responsavel_tecnico") &&

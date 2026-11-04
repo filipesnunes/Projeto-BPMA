@@ -1,3 +1,5 @@
+import { registerTemperatureCorrectionPermission } from "@/lib/register-temperature-correction-permission";
+import { registerOilCorrectionPermission } from "@/lib/register-oil-correction-permission";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -58,6 +60,8 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
   if (!authUser || !hasPermission(authUser, "usuarios.acessar")) {
     redirect("/acesso-negado");
   }
+  await registerTemperatureCorrectionPermission();
+  await registerOilCorrectionPermission();
 
   const params = await searchParams;
   const activeTab = firstParam(params.tab) === "perfis" ? "perfis" : "usuarios";

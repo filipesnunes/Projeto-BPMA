@@ -1,3 +1,4 @@
+import { reviewSignatureLabel } from "@/lib/review-presentation";
 import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -401,7 +402,7 @@ export async function GET(request: NextRequest) {
         responsavel: true,
         orientacao: true,
         assinaturaSupervisorNome: true, assinaturaSupervisorEm: true,
-        fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, assinadoEm: true } } } },
+        fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, mecanismo:true, assinadoEm: true } } } },
         observacao: true
       },
       orderBy: [{ data: "asc" }, { createdAt: "asc" }, { id: "asc" }]
@@ -469,7 +470,7 @@ export async function GET(request: NextRequest) {
         fitaOleo: formatOilStrip(record.fitaOleo),
         temperatura: formatTemperature(record.temperatura),
         responsavel: valueOrDash(record.responsavel),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome)+(record.fluxo.assinaturaVigente?.assinadoEm?` — ${formatAppDateTime(record.fluxo.assinaturaVigente.assinadoEm)}`:"") : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reviewSignatureLabel(record.fluxo.assinaturaVigente)+(record.fluxo.assinaturaVigente?.assinadoEm?` — ${formatAppDateTime(record.fluxo.assinaturaVigente.assinadoEm)}`:"") : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
         observacao: valueOrDash(record.observacao?.trim() || record.orientacao)
       };
     }),

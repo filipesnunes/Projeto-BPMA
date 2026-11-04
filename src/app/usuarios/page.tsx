@@ -724,7 +724,7 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
             ) : null}
             {profilePermissions.codigo === "DEV" ? (
               <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                O perfil DEV mantém acesso total e suas permissões críticas não podem ser removidas.
+                O perfil DEV mantém seu acesso administrativo. A reabertura mensal exige concessão explícita por módulo e pode ser removida aqui.
               </p>
             ) : null}
             <form action={updateProfilePermissionsAction} className="mt-4 space-y-4">
@@ -741,9 +741,9 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                     <div className="mt-3 space-y-2">
                       {group.permissions.map((permission) => {
                         const checked =
-                          profilePermissions.codigo === "DEV" ||
+                          profilePermissions.codigo === "DEV" && !permission.codigo.endsWith(".reabrir_mes") ||
                           selectedPermissionCodes.has(permission.codigo);
-                        const disabled = profilePermissions.codigo === "DEV";
+                        const disabled = profilePermissions.codigo === "DEV" && !permission.codigo.endsWith(".reabrir_mes");
 
                         return (
                           <label
@@ -778,7 +778,7 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                   </fieldset>
                 ))}
               </div>
-              {profilePermissions.codigo !== "DEV" ? (
+              {(
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Link href="/usuarios?tab=perfis" className="btn-secondary text-center">
                     Cancelar
@@ -787,7 +787,7 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
                     Salvar Permissões
                   </button>
                 </div>
-              ) : null}
+              )}
             </form>
           </section>
         </div>

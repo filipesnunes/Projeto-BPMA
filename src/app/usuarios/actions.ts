@@ -729,7 +729,10 @@ export async function updateProfilePermissionsAction(formData: FormData) {
     const beforeCodes = profile.permissoes
       .map((profilePermission) => profilePermission.permissao.codigo)
       .sort();
-    const selectedCodes = profile.codigo === "DEV" ? ALL_PERMISSION_CODES : getSelectedPermissionCodes(formData);
+    const submittedCodes = getSelectedPermissionCodes(formData);
+    const selectedCodes = profile.codigo === "DEV"
+      ? ALL_PERMISSION_CODES.filter(code => !code.endsWith(".reabrir_mes") || submittedCodes.includes(code))
+      : submittedCodes;
 
     if (!canGrantSensitivePermissions(actor)) {
       const changedSensitivePermission = ALL_PERMISSION_CODES.some((codigo) => {

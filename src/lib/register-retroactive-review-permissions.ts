@@ -4,7 +4,7 @@ import { PERMISSION_DEFINITIONS } from "./permissions";
 
 // Catalog only: no profile grants, including when an administrator opens the editor.
 export async function registerRetroactiveReviewPermissions(tx: Prisma.TransactionClient) {
-  for (const definition of PERMISSION_DEFINITIONS.filter(p => p.acao === "assinar_retroativo")) {
+  for (const definition of PERMISSION_DEFINITIONS.filter(p => p.acao === "assinar_retroativo" || p.acao === "reabrir_mes")) {
     await tx.permissao.upsert({ where: { codigo: definition.codigo }, create: definition, update: definition });
   }
 }

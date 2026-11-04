@@ -1,5 +1,9 @@
 # Revisões retroativas e reabertura mensal — KPlatz
 
+Conferência posterior de indicadores, permissões efetivas e PDFs:
+[resultado antes do deploy](conferencia-pre-deploy-revisoes-2026-11-04.md).
+Esse documento registra as correções adicionais e os resultados atuais.
+
 Implementação local na branch `estabilizacao/experiencia-anterior-2026-10-28`.
 Sem commit, push, deploy, migration ou alterações em produção. O Multitenant não
 foi acessado. O `.env` foi preservado; testes com persistência usam exclusivamente

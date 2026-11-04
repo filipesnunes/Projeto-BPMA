@@ -1,3 +1,6 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
+import { retroactiveNature } from "@/lib/review-presentation";
+import { currentCleaningDaySignatures } from "@/lib/cleaning-day-signatures";
 import {CleaningSupervisorForm} from "@/app/plano-limpeza/supervisor-signature-form";
 import { WeeklyExecutionFields } from "@/components/forms/weekly-execution-fields";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
@@ -280,7 +283,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
       isFullySigned: records.length > 0 && signedRecords.length === records.length,
       regularizedCount,
       statusLabel:
-        regularizedCount > 0 ? "Assinado com regularização" : "Assinado sem pendências",
+        [...new Set(signedRecords.map(record => retroactiveNature(record.observacaoSupervisor)).filter(Boolean))].join(" / ") || (regularizedCount > 0 ? "Assinado com regularização" : "Assinado sem pendências"),
       supervisorLabel:
         supervisorNames.length === 0
           ? "-"
@@ -419,7 +422,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
       ])
     ).values()
   );
-  const assinaturasMensais = monthlyDates.length
+  const rawAssinaturasMensais = monthlyDates.length
     ? await prisma.assinaturaDiariaModulo.findMany({
         where: {
           moduloCodigo: MODULE_CODE,
@@ -427,6 +430,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
         }
       })
     : [];
+  const assinaturasMensais = await currentCleaningDaySignatures(rawAssinaturasMensais, "limpeza_semanal", monthlyDates);
   const diasExecutados = new Set(
     rawMonthlyRecords.map((record) => formatAppDateInput(record.dataExecucao))
   );
@@ -447,6 +451,7 @@ export default async function PlanoLimpezaSemanalHistoricoPage({
       0
     ),
     "Execuções realizadas": rawMonthlyRecords.length,
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": diasAssinados.size,
     "Dias pendentes de assinatura": Math.max(diasExecutados.size - diasAssinados.size, 0)
   };

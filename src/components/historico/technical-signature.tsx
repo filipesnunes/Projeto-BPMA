@@ -1,4 +1,5 @@
 import { pendingOilReviewDates } from "@/lib/monthly-periods";
+import { retroactiveNature, technicalReviewPending } from "@/lib/review-presentation";
 import { DaySignatureForm } from "./day-signature-form";
 import {legacyReviewScope} from "@/lib/legacy-review-scope";
 import {parseAppDateInput} from "@/lib/date-time";
@@ -38,9 +39,10 @@ export function SupervisorSignatureStatus({
   return (
     <div className="space-y-1 text-sm">
       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-        Assinado pelo Supervisor
+        {retroactiveNature(signature.observacao) ?? "Assinado pelo Supervisor"}
       </span>
       <p>{signature.usuarioNomeSnapshot}</p>
+      {technicalReviewPending(signature.observacao) && <p className="text-xs">Revisão registrada; não substitui revisão técnica quando exigida.</p>}
       <p className="text-xs text-slate-500 dark:text-slate-400">
         {signature.usuarioPerfilSnapshot ? getRoleLabel(signature.usuarioPerfilSnapshot) : "Perfil não informado"} em {formatAppDateTime(signature.assinadoEm)}
       </p>
@@ -94,13 +96,13 @@ export async function MonthlyClosureSection({
   canSign: boolean;
   pendingDailySignatures: number;
 }) {
-  const indicatorEntries = Object.entries(indicators);
   const user = await getCurrentUser();
   const legacy = !signedClosure ? await findLegacyMonthlyClosure(moduleCode, month, year) : null;
   const isClosed = Boolean(signedClosure) || legacy?.status === "ASSINADO";
   const state = await prisma.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes: month, ano: year } } });
   const reopened = state?.status === "REABERTO";
   const oilPending = moduleCode === "oleo" ? await pendingOilReviewDates(month,year) : [];
+  const indicatorEntries = Object.entries({ ...indicators, ...(moduleCode === "oleo" ? { "Dias com revisão técnica pendente": oilPending.length } : {}) });
 
   return (
     <section id="fechamento-mensal" className="bpma-card">
@@ -118,6 +120,7 @@ export async function MonthlyClosureSection({
 
       <p className="mt-3 text-sm font-medium">{reopened ? "Período reaberto" : isClosed ? "Período fechado" : "Período aberto normalmente"}</p>
       <Link href={`/historico-operacional/revisao-retroativa?modulo=${moduleCode}&data=${year}-${String(month).padStart(2,"0")}-01`} className="btn-secondary">Consultar assinaturas retroativas</Link>
+      {oilPending.length > 0 && <p className="mt-3 text-sm">Revisão técnica pendente em: {oilPending.join(", ")}. Uma revisão gerencial ou operacional registrada não substitui essa exigência.</p>}
       {!signedClosure && legacy?.status === "ASSINADO" ? (
         <p className="text-sm">Fechamento assinado por {legacy.responsavelTecnico} em {formatAppDateTime(legacy.dataAssinatura)}.</p>
       ) : null}

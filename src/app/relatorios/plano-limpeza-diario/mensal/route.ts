@@ -1,3 +1,5 @@
+import { currentCleaningDaySignatures } from "@/lib/cleaning-day-signatures";
+import { retroactiveNature } from "@/lib/review-presentation";
 import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -711,7 +713,7 @@ export async function GET(request: NextRequest) {
   const daysInMonth = monthRange.end.getUTCDate();
   const generatedAt = getAppNow();
 
-  const [areaConfigs, records, dailySignatures, genericMonthlyClosure, legacyMonthlyClosure] =
+  const [areaConfigs, records, rawDailySignatures, genericMonthlyClosure, legacyMonthlyClosure] =
     await Promise.all([
       getDailyAreaConfigs(),
       getMonthlyDailyRecords(month, year),
@@ -725,7 +727,7 @@ export async function GET(request: NextRequest) {
         },
         select: {
           dataReferencia: true,
-          usuarioNomeSnapshot: true
+          usuarioNomeSnapshot: true, usuarioPerfilSnapshot: true, assinadoEm: true, observacao:true
         }
       }),
       prisma.fechamentoMensalModulo.findUnique({
@@ -760,10 +762,11 @@ export async function GET(request: NextRequest) {
         ? formatGeneratedAtSentence(legacyMonthlyClosure.dataAssinatura)
         : "";
   const monthYearLabel = formatMonthYear(month, year);
+  const dailySignatures = await currentCleaningDaySignatures(rawDailySignatures, "limpeza_diaria", [...new Map(records.map(record=>[record.data.toISOString(),record.data])).values()]);
   const supervisorByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      signature.usuarioNomeSnapshot
+      `${signature.usuarioNomeSnapshot}${retroactiveNature(signature.observacao) ? " — " + retroactiveNature(signature.observacao) : ""}`
     ])
   );
 

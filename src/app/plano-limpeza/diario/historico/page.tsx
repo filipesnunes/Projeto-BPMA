@@ -1,3 +1,5 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
+import { currentCleaningDaySignatures } from "@/lib/cleaning-day-signatures";
 import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 import { Prisma, StatusPlanoLimpeza } from "@prisma/client";
 import Link from "next/link";
@@ -436,7 +438,7 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
   );
   const datasHistorico = resumo.map((dia) => dia.data);
   const datasMensais = resumoMensal.map((dia) => dia.data);
-  const [assinaturasHistorico, assinaturasMensais] = await Promise.all([
+  const [rawAssinaturasHistorico, rawAssinaturasMensais] = await Promise.all([
     datasHistorico.length
       ? prisma.assinaturaDiariaModulo.findMany({
           where: { moduloCodigo: MODULE_CODE, dataReferencia: { in: datasHistorico } }
@@ -448,6 +450,8 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
         })
       : Promise.resolve([])
   ]);
+  const assinaturasHistorico = await currentCleaningDaySignatures(rawAssinaturasHistorico, "limpeza_diaria", datasHistorico);
+  const assinaturasMensais = await currentCleaningDaySignatures(rawAssinaturasMensais, "limpeza_diaria", datasMensais);
   const assinaturasPorData = new Map(
     assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
@@ -500,6 +504,7 @@ export default async function PlanoLimpezaDiarioHistoricoPage({ searchParams }: 
     "Áreas parciais": totalAreasParciais,
     "Itens/locais executados": totalItensExecutados,
     "Pendências": totalPendencias,
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(resumoMensal.length - assinaturasMensaisPorData.size, 0)
   };

@@ -1,3 +1,4 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
 import { hasPermission } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
@@ -251,6 +252,7 @@ export default async function RastreabilidadeRecebimentoHistoricoPage({
     "Ações corretivas": itensMensais.filter((item) => item.acaoCorretiva?.trim()).length,
     "Dias com recebimento": diasComRecebimento.size,
     "Dias sem recebimento": Math.max(diasNoMes - diasComRecebimento.size, 0),
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(diasComRecebimento.size - assinaturasMensaisPorData.size, 0)
   };

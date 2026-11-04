@@ -16,6 +16,7 @@ import { groupSignatureBridge } from "./operational-workflow/group-signatures";
 import { signWorkflow, type WorkflowSignatureBridge } from "./operational-workflow/service";
 import { buffetAuthorshipReservations } from "@/app/controle-buffet-amostras/authorship";
 import { legacyReviewScope } from "./legacy-review-scope";
+import { isNonTechnicalRetroactive, retroactiveNature } from "./review-presentation";
 
 export type RetroactiveScope = { module: OperationalSignatureModuleCode; date: Date; flowId?: string; recordIds?: number[]; legacyRecordId?: number };
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -51,7 +52,9 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
       versoes: { orderBy: { versao: "asc" } }, eventos: { orderBy: { id: "asc" } }, amostras: { where: { excluidoEm: null }, orderBy: { id: "asc" } }, oleo: true, assinaturaVigente: true
     } });
     if (unit.modulo !== scope.module || +unit.dataReferencia !== +scope.date || unit.excluidoEm) throw Error("Escopo inválido para esta revisão.");
-    if (unit.assinaturaVigenteId || !["COMPLETO", "REABERTO"].includes(unit.estado)) reason ||= "Registro já assinado ou com preenchimento pendente.";
+    const technicalUpgrade = unit.estado === "FECHADO" && isNonTechnicalRetroactive(unit.assinaturaVigente?.mecanismo) && retroactiveReviewNature(user) === "Revisão técnica retroativa";
+    if (unit.assinaturaVigenteId && !technicalUpgrade || !["COMPLETO", "REABERTO"].includes(unit.estado) && !technicalUpgrade) reason ||= "Registro já assinado ou com preenchimento pendente.";
+    if (technicalUpgrade) warnings.push("A revisão técnica complementa a revisão anterior, que permanece preservada na auditoria.");
     const bridge = domainBridge(scope.module);
     let content: Awaited<ReturnType<typeof bridge.validate>> | undefined;
     try { content = await bridge.validate(tx, unit); } catch (error) { reason ||= error instanceof Error ? error.message : "Dados incompletos."; }
@@ -74,21 +77,25 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
   }
   const all = await legacyReviewScope(tx, scope.module, scope.date);
   const rows = scope.recordIds?.length ? all.rows.filter(r => scope.recordIds!.includes(r.id)) : all.rows;
+  let currentDay: Awaited<ReturnType<typeof tx.assinaturaDiariaModulo.findUnique>> = null;
   if (!rows.length || scope.recordIds && new Set(scope.recordIds).size !== rows.length) reason ||= "Seleção de registros inválida ou vazia.";
   if (scope.module === "hortifruti") {
     if (scope.recordIds?.length) reason ||= "A revisão de Hortifruti abrange o dia completo.";
-    if (await tx.assinaturaDiariaModulo.findUnique({ where: { moduloCodigo_dataReferencia: { moduloCodigo: scope.module, dataReferencia: scope.date } } })) reason ||= "Este dia já possui revisão vigente.";
+    currentDay = await tx.assinaturaDiariaModulo.findUnique({ where: { moduloCodigo_dataReferencia: { moduloCodigo: scope.module, dataReferencia: scope.date } } });
+    const nature = retroactiveNature(currentDay?.observacao);
+    if (currentDay && !(nature && nature !== "Revisão técnica retroativa" && retroactiveReviewNature(user) === "Revisão técnica retroativa")) reason ||= "Este dia já possui revisão vigente.";
   } else {
     for (const row of rows) {
       if (!("assinaturaResponsavel" in row)) continue;
       if (!row.assinaturaResponsavel.trim() || !["AGUARDANDO_SUPERVISOR", "CONCLUIDO"].includes(row.status)) reason ||= "Há atividades sem execução assinada. A revisão não pode criar assinaturas de executores.";
-      if (row.assinaturaSupervisor.trim()) reason ||= "A seleção contém atividade já supervisionada. Selecione somente pendências.";
+      const nature = retroactiveNature(row.observacaoSupervisor);
+      if (row.assinaturaSupervisor.trim() && !(nature && nature !== "Revisão técnica retroativa" && retroactiveReviewNature(user) === "Revisão técnica retroativa")) reason ||= "A seleção contém atividade já supervisionada. Selecione somente pendências.";
       if (!row.assinaturaResponsavelUsuarioId) warnings.push(`Registro #${row.id}: executor histórico sem identificação completa.`);
       if (row.assinaturaResponsavelUsuarioId === user.id) warnings.push(`Registro #${row.id}: o revisor participou da execução.`);
     }
   }
   warnings.push("A revisão é realizada agora e não altera os responsáveis nem as datas operacionais originais.");
-  return { allowed: !reason, reason, warnings, token: digest(rows), version: 0, records: JSON.parse(JSON.stringify(rows)) as Prisma.JsonValue, rows };
+  return { allowed: !reason, reason, warnings, token: digest({ rows, currentDay }), version: 0, records: JSON.parse(JSON.stringify(rows)) as Prisma.JsonValue, rows };
 }
 
 export async function signRetroactiveReview(params: { authenticated: AuthenticatedUser; scope: RetroactiveScope; token: string; password: string; justification: string; confirmed: boolean }) {
@@ -124,7 +131,8 @@ export async function signRetroactiveReview(params: { authenticated: Authenticat
         await adopt(tx,user,scope.legacyRecordId!,String(source.updatedAt),"sign");
       }:undefined,
       bridge: {
-      ...bridge, mechanism: "Revisão retroativa com ressalvas",
+      ...bridge, mechanism: user => `${retroactiveReviewNature(user)} com ressalvas`,
+      async canReplaceSignature(tx, user) { return (await retroactiveReviewScope(tx, user, scope)).allowed; },
       async sign(tx, user, units, signedAt) {
         const review = prepared ?? await check(tx, user);
         const evidence = audit(user, review);
@@ -142,13 +150,14 @@ export async function signRetroactiveReview(params: { authenticated: Authenticat
     const user = await refreshWorkflowActor(tx, params.authenticated);
     const review = await check(tx, user), evidence = audit(user, review), signedAt = getAppNow();
     if (scope.module === "hortifruti") {
-      await tx.assinaturaDiariaModulo.create({ data: { moduloCodigo: scope.module, dataReferencia: scope.date, usuarioId: user.id,
-        usuarioNomeSnapshot: user.nomeCompleto, usuarioPerfilSnapshot: user.perfil, responsavelTecnico: evidence.natureza === "Revisão técnica retroativa", assinadoEm: signedAt, observacao: JSON.stringify(evidence) } });
+      const data = { usuarioId: user.id, usuarioNomeSnapshot: user.nomeCompleto, usuarioPerfilSnapshot: user.perfil, responsavelTecnico: evidence.natureza === "Revisão técnica retroativa", assinadoEm: signedAt, observacao: JSON.stringify(evidence) };
+      await tx.assinaturaDiariaModulo.upsert({ where: { moduloCodigo_dataReferencia: { moduloCodigo: scope.module, dataReferencia: scope.date } }, create: { moduloCodigo: scope.module, dataReferencia: scope.date, ...data }, update: data });
     } else {
       for (const row of review.rows) {
+        if (!("assinaturaSupervisor" in row)) throw Error("Atividade incompatível com a revisão selecionada.");
         const data = { assinaturaSupervisor: user.nomeCompleto, assinaturaSupervisorUsuarioId: user.id, assinaturaSupervisorNomeUsuario: user.nomeUsuario,
           assinaturaSupervisorPerfil: user.perfil, assinaturaSupervisorDataHora: signedAt, status: "CONCLUIDO" as const, observacaoSupervisor: JSON.stringify(evidence) };
-        const where = { id: row.id, updatedAt: row.updatedAt, assinaturaSupervisor: "" };
+        const where = { id: row.id, updatedAt: row.updatedAt, assinaturaSupervisor: row.assinaturaSupervisor };
         if (scope.module === "limpeza_diaria") await tx.planoLimpezaDiarioRegistro.update({ where, data });
         else await tx.planoLimpezaSemanalExecucao.update({ where, data });
       }

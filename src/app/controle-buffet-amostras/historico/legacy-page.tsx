@@ -1,3 +1,4 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
 import {buffetServiceReview} from "../service-review";
 import {isOperationalMonthClosed} from "@/lib/monthly-reopening";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
@@ -380,6 +381,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     "Ações corretivas": totaisMensais.totalAcoesCorretivas,
     "Dias completos": diasMensais.filter((dia) => dia.services.every((service) => service.status === "CONCLUIDO")).length,
     "Dias parciais": diasMensais.filter((dia) => dia.services.some((service) => service.status !== "CONCLUIDO")).length,
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(diasComRegistro.size - assinaturasMensaisPorData.size, 0)
   };

@@ -12,7 +12,8 @@ export function canViewMonthlyPeriods(user: PermissionAwareUser, code: Operation
 
 export function canReopenMonthlyPeriod(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {
   return hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.acessar`)
-    && hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.reabrir_mes`);
+    && (user.perfil !== "DEV" || typeof user.perfilAcessoId === "number")
+    && Boolean(user.permissoes?.includes(`${getOperationalSignatureModule(code).permissionPrefix}.reabrir_mes`));
 }
 
 export function canCloseMonthlyPeriod(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {

@@ -1,3 +1,4 @@
+import { reviewSignatureLabel } from "@/lib/review-presentation";
 import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -276,7 +277,7 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reviewSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }

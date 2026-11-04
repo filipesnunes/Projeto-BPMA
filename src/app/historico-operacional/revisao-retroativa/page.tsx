@@ -1,3 +1,4 @@
+import { isNonTechnicalRetroactive, retroactiveNature } from "@/lib/review-presentation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-session";
@@ -29,7 +30,7 @@ export default async function RetroactivePage({ searchParams }: { searchParams: 
     if(linked?.fluxoId && +linked.data===+date) redirect(`${base}&fluxo=${linked.fluxoId}`);
   }
   const currentSignature=choices.find(unit=>unit.id===flowId)?.assinaturaVigente;
-  const pending = !isFlow && config.codigo !== "hortifruti" ? (await legacyReviewScope(prisma, config.codigo, date)).rows.filter(row => "assinaturaSupervisor" in row && !row.assinaturaSupervisor.trim()) : [];
+  const pending = !isFlow && config.codigo !== "hortifruti" ? (await legacyReviewScope(prisma, config.codigo, date)).rows.filter(row => "assinaturaSupervisor" in row && (!row.assinaturaSupervisor.trim() || Boolean(retroactiveNature(row.observacaoSupervisor) && retroactiveNature(row.observacaoSupervisor) !== "Revisão técnica retroativa" && retroactiveReviewNature(user) === "Revisão técnica retroativa"))) : [];
   const ids = rawIds ? rawIds.split(",").map(Number) : undefined;
   const selected = isFlow ? Boolean(flowId || legacyId) : config.codigo === "hortifruti" || Boolean(ids?.length);
   const review = selected ? await retroactiveReviewScope(prisma, user, { module: config.codigo, date, flowId: flowId || undefined, recordIds: ids, legacyRecordId:legacyId }) : null;
@@ -41,7 +42,7 @@ export default async function RetroactivePage({ searchParams }: { searchParams: 
       <p>A revisão registra a análise realizada agora. Não altera a autoria nem os procedimentos históricos.</p>
     </header>
     {!selected && <section className="bpma-card space-y-3"><h2 className="font-semibold">Selecionar registros</h2>
-      {choices.map(unit => <div key={unit.id} className="border-b py-3"><p>{unit.chave} — {unit.assinaturaVigente ? `Revisado por ${unit.assinaturaVigente.usuarioNome} em ${formatAppDateTime(unit.assinaturaVigente.assinadoEm)} (${unit.assinaturaVigente.mecanismo})` : unit.preenchimentoCompleto ? "Preenchimento completo" : "Preenchimento pendente"}</p>{!unit.assinaturaVigente && <Link href={`${base}&fluxo=${unit.id}`} className="btn-secondary">Conferir revisão</Link>}</div>)}
+      {choices.map(unit => <div key={unit.id} className="border-b py-3"><p>{unit.chave} — {unit.assinaturaVigente ? `Revisado por ${unit.assinaturaVigente.usuarioNome} em ${formatAppDateTime(unit.assinaturaVigente.assinadoEm)} (${unit.assinaturaVigente.mecanismo})` : unit.preenchimentoCompleto ? "Preenchimento completo" : "Preenchimento pendente"}</p>{(!unit.assinaturaVigente || isNonTechnicalRetroactive(unit.assinaturaVigente.mecanismo) && retroactiveReviewNature(user) === "Revisão técnica retroativa") && <Link href={`${base}&fluxo=${unit.id}`} className="btn-secondary">Conferir revisão</Link>}</div>)}
       {pending.length > 0 && <><Link className="btn-secondary" href={`${base}&registros=${pending.map(r=>r.id).join(",")}`}>Conferir todas as pendências do dia ({pending.length})</Link>{pending.map(row => <p key={row.id}>Registro #{row.id} — <Link href={`${base}&registros=${row.id}`}>Conferir individualmente</Link></p>)}</>}
       {legacy.map(row=><p key={row.id}>Registro legado #{row.id} — <Link className="btn-secondary" href={`${base}&legado=${row.id}`}>Conferir revisão</Link></p>)}
       {!choices.length && !pending.length && !legacy.length && <p>Nenhum registro pendente encontrado para esta data.</p>}
@@ -49,7 +50,7 @@ export default async function RetroactivePage({ searchParams }: { searchParams: 
     {review && <section className="bpma-card space-y-4"><h2 className="font-semibold">{retroactiveReviewNature(user)} — {user.nomeCompleto}</h2>
       <ul className="list-disc pl-5">{review.warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul>
       <details open><summary>Dados preservados nesta revisão</summary><div className="max-h-96 overflow-auto"><ReviewData value={review.records}/></div></details>
-      {currentSignature?<p role="status">Revisão registrada por {currentSignature.usuarioNome} em {formatAppDateTime(currentSignature.assinadoEm)}. {currentSignature.mecanismo}.</p>:completedRows?<p role="status">Revisão registrada para as atividades selecionadas. Os responsáveis e horários estão apresentados abaixo na trilha de revisões.</p>:review.allowed ? <RetroactiveForm historyPath={config.historyPath} fields={{ modulo: config.codigo, data: day, fluxo: flowId, registros: rawIds, legado:legacyId?String(legacyId):"", escopo: review.token }}/> : <p role="alert">{review.reason}</p>}
+      {currentSignature && !review.allowed?<p role="status">Revisão registrada por {currentSignature.usuarioNome} em {formatAppDateTime(currentSignature.assinadoEm)}. {currentSignature.mecanismo}.</p>:completedRows && !review.allowed?<p role="status">Revisão registrada para as atividades selecionadas. Os responsáveis e horários estão apresentados abaixo na trilha de revisões.</p>:review.allowed ? <RetroactiveForm historyPath={config.historyPath} fields={{ modulo: config.codigo, data: day, fluxo: flowId, registros: rawIds, legado:legacyId?String(legacyId):"", escopo: review.token }}/> : <p role="alert">{review.reason}</p>}
     </section>}
     <section className="bpma-card"><h2 className="font-semibold">Revisões registradas</h2>{logs.filter(log=>log.observacao?.includes('"REVISAO_RETROATIVA"')).map(log=><div key={log.id}>{log.nomeCompleto} — {formatAppDateTime(log.assinadoEm)}<ReviewAudit value={log.observacao}/></div>)}</section>
   </main>;

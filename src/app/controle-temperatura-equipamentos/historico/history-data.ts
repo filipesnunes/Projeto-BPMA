@@ -1,3 +1,4 @@
+import { isNonTechnicalRetroactive, technicalReviewPending } from "@/lib/review-presentation";
 import "server-only";
 import { Prisma, type PerfilUsuario, type StatusTemperaturaEquipamento } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -51,7 +52,7 @@ async function signatureSummary(dates:Date[]) {
   if(!unique.length)return result;
   const [daily,units,legacy]=await Promise.all([
     prisma.assinaturaDiariaModulo.findMany({where:{moduloCodigo:"temperatura",dataReferencia:{in:unique}},select:{dataReferencia:true,usuarioNomeSnapshot:true,usuarioPerfilSnapshot:true,assinadoEm:true,observacao:true}}),
-    prisma.fluxoOperacional.findMany({where:{modulo:"temperatura",excluidoEm:null,dataReferencia:{in:unique}},select:{dataReferencia:true,estado:true,assinaturaVigente:{select:{id:true,usuarioNome:true,usuarioPerfil:true,assinadoEm:true}}}}),
+    prisma.fluxoOperacional.findMany({where:{modulo:"temperatura",excluidoEm:null,dataReferencia:{in:unique}},select:{dataReferencia:true,estado:true,assinaturaVigente:{select:{id:true,usuarioNome:true,usuarioPerfil:true,assinadoEm:true,mecanismo:true}}}}),
     prisma.controleTemperaturaEquipamento.groupBy({by:["data"],where:{fluxoId:null,data:{in:unique}}})
   ]);
   const original=new Map(daily.map(signature=>[formatAppDateInput(signature.dataReferencia),signature]));
@@ -61,7 +62,7 @@ async function signatureSummary(dates:Date[]) {
     if(scoped.some(unit=>unit.estado!=="FECHADO"||!unit.assinaturaVigente))continue;
     if(legacyDays.has(day)){if(previous)result.set(day,previous);continue;}
     const evidence=scoped.map(unit=>unit.assinaturaVigente!).sort((a,b)=>+b.assinadoEm-+a.assinadoEm),names=[...new Set(evidence.map(signature=>signature.usuarioNome))];
-    result.set(day,{usuarioNomeSnapshot:names.join(", "),usuarioPerfilSnapshot:names.length===1?evidence[0].usuarioPerfil as PerfilUsuario:null,assinadoEm:evidence[0].assinadoEm,observacao:`Resumo de assinaturas vigentes: ${[...new Set(evidence.map(signature=>signature.id))].join(", ")}`});
+    result.set(day,{usuarioNomeSnapshot:names.join(", "),usuarioPerfilSnapshot:names.length===1?evidence[0].usuarioPerfil as PerfilUsuario:null,assinadoEm:evidence[0].assinadoEm,observacao:evidence.some(signature=>signature.mecanismo.includes("retroativa"))?JSON.stringify({operacao:"REVISAO_RETROATIVA",natureza:[...new Set(evidence.map(signature=>signature.mecanismo))].join(" / "),revisaoTecnicaPendente:evidence.some(signature=>isNonTechnicalRetroactive(signature.mecanismo))}):"Resumo de assinaturas vigentes"});
   }
   return result;
 }
@@ -94,5 +95,5 @@ export async function loadTemperatureHistory(params:{filters:TemperatureHistoryF
   ]);
   const signatures=await signatureSummary([...monthlyDays.map(row=>row.data),...pageDates,...(openDate&&detailTotal?[openDate]:[])]);
   const signedDays=monthlyDays.filter(row=>signatures.has(formatAppDateInput(row.data))).length;
-  return {...scope,groups,totalDays,totalRecords,page,pages,closure,signatures,photo,photoIds:new Set(photoRows.map(row=>row.id)),selected:openDate&&detailTotal?{data:openDate,registros:records}:null,selectedAlerts,detailTotal,detailPage,detailPages,indicators:{"Mês/Ano":`${String(scope.month).padStart(2,"0")}/${scope.year}`,"Dias monitorados":totals.dias,"Registros":totals.registros,"Equipamentos monitorados":totals.equipamentos,"Alertas":totals.alertas,"Ações corretivas":totals.acoes,"Manutenção/Inativos":totals.inativos,"Dias assinados":signedDays,"Dias pendentes de assinatura":Math.max(totals.dias-signedDays,0)}};
+  return {...scope,groups,totalDays,totalRecords,page,pages,closure,signatures,photo,photoIds:new Set(photoRows.map(row=>row.id)),selected:openDate&&detailTotal?{data:openDate,registros:records}:null,selectedAlerts,detailTotal,detailPage,detailPages,indicators:{"Mês/Ano":`${String(scope.month).padStart(2,"0")}/${scope.year}`,"Dias monitorados":totals.dias,"Registros":totals.registros,"Equipamentos monitorados":totals.equipamentos,"Alertas":totals.alertas,"Ações corretivas":totals.acoes,"Manutenção/Inativos":totals.inativos,"Dias revisados sem validação técnica":monthlyDays.filter(row=>technicalReviewPending(signatures.get(formatAppDateInput(row.data))?.observacao)).length,"Dias assinados":signedDays,"Dias pendentes de assinatura":Math.max(totals.dias-signedDays,0)}};
 }

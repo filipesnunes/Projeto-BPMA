@@ -1,3 +1,4 @@
+import { isNonTechnicalRetroactive } from "./review-presentation";
 import "server-only";
 import { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "@/lib/auth-session";
@@ -29,11 +30,11 @@ export function monthlyDateRange(mes: number, ano: number) {
 export async function pendingOilReviewDates(mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
   const range=monthlyDateRange(mes,ano);
   const [rows,daily]=await Promise.all([
-    db.controleQualidadeOleoRegistro.findMany({where:{data:range,excluidoEm:null},include:{fluxo:{select:{assinaturaVigenteId:true,estado:true}}}}),
+    db.controleQualidadeOleoRegistro.findMany({where:{data:range,excluidoEm:null},include:{fluxo:{select:{assinaturaVigenteId:true,estado:true,assinaturaVigente:{select:{mecanismo:true}}}}}}),
     db.assinaturaDiariaModulo.findMany({where:{moduloCodigo:"oleo",dataReferencia:range},select:{dataReferencia:true}})
   ]);
   const days=new Set(daily.map(row=>row.dataReferencia.toISOString().slice(0,10)));
-  return [...new Set(rows.filter(row=>row.fluxo ? !row.fluxo.assinaturaVigenteId || row.fluxo.estado!=="FECHADO" : !row.assinaturaSupervisorEm&&!days.has(row.data.toISOString().slice(0,10))).map(row=>row.data.toISOString().slice(0,10)))].sort();
+  return [...new Set(rows.filter(row=>row.fluxo ? !row.fluxo.assinaturaVigenteId || row.fluxo.estado!=="FECHADO" || isNonTechnicalRetroactive(row.fluxo.assinaturaVigente?.mecanismo) : !row.assinaturaSupervisorEm&&!days.has(row.data.toISOString().slice(0,10))).map(row=>row.data.toISOString().slice(0,10)))].sort();
 }
 
 // The same counts and blocking conditions used by the module closing actions.

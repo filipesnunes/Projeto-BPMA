@@ -1,3 +1,4 @@
+import { reviewSignatureLabel } from "@/lib/review-presentation";
 import Link from "next/link";
 import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import { SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
@@ -24,7 +25,7 @@ export async function CompatibleDayReview(props: {
       : prisma.rastreabilidadeRecebimentoNota.count({where:{data:date,fluxoId:null}}),
     prisma.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:code,dataReferencia:date}}})
   ]);
-  if(code==="amostras")return <div className="space-y-2"><SupervisorSignatureStatus signature={legacySignature}/><p>Cada serviço é validado separadamente na tela do serviço. Assinaturas anteriores permanecem no histórico.</p><ul>{units.map(unit=><li key={unit.id}><Link href={`/controle-buffet-amostras/servico/${unit.chave.split(":")[0]}?data=${props.dateInput}`}>{unit.amostras[0]?.servico.nome??"Abrir serviço"} — {unit.assinaturaVigente?`Assinado por ${unit.assinaturaVigente.usuarioNome}`:"Consultar preenchimento e validação"}</Link></li>)}</ul>{legacyCount>0&&<p>Registros legados sem versão permanecem consultáveis. Novas assinaturas exigem regularização autorizada.</p>}</div>;
+  if(code==="amostras")return <div className="space-y-2"><SupervisorSignatureStatus signature={legacySignature}/><p>Cada serviço é validado separadamente na tela do serviço. Assinaturas anteriores permanecem no histórico.</p><ul>{units.map(unit=><li key={unit.id}><Link href={`/controle-buffet-amostras/servico/${unit.chave.split(":")[0]}?data=${props.dateInput}`}>{unit.amostras[0]?.servico.nome??"Abrir serviço"} — {unit.assinaturaVigente?reviewSignatureLabel(unit.assinaturaVigente):"Consultar preenchimento e validação"}</Link></li>)}</ul>{legacyCount>0&&<p>Registros legados sem versão permanecem consultáveis. Novas assinaturas exigem regularização autorizada.</p>}</div>;
   if (!units.length) return code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
   let eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
   if(code === "oleo") {
@@ -40,7 +41,7 @@ export async function CompatibleDayReview(props: {
     const individualAllowed=Boolean(user&&canSignOilSupervisor(user,"individual"));
     const dailyAllowed=Boolean(user&&canSignOilSupervisor(user,"daily"));
     const decisions=await Promise.all(units.map(async unit=>{
-      if(unit.assinaturaVigente||unit.estado==="FECHADO")return {unit,reason:"Esta verificação já possui assinatura vigente.",eligible:false};
+      if(unit.assinaturaVigente||unit.estado==="FECHADO")return {unit,reason:unit.assinaturaVigente?reviewSignatureLabel(unit.assinaturaVigente):"Esta verificação já possui assinatura vigente.",eligible:false};
       if(!unit.preenchimentoCompleto||!["COMPLETO","REABERTO"].includes(unit.estado))return {unit,reason:"A verificação ainda não está concluída.",eligible:false};
       if(monthClosed)return {unit,reason:"Competência fechada. Solicite a reabertura autorizada.",eligible:false};
       if(!user||!individualAllowed&&!dailyAllowed)return {unit,reason:"Seu usuário não possui autorização técnica de assinatura do óleo.",eligible:false};
@@ -83,7 +84,7 @@ export async function CompatibleDayReview(props: {
   const action = code === "temperatura" ? signTemperatureWorkflowAction : groupWorkflowAction;
   return <div className="mt-4 space-y-4">
     <p className="text-sm">As assinaturas recentes validam somente os registros e versões indicados. Uma assinatura anterior do dia não valida alterações posteriores.</p>
-    <ul className="text-sm">{units.map(unit => <li key={unit.id}>{label(unit)}: {unit.estado === "REABERTO" ? "Revisão pendente — nova assinatura necessária" : unit.assinaturaVigente ? `Assinado por ${unit.assinaturaVigente.usuarioNome}` : unit.preenchimentoCompleto ? "Aguardando assinatura" : "Preenchimento em andamento"}</li>)}</ul>
+    <ul className="text-sm">{units.map(unit => <li key={unit.id}>{label(unit)}: {unit.estado === "REABERTO" ? "Revisão pendente — nova assinatura necessária" : unit.assinaturaVigente ? reviewSignatureLabel(unit.assinaturaVigente) : unit.preenchimentoCompleto ? "Aguardando assinatura" : "Preenchimento em andamento"}</li>)}</ul>
     {props.canSign && eligible.length > 0 && <form action={action} className="space-y-3 rounded-lg border p-4">
       <input type="hidden" name="modulo" value={code}/><input type="hidden" name="returnTo" value={props.returnTo}/>
       <input type="hidden" name="mecanismo" value={code === "temperatura" ? "diaria" : "DIARIA"}/>

@@ -171,10 +171,10 @@ async function main() {
       const untouched = JSON.stringify(tables.fechamentoMensalModulo.filter(p=>p.moduloCodigo!==code||p.mes!==9));
       assert(await reopen.isOperationalMonthClosed(code,9,2026));
       for(const role of ['GERENTE','NUTRICIONISTA','COLABORADOR']) {
-        actor.perfil=role;
+        actor.perfil=role;delete actor.perfilAcessoId;actor.permissoes=[];
         await assert.rejects(()=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:code,mes:9,ano:2026}),/Sem permissão/);
       }
-      actor.perfil='DEV';
+      actor.perfil='DEV';actor.perfilAcessoId=999;actor.permissoes=load('src/lib/permissions.ts').PERMISSION_DEFINITIONS.filter(p=>p.acao==='reabrir_mes').map(p=>p.codigo);
       await action(actions.reopenPeriodAction,{moduloCodigo:code,mes:9,ano:2026,confirmacao:'sim'});
       const open = tables.fechamentoMensalModulo.find(p=>p.moduloCodigo===code&&p.mes===9);
       assert.equal(open.status,'REABERTO');
@@ -216,7 +216,7 @@ async function main() {
       const oldActions = load(`src/app/${code.startsWith('limpeza_')?'plano-limpeza':module}/actions.ts`);
       const oldClose = code==='limpeza_diaria'?oldActions.closeDailyMonthAction:code==='limpeza_semanal'?oldActions.closeWeeklyMonthAction:oldActions.closeMonthAction;
       await action(oldClose,{mes:9,ano:2026,senhaConfirmacao:'valid'},'error');
-      const actorBefore = {...actor}; actor.perfil='NUTRICIONISTA';
+      const actorBefore = {...actor}; actor.perfil='NUTRICIONISTA';delete actor.perfilAcessoId;
       assert(security.canCloseMonthlyPeriod(actor,code));
       await action(actions.closePeriodAction,{moduloCodigo:code,mes:9,ano:2026,confirmacao:'sim',senhaConfirmacao:'valid'});
       const closed = tables.fechamentoMensalModulo.find(p=>p.moduloCodigo===code&&p.mes===9);
@@ -237,7 +237,7 @@ async function main() {
     process.stdout.write(`PASS ${code}: generic/legacy/both, state, permissions, audit, blockers, reclose, reports\n`);
   }
   reset('hortifruti','higienizacaoHortifrutiFechamento');
-  actor.perfil='DEV';
+  actor.perfil='DEV';actor.perfilAcessoId=999;actor.permissoes=load('src/lib/permissions.ts').PERMISSION_DEFINITIONS.filter(p=>p.acao==='reabrir_mes').map(p=>p.codigo);
   const simultaneous=await Promise.allSettled([8,9].map(mes=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'hortifruti',mes,ano:2026})));
   assert.equal(simultaneous.filter(r=>r.status==='fulfilled').length,1);
   assert.equal(tables.fechamentoMensalModulo.filter(p=>p.moduloCodigo==='hortifruti'&&p.status==='REABERTO').length,1);
@@ -251,7 +251,7 @@ async function main() {
     failAudit=false;failUpdate=false;assert.equal(JSON.stringify(tables),snapshot,'Rollback restores all writes');
   }
   for(const role of ['COLABORADOR','GERENTE','NUTRICIONISTA']) {
-    actor.perfil=role;
+    actor.perfil=role;delete actor.perfilAcessoId;actor.permissoes=[];
     assert.equal(security.canReopenMonthlyPeriod(actor,'rastreabilidade'),false);
     assert.equal(security.canViewMonthlyPeriods(actor,'rastreabilidade'),role!=='COLABORADOR');
   }
@@ -276,7 +276,7 @@ async function main() {
   assert.equal(noteAccess.getReceivingNoteEditAccessReason(args),'MONTH_SIGNED');
   assert.equal(noteAccess.getReceivingNoteEditAccessReason({...args,monthSigned:false}),'NO_PERMISSION');
   assert.equal(noteAccess.getReceivingNoteEditAccessReason({...args,monthSigned:false,user:{perfil:'COLABORADOR',perfilAcessoId:42,permissoes:[]}}),'NO_PERMISSION');
-  actor.perfil='DEV';
+  actor.perfil='DEV';actor.perfilAcessoId=999;actor.permissoes=load('src/lib/permissions.ts').PERMISSION_DEFINITIONS.filter(p=>p.acao==='reabrir_mes').map(p=>p.codigo);
   await action(actions.reopenPeriodAction,{moduloCodigo:'hortifruti',mes:9,ano:2026},'error');
   await action(actions.reopenPeriodAction,{moduloCodigo:'invalido',mes:9,ano:2026,confirmacao:'sim'},'error');
   await action(actions.reopenPeriodAction,{moduloCodigo:'__proto__',mes:9,ano:2026,confirmacao:'sim'},'error');
@@ -294,7 +294,7 @@ async function main() {
   actor.perfil='COLABORADOR';
   let result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error');assert.match(result.message,/mês.*fechado/);
-  actor.perfil='DEV';await reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});
+  actor.perfil='DEV';actor.perfilAcessoId=999;actor.permissoes=load('src/lib/permissions.ts').PERMISSION_DEFINITIONS.filter(p=>p.acao==='reabrir_mes').map(p=>p.codigo);await reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});
   actor.perfil='COLABORADOR';
   result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error','Reabrir o mês não concede edição retroativa');
@@ -310,7 +310,7 @@ async function main() {
   let card=await dashboard.buildMonthlyClosingCard({range:{start:date('2026-09-01'),end:date('2026-09-30')}});
   assert.equal(card.completed,0);assert.equal(card.pending,7);
   delete actor.perfilAcessoId;delete actor.permissoes;
-  actor.perfil='NUTRICIONISTA';
+  actor.perfil='NUTRICIONISTA';delete actor.perfilAcessoId;
   await assert.rejects(()=>periods.closeReopenedOperationalMonth({user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026}),/notas pendentes/);
   tables.rastreabilidadeRecebimentoNota[0].statusNota='FINALIZADA';
   await periods.closeReopenedOperationalMonth({user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});

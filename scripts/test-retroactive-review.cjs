@@ -175,8 +175,59 @@ const retroAction=require('../src/app/historico-operacional/revisao-retroativa/a
   const p={user:nutri,moduleCode:'limpeza_semanal',mes:10,ano:2026,password,reason:'Reabertura sintética concorrente'};
   const result=await Promise.allSettled([reopening.reopenOperationalMonth(p),reopening.reopenOperationalMonth(p)]);assert.equal(result.filter(r=>r.status==='fulfilled').length,1);
  });
+
+ await check('Conferência final: DEV exige concessão explícita de reabertura; permissões no editor',async()=>{
+  const security=require('../src/lib/monthly-period-permissions.ts');
+  assert.equal(security.canReopenMonthlyPeriod({perfil:'DEV',perfilAcessoId:999,permissoes:[]},'oleo'),false);assert.equal(security.canReopenMonthlyPeriod({perfil:'DEV',permissoes:['modulo.oleo.reabrir_mes']},'oleo'),false);
+  assert.equal(security.canReopenMonthlyPeriod({perfil:'DEV',perfilAcessoId:999,permissoes:['modulo.oleo.reabrir_mes']},'oleo'),true);
+  for(const role of ['GERENTE','NUTRICIONISTA']) assert(security.canReopenMonthlyPeriod({perfil:role,perfilAcessoId:999,permissoes:['modulo.oleo.acessar','modulo.oleo.reabrir_mes']},'oleo'));
+  user=manager;const devProfile=await prisma.perfilAcesso.upsert({where:{codigo:'DEV'},create:{codigo:'DEV',nome:'DEV sintético',perfilLegado:'DEV'},update:{}});
+  const edit=require('../src/app/usuarios/actions.ts').updateProfilePermissionsAction;
+  let response=await redirect(()=>edit(form({profileId:devProfile.id,permissionCodes:['modulo.oleo.reabrir_mes']})));assert.equal(response.searchParams.get('feedbackType'),'success');
+  let explicit=await prisma.perfilPermissao.findMany({where:{perfilId:devProfile.id,permitido:true},include:{permissao:true}});assert.deepEqual(explicit.filter(p=>p.permissao.codigo.endsWith('.reabrir_mes')).map(p=>p.permissao.codigo),['modulo.oleo.reabrir_mes']);
+  response=await redirect(()=>edit(form({profileId:devProfile.id})));assert.equal(response.searchParams.get('feedbackType'),'success');explicit=await prisma.perfilPermissao.findMany({where:{perfilId:devProfile.id,permitido:true},include:{permissao:true}});assert.equal(explicit.filter(p=>p.permissao.codigo.endsWith('.reabrir_mes')).length,0);
+  const grantCount=await prisma.perfilPermissao.count();await prisma.$transaction(require('../src/lib/register-retroactive-review-permissions.ts').registerRetroactiveReviewPermissions);assert.equal(await prisma.perfilPermissao.count(),grantCount);
+  const groups=permissions.getPermissionGroups();assert(groups.some(g=>g.permissoes?.some(p=>p.codigo==='modulo.oleo.assinar_retroativo')||g.permissions?.some(p=>p.codigo==='modulo.oleo.assinar_retroativo')) || JSON.stringify(groups).includes('modulo.oleo.assinar_retroativo'));
+ });
+ await check('Indicadores Limpeza: antes/depois, parcial permanece pendente, gerencial distinto e complemento técnico auditado',async()=>{
+  const helper=require('../src/lib/cleaning-day-signatures.ts');const d=new Date('2026-10-25'),a=await cleaning(d),b=await cleaning(d);
+  assert.equal((await helper.currentCleaningDaySignatures([],'limpeza_diaria',[d])).length,0);
+  await signRetro(manager,{module:'limpeza_diaria',date:d,recordIds:[a.id]});assert.equal((await helper.currentCleaningDaySignatures([],'limpeza_diaria',[d])).length,0);
+  await signRetro(manager,{module:'limpeza_diaria',date:d,recordIds:[b.id]});let days=await helper.currentCleaningDaySignatures([],'limpeza_diaria',[d]);assert.equal(days.length,1);assert(JSON.parse(days[0].observacao).revisaoTecnicaPendente);
+  const oldLogs=await prisma.logAssinatura.count({where:{modulo:'limpeza_diaria',referenciaId:'2026-10-25'}});
+  await signRetro(nutri,{module:'limpeza_diaria',date:d,recordIds:[a.id,b.id]});days=await helper.currentCleaningDaySignatures([],'limpeza_diaria',[d]);assert.equal(days.length,1);assert.equal(JSON.parse(days[0].observacao).revisaoTecnicaPendente,false);assert.equal(await prisma.logAssinatura.count({where:{modulo:'limpeza_diaria',referenciaId:'2026-10-25'}}),oldLogs+1);
+  assert.equal((await helper.currentCleaningDaySignatures([],'limpeza_semanal',[reference])).length,1);
+ });
+ await check('Óleo 117/118/121/122 equivalentes: pendência técnica antes/depois, legados, revogação e mês reaberto',async()=>{
+  const monthly=require('../src/lib/monthly-periods.ts');const evidence=[];
+  for(const [label,day,legacy]of [[117,'11',true],[118,'12',true],[121,'23',false],[122,'24',false]]){
+   const date=new Date('2026-10-'+day);let sc,record;
+   if(legacy){record=await prisma.controleQualidadeOleoRegistro.create({data:{data:date,temperatura:150,fitaOleo:'10',orientacao:'Sintético',responsavel:'Executor histórico inconclusivo',horarioExecucao:'08:30'}});sc={module:'oleo',date,legacyRecordId:record.id};}
+   else {const unit=await save(operator,oilAdapter,'2026-10-'+day+':'+randomUUID(),form({temperatura:'150',fitaOleo:'__SEM_AFERICAO__',horarioExecucao:'08:30'}));record=await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{fluxoId:unit.id}});sc={module:'oleo',date,flowId:unit.id};for(const op of ['VINCULO_LEGADO','REVOGACAO_ASSINATURA'])await prisma.fluxoEvento.create({data:{fluxoId:unit.id,operacao:op,versaoNova:unit.versao,estadoNovo:unit.estado,usuarioId:operator.id,usuarioNome:operator.nomeCompleto,usuarioPerfil:operator.perfil}});}
+   const dateKey='2026-10-'+day;assert((await monthly.pendingOilReviewDates(10,2026)).includes(dateKey));
+   await signRetro(manager,sc);const linked=await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:record.id}});sc={module:'oleo',date,flowId:linked.fluxoId};assert((await monthly.pendingOilReviewDates(10,2026)).includes(dateKey),'Gerente não supre requisito técnico');
+   const managerial=await latest(linked.fluxoId);assert.match(managerial.assinaturaVigente.mecanismo,/gerencial/);await signRetro(nutri,sc);assert(!(await monthly.pendingOilReviewDates(10,2026)).includes(dateKey));const technical=await latest(linked.fluxoId);assert.match(technical.assinaturaVigente.mecanismo,/técnica/);assert(await prisma.fluxoAssinatura.findUnique({where:{id:managerial.assinaturaVigenteId}}));
+   const after=await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:record.id}});for(const key of ['temperatura','fitaOleo','responsavel','data'])assert.deepEqual(after[key],record[key]);evidence.push({equivalente:label,antes:'revisão técnica pendente',aposGerente:'revisão gerencial registrada; revisão técnica pendente',aposNutricionista:'revisão técnica concluída'});
+  }
+  fs.writeFileSync(path.join(dir,'priority-before-after.json'),JSON.stringify(evidence,null,2));
+ });
+ await check('Histórico e contadores Buffet: serviços revisados, datas e natureza da evidência vigente',async()=>{
+  const helper=require('../src/lib/operational-workflow/compatible-records.ts'),reviewedDates=['26','27','28','29','31'].map(d=>new Date('2026-10-'+d));
+  const summaries=await helper.scopedLegacyDaySignatures([],'amostras',reviewedDates);assert.equal(summaries.length,5);assert(summaries.every(s=>s.observacao.includes('retroativa')));assert(summaries.find(s=>s.dataReferencia.getUTCDate()===27).observacao.includes('gerencial'));
+ });
+ await check('Complemento técnico Hortifruti e Temperatura preserva a revisão gerencial anterior',async()=>{
+  const previous=await prisma.logAssinatura.count({where:{modulo:'hortifruti',referenciaId:dateText}});await signRetro(nutri,{module:'hortifruti',date:reference});const current=await prisma.assinaturaDiariaModulo.findUniqueOrThrow({where:{moduloCodigo_dataReferencia:{moduloCodigo:'hortifruti',dataReferencia:reference}}});assert(current.responsavelTecnico);assert.equal(await prisma.logAssinatura.count({where:{modulo:'hortifruti',referenciaId:dateText}}),previous+1);
+  const temp=await prisma.controleTemperaturaEquipamento.findFirstOrThrow({where:{equipamento:tag+' legado'}});const old=await latest(temp.fluxoId);assert.match(old.assinaturaVigente.mecanismo,/gerencial/);await signRetro(nutri,{module:'temperatura',date:reference,flowId:temp.fluxoId});const after=await latest(temp.fluxoId);assert.match(after.assinaturaVigente.mecanismo,/técnica/);assert(await prisma.fluxoAssinatura.findUnique({where:{id:old.assinaturaVigenteId}}));
+ });
  const browser=await buffet('2026-10-26'),browserClean=await cleaning(new Date('2026-10-29')),normalClean=await cleaning(new Date('2026-10-28'));
- fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,nutri:nutri.nomeUsuario,manager:manager.nomeUsuario,operator:operator.nomeUsuario,flowId:browser.id,day:'2026-10-26',cleanId:browserClean.id,cleanDay:'2026-10-29',normalCleanId:normalClean.id,normalCleanDay:'2026-10-28'}));
+ const managerBrowser=await buffet('2026-10-27');
+ for(const record of [browserClean,normalClean]){
+  const area=await prisma.planoLimpezaDiarioArea.create({data:{nome:record.area,turnoTarde:false,turnoNoite:false,createdAt:new Date('2026-10-01')}});
+  const item=await prisma.planoLimpezaDiarioItem.create({data:{areaId:area.id,descricao:'Item sintético do navegador',createdAt:new Date('2026-10-01')}});
+  await prisma.planoLimpezaDiarioRegistro.update({where:{id:record.id},data:{itemId:item.id,itemDescricao:item.descricao}});
+ }
+
+ fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,nutri:nutri.nomeUsuario,manager:manager.nomeUsuario,operator:operator.nomeUsuario,managerFlowId:managerBrowser.id,flowId:browser.id,day:'2026-10-26',cleanId:browserClean.id,cleanDay:'2026-10-29',normalCleanId:normalClean.id,normalCleanDay:'2026-10-28'}));
  assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,'.env'))).digest('hex'),envHash);
  fs.writeFileSync(path.join(dir,'results.json'),JSON.stringify({database,outcomes},null,2));console.log('PASS '+outcomes.length+' grupos locais de assinatura retroativa.');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{await prisma.$disconnect();await inspect.$disconnect();});

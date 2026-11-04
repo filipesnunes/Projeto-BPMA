@@ -1,3 +1,4 @@
+import { isNonTechnicalRetroactive, reviewSignatureLabel } from "@/lib/review-presentation";
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { PerfilUsuario } from "@prisma/client";
@@ -13,8 +14,8 @@ export async function currentRecordSignatures<T extends { fluxoId?: string | nul
     if (!row.fluxoId) return row;
     const unit = byId.get(row.fluxoId);
     const signature = unit?.estado === "FECHADO" ? unit.assinaturaVigente : null;
-    const fields = module === "oleo" ? { assinaturaSupervisorNome:signature?.usuarioNome??null, assinaturaSupervisorEm:signature?.assinadoEm??null, assinaturaSupervisorPerfil:signature?.usuarioPerfil??null }
-      : { assinaturaNutricionistaNome:signature?.usuarioNome??null, assinaturaNutricionistaDataHora:signature?.assinadoEm??null, assinaturaNutricionistaPerfil:signature?.usuarioPerfil??null };
+    const fields = module === "oleo" ? { assinaturaSupervisorNome:signature?reviewSignatureLabel(signature):null, assinaturaSupervisorEm:signature?.assinadoEm??null, assinaturaSupervisorPerfil:signature?.usuarioPerfil??null }
+      : { assinaturaNutricionistaNome:signature?reviewSignatureLabel(signature):null, assinaturaNutricionistaDataHora:signature?.assinadoEm??null, assinaturaNutricionistaPerfil:signature?.usuarioPerfil??null };
     return { ...row, ...fields };
   });
 }
@@ -45,7 +46,7 @@ export async function scopedLegacyDaySignatures(signatures: DaySignatureView[], 
     // Display a summary of real current evidence, without creating a daily row.
     const evidence = scoped.map(unit=>unit.assinaturaVigente!).sort((a,b)=>+b.assinadoEm-+a.assinadoEm);
     const names = [...new Set(evidence.map(signature=>signature.usuarioNome))];
-    result.push({dataReferencia:date,usuarioNomeSnapshot:names.join(", "),usuarioPerfilSnapshot:names.length===1?evidence[0].usuarioPerfil as PerfilUsuario:null,assinadoEm:evidence[0].assinadoEm,observacao:`Resumo de assinaturas vigentes: ${[...new Set(evidence.map(signature=>signature.id))].join(", ")}`});
+    result.push({dataReferencia:date,usuarioNomeSnapshot:names.join(", "),usuarioPerfilSnapshot:names.length===1?evidence[0].usuarioPerfil as PerfilUsuario:null,assinadoEm:evidence[0].assinadoEm,observacao:evidence.some(signature=>signature.mecanismo.includes("retroativa"))?JSON.stringify({operacao:"REVISAO_RETROATIVA",natureza:[...new Set(evidence.map(signature=>signature.mecanismo))].join(" / "),revisaoTecnicaPendente:evidence.some(signature=>isNonTechnicalRetroactive(signature.mecanismo)),assinaturas:evidence.map(signature=>signature.id)}):"Resumo de assinaturas vigentes"});
   }
   return result;
 }

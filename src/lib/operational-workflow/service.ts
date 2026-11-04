@@ -116,12 +116,13 @@ export async function reopenWorkflow(params: {
 
 export type WorkflowSignatureBridge = {
   module: OperationalSignatureModuleCode;
-  mechanism: string;
+  mechanism: string | ((user: AuthenticatedUser) => string);
   // Must validate the original mechanism's permission/password, separation of
   // duties and exact displayed scope; must write its legacy signature using tx.
   sign(tx: Tx, user: AuthenticatedUser, units: readonly FluxoOperacional[], signedAt: Date): Promise<string>;
   // Revalidate the actual domain data in this transaction, not a UI boolean.
   validate(tx: Tx, unit: FluxoOperacional): Promise<WorkflowContent>;
+  canReplaceSignature?(tx: Tx, user: AuthenticatedUser, unit: FluxoOperacional): Promise<boolean>;
 };
 
 export async function signWorkflow(params: {
@@ -139,7 +140,7 @@ export async function signWorkflow(params: {
       const unit = await tx.fluxoOperacional.findUnique({ where: { id: item.id, modulo: bridge.module } });
       if (!unit || unit.excluidoEm) throw new Error("Registro operacional não encontrado.");
       assertWorkflowVersion(unit.versao, item.version);
-      if (!["COMPLETO", "REABERTO"].includes(unit.estado)) throw new Error("O registro não está disponível para assinatura.");
+      if (!["COMPLETO", "REABERTO"].includes(unit.estado) && !(unit.estado === "FECHADO" && await bridge.canReplaceSignature?.(tx, user, unit))) throw new Error("O registro não está disponível para assinatura.");
       await openPeriod(tx, bridge.module, unit.dataReferencia);
       const content = await bridge.validate(tx, unit);
       assertWorkflowContent(content);
@@ -153,7 +154,7 @@ export async function signWorkflow(params: {
     const signedAt = getAppNow();
     const reference = await bridge.sign(tx, user, originals, signedAt);
     const signature = await tx.fluxoAssinatura.create({ data: {
-      modulo: bridge.module, mecanismo: bridge.mechanism, referencia: reference, assinadoEm: signedAt, ...author(user)
+      modulo: bridge.module, mecanismo: typeof bridge.mechanism === "function" ? bridge.mechanism(user) : bridge.mechanism, referencia: reference, assinadoEm: signedAt, ...author(user)
     } });
     for (const original of originals) {
       await tx.fluxoAssinaturaVinculo.create({ data: { assinaturaId: signature.id, fluxoId: original.id, versao: original.versao } });

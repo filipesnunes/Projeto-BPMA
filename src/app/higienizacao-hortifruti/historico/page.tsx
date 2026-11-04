@@ -1,3 +1,4 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
 import { ProcedureTimeAudit } from "@/components/procedure-time-audit";
 import { UNKNOWN_PROCEDURE_TIME } from "@/lib/procedure-time";
 import { getMonthRangesForBounds, parseFilterMonth, parseFilterYear } from "@/lib/month-filter";
@@ -209,6 +210,7 @@ export default async function HigienizacaoHortifrutiHistoricoPage({
       ? registrosMensais.some(record => record.duracaoMinutos != null) ? `${totalMinutos} min conhecidos` : "Não informado"
       : `${totalMinutos} min`,
     "Dias com registro": diasComRegistro.size,
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(
       diasComRegistro.size - assinaturasMensaisPorData.size,

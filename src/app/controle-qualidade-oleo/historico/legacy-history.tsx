@@ -1,3 +1,4 @@
+import { technicalReviewPending } from "@/lib/review-presentation";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
 import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
@@ -229,6 +230,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
     "Trocas recomendadas": trocaRecomendada,
     "Ações corretivas": registrosMensais.filter((registro) => registro.observacao?.trim()).length,
     "Dias com registro": diasComRegistro.size,
+    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
     "Dias assinados": assinaturasMensaisPorData.size,
     "Dias pendentes de assinatura": Math.max(diasComRegistro.size - assinaturasMensaisPorData.size, 0)
   };

@@ -1,3 +1,4 @@
+import { retroactiveNature } from "@/lib/review-presentation";
 import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -277,7 +278,7 @@ function getSupervisorSignature(record: WeeklyRecord | null): string {
   }
 
   if (record.assinaturaSupervisorDataHora) {
-    return `${supervisorName}\n${formatGeneratedAtSentence(record.assinaturaSupervisorDataHora)}`;
+    return `${supervisorName}\n${formatGeneratedAtSentence(record.assinaturaSupervisorDataHora)}${retroactiveNature(record.observacaoSupervisor)?"\n"+retroactiveNature(record.observacaoSupervisor):""}`;
   }
 
   return supervisorName;

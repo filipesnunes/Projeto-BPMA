@@ -1,3 +1,4 @@
+import { reviewSignatureLabel } from "@/lib/review-presentation";
 import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -227,7 +228,7 @@ function buildServiceTables(
             ? "-"
             : valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelNome),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? valueOrDash(record.fluxo.assinaturaVigente?.usuarioNome) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reviewSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
       }))
     }));
 }
@@ -560,7 +561,7 @@ async function getMonthlyBuffetRecords(month: number, year: number) {
   const monthRange = getAppMonthDateRange(month, year);
 
   const select={
-      fluxo: {select:{estado:true,preenchimentoCompleto:true,assinaturaVigente:{select:{usuarioNome:true}}}},
+      fluxo: {select:{estado:true,preenchimentoCompleto:true,assinaturaVigente:{select:{usuarioNome:true,mecanismo:true,assinadoEm:true}}}},
       horarioExecucao: true, horarioNaoInformado: true, justificativaHorario: true, createdAt: true,
       id: true,
       data: true,

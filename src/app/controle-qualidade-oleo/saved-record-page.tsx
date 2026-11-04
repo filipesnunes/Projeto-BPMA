@@ -54,7 +54,12 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
       <label className="md:col-span-2">Observação<textarea className="bpma-input" name="observacao" defaultValue={record.observacao??""} maxLength={4000}/></label>
       <button className="btn-primary" name="intent" value="complete">Salvar Alterações</button>
     </fieldset></form>
-    {signatureEligibility&&!canSign&&<p className="bpma-card">{signatureEligibility.reason}</p>}
+    {!signed&&unit?.preenchimentoCompleto&&<section className="bpma-card space-y-2" id="revisao-oleo">
+      <h2 className="font-semibold">Validação da supervisora</h2>
+      {monthClosed?<p>Competência fechada. A assinatura depende de reabertura autorizada.</p>
+        :revocation&&!canSign?<p>{signatureEligibility?.reason??"Esta verificação exige conferência da autoria original antes da nova assinatura."}</p>
+        :!canSign&&<p>{signatureEligibility?.reason??(user.perfil==="NUTRICIONISTA"?"A assinatura individual requer habilitação técnica e a permissão de assinar históricos. Verifique suas permissões ou utilize a revisão diária no Histórico.":"Aguardando assinatura da nutricionista autorizada.")}</p>}
+    </section>}
     {canSign&&<form action={signOilWorkflowAction} className="bpma-card space-y-3">{unit?<input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`}/>:<><input type="hidden" name="legacyRecordId" value={id}/><input type="hidden" name="originalUpdatedAt" value={record.updatedAt.toISOString()}/></>}<input type="hidden" name="mecanismo" value="individual"/><h2>Assinatura da nutricionista / responsável autorizado</h2><p>Revisão da verificação #{id}{unit?`, versão ${unit.versao}`:""}. Responsável pelo preenchimento: {record.responsavel}.</p><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label><button className="btn-primary">Assinar registro</button></form>}
     {unit&&<section className="bpma-card space-y-3"><h2 className="font-semibold">Histórico de alterações e assinaturas</h2>
       {(original?.registroLegadoOriginal||original?.assinaturaDiariaOriginal)&&<details><summary>Evidência legada original preservada</summary><p>A evidência antiga não valida as correções posteriores.</p><pre className="whitespace-pre-wrap break-all text-xs">{original.registroLegadoOriginal}{"\n"}{original.assinaturaDiariaOriginal}</pre></details>}

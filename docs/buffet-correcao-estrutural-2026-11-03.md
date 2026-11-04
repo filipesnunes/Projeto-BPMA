@@ -1,5 +1,11 @@
 # Buffet / Amostras — conferência coletiva e assinatura do serviço
 
+Atualização de política: a nutricionista autorizada pode corrigir registros de
+outros executores e assinar o serviço, mantendo a auditoria. A restrição a
+corretores descrita abaixo corresponde à etapa original e foi substituída pelo
+[ajuste de segregação](buffet-segregacao-correcoes-2026-11-03.md). Execução própria
+e autoria inconclusiva continuam bloqueadas.
+
 Trabalho na branch `estabilizacao/experiencia-anterior-2026-10-28`, inicialmente limpa.
 Não houve acesso ao banco externo, alteração do `.env`, migration, regularização histórica,
 seed, reset, commit, push ou deploy. Multitenant não foi acessado.

@@ -36,5 +36,5 @@ export async function buffetServiceReview(db: Prisma.TransactionClient, user: Au
   if (!unit.preenchimentoCompleto || !version?.completo || !["COMPLETO", "REABERTO"].includes(unit.estado)) return deny("Os itens e o estado do serviço divergem. É necessária conferência autorizada; não altere temperaturas para liberar a assinatura.");
   if (version.versao !== unit.versao || !isDeepStrictEqual(version.dados, buffetSnapshot(unit.amostras, draft.manifest))) return deny("Versão desatualizada ou divergente dos dados persistidos. Recarregue e solicite conferência antes de assinar.");
   const eligibility = await workflowReviewEligibility(db, user, "amostras", unit.id, unit.versao, "modulo.amostras.assinar_servico");
-  return { ...eligibility, reason: eligibility.allowed ? "" : eligibility.reason + (eligibility.reason.includes("Quem preencheu") ? ` Participação registrada para ${user.nomeCompleto}.` : "") + " A revisão deve ser realizada por outro profissional formalmente autorizado quando houver participação no preenchimento.", issues };
+  return { ...eligibility, issues };
 }

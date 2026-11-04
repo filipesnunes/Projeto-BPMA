@@ -4,7 +4,7 @@ import type { BuffetDraft } from "./workflow-adapter";
 import { formatDateInput, formatDateDisplay, getClassificacaoLabel, getTipoServicoLabel } from "./utils";
 import { buffetProgress } from "./progress";
 
-export const buffetHistoryInclude={amostras:{where:{excluidoEm:null},include:{servico:{select:{nome:true,tipoServico:true,dataInicio:true,dataFim:true}}}},versoes:{orderBy:{versao:"desc"},take:1,select:{rascunho:true,obrigatorios:true,resolvidos:true,usuarioNome:true}},assinaturaVigente:true} satisfies Prisma.FluxoOperacionalInclude;
+export const buffetHistoryInclude={amostras:{where:{excluidoEm:null},include:{servico:{select:{nome:true,tipoServico:true,dataInicio:true,dataFim:true}}}},versoes:{orderBy:{versao:"desc"},take:1,select:{rascunho:true,obrigatorios:true,resolvidos:true,usuarioNome:true}},assinaturaVigente:true,eventos:{where:{operacao:"CORRECAO_REGISTRO"},orderBy:{criadoEm:"desc"},select:{id:true,usuarioNome:true,criadoEm:true,versaoNova:true}}} satisfies Prisma.FluxoOperacionalInclude;
 export type BuffetHistoryFlow=Prisma.FluxoOperacionalGetPayload<{include:typeof buffetHistoryInclude}>;
 type Service={id:number;nome:string;tipoServico:TipoServicoBuffetAmostra};
 
@@ -36,6 +36,7 @@ export function mergeBuffetWorkflowHistory(records:BuffetServiceRecord[],flows:B
     group.itensPreenchidos=progress.filled;group.itensNaoServidos=progress.notServed;
     group.itensPendentes=progress.pending;
     group.status=progress.complete?"CONCLUIDO":(progress.resolved||buffetDraftStarted(draft)||rows.length?"PARCIAL":"PENDENTE");
+    group.correcoes=flow.eventos??[];
     group.workflowId=flow.id;group.workflowState=flow.estado;
     group.assinadoNutricionista=flow.estado==="FECHADO"&&Boolean(flow.assinaturaVigente);
     group.assinaturaNutricionistaResumo=group.assinadoNutricionista?`${flow.assinaturaVigente!.usuarioNome}`:"-";

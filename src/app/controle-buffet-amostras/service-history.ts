@@ -85,6 +85,7 @@ export type BuffetServiceHistoryGroup = {
   itensNaoServidos: number;
   itensComAcaoCorretiva: number;
   items: BuffetServiceHistoryItem[];
+  correcoes?: Array<{id:string;usuarioNome:string;criadoEm:Date;versaoNova:number}>;
   workflowId?: string;
   workflowState?: string;
   itensPendentes?: number;

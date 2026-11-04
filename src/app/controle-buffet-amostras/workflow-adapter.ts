@@ -1,3 +1,4 @@
+import {auditBuffetCorrections} from "./correction-audit";
 import { buffetLinkedItemOrder } from "./item-ordering";
 import { buffetProgress } from "./progress";
 import {assertGroupDeletion,auditGroupDeletion} from "@/lib/operational-workflow/group-deletion";
@@ -66,6 +67,7 @@ export const buffetAdapter:WorkflowAdapter={
  // Transaction include bypasses the public report filter; drafts remain visible here.
  const active=records.filter(r=>!r.excluidoEm);
  const {required,resolved,complete}=buffetProgress(active,draft.manifest);if(!complete&&text(input,"intent")==="complete")throw Error("Resolva todos os itens antes de concluir.");
+ if(!["extra","deleteItem"].includes(operation))await auditBuffetCorrections(tx,user,unit,source.amostras,active,complete,text(input,"justificativaCorrecao"));
  return{snapshot:buffetSnapshot(active,draft.manifest),draft:JSON.parse(JSON.stringify(draft)),complete,resolved,required:Math.max(required,1)};
  }
 };

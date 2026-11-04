@@ -544,7 +544,7 @@ export function ServiceItemsForm({
 
                 <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 sm:grid-cols-2">
                   <p>
-                    Responsável: <strong>{row.responsavelNome ?? usuarioLogado}</strong>
+                    Executor original: <strong>{row.responsavelNome ?? usuarioLogado}</strong>
                   </p>
                   <p>
                     Lançado em: <strong>{row.dataHoraRegistro ?? "-"}</strong>
@@ -562,6 +562,9 @@ export function ServiceItemsForm({
           })}
         </div>
 
+        <label className="block text-sm">Justificativa das correções (opcional)
+          <textarea name="justificativaCorrecao" maxLength={4000} rows={2} className={inputClassName} disabled={!hasEditableRows} placeholder="Contextualize a correção sem substituir a autoria ou o horário original."/>
+        </label>
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <SubmitItemsButton disabled={!hasEditableRows||isSaving} />
         </div>

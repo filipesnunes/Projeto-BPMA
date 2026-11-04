@@ -1,5 +1,4 @@
-import { retroactiveNature } from "@/lib/review-presentation";
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { retroactiveNature, reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -264,7 +263,7 @@ function getObservation(record: WeeklyRecord | null): string {
     notes.push(`Responsável: ${responsibleNote}`);
   }
 
-  if (supervisorNote) {
+  if (supervisorNote && !retroactiveNature(supervisorNote)) {
     notes.push(`Supervisor: ${supervisorNote}`);
   }
 
@@ -278,7 +277,7 @@ function getSupervisorSignature(record: WeeklyRecord | null): string {
   }
 
   if (record.assinaturaSupervisorDataHora) {
-    return `${supervisorName}\n${formatGeneratedAtSentence(record.assinaturaSupervisorDataHora)}${retroactiveNature(record.observacaoSupervisor)?"\n"+retroactiveNature(record.observacaoSupervisor):""}`;
+    return reportSignatureLabel({usuarioNome:supervisorName,assinadoEm:record.assinaturaSupervisorDataHora,observacao:record.observacaoSupervisor});
   }
 
   return supervisorName;
@@ -968,7 +967,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "limpeza_semanal", month, year), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

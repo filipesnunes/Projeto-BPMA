@@ -88,6 +88,7 @@ export type BuffetServiceHistoryGroup = {
   correcoes?: Array<{id:string;usuarioNome:string;criadoEm:Date;versaoNova:number}>;
   workflowId?: string;
   workflowState?: string;
+  supervisorSignature?: { usuarioNomeSnapshot: string; usuarioPerfilSnapshot: import("@prisma/client").PerfilUsuario | null; assinadoEm: Date; observacao: string | null };
   itensPendentes?: number;
 };
 

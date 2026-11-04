@@ -1,5 +1,4 @@
-import { reviewSignatureLabel } from "@/lib/review-presentation";
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -193,7 +192,7 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       createdAt: true,
       horarioAfericao: true,
       horarioNaoInformado: true,
-      fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true } } } },
+      fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, mecanismo:true, assinadoEm:true } } } },
       observacoes: true, observacaoStatusOperacional: true,
       assinaturaNutricionistaNome: true,
       justificativaHorario: true
@@ -277,7 +276,7 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reviewSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }
@@ -804,7 +803,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "temperatura", month, year), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

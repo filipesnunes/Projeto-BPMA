@@ -1,5 +1,7 @@
 # Revisões retroativas e reabertura mensal — KPlatz
 
+Ajustes mais recentes: [etiquetas, relatórios sem apêndice e acesso do Óleo](ajustes-finais-assinaturas-oleo-2026-11-04.md).
+
 Conferência posterior de indicadores, permissões efetivas e PDFs:
 [resultado antes do deploy](conferencia-pre-deploy-revisoes-2026-11-04.md).
 Esse documento registra as correções adicionais e os resultados atuais.

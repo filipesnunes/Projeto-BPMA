@@ -40,6 +40,11 @@ export function mergeBuffetWorkflowHistory(records:BuffetServiceRecord[],flows:B
     group.workflowId=flow.id;group.workflowState=flow.estado;
     group.assinadoNutricionista=flow.estado==="FECHADO"&&Boolean(flow.assinaturaVigente);
     group.assinaturaNutricionistaResumo=group.assinadoNutricionista?`${flow.assinaturaVigente!.usuarioNome}`:"-";
+    if (group.assinadoNutricionista && flow.assinaturaVigente) {
+      const signature = flow.assinaturaVigente;
+      group.supervisorSignature = { usuarioNomeSnapshot: signature.usuarioNome, usuarioPerfilSnapshot: ["DEV","GERENTE","NUTRICIONISTA","COLABORADOR"].includes(signature.usuarioPerfil) ? signature.usuarioPerfil as import("@prisma/client").PerfilUsuario : null, assinadoEm: signature.assinadoEm,
+        observacao: signature.mecanismo.includes("retroativa") ? JSON.stringify({ operacao: "REVISAO_RETROATIVA", natureza: signature.mecanismo }) : null };
+    }
     groups.set(key,group);
   }
   return [...groups.values()].sort((a,b)=>b.dataInput.localeCompare(a.dataInput)||a.servicoNome.localeCompare(b.servicoNome));

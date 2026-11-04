@@ -227,7 +227,32 @@ const retroAction=require('../src/app/historico-operacional/revisao-retroativa/a
   await prisma.planoLimpezaDiarioRegistro.update({where:{id:record.id},data:{itemId:item.id,itemDescricao:item.descricao}});
  }
 
- fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,nutri:nutri.nomeUsuario,manager:manager.nomeUsuario,operator:operator.nomeUsuario,managerFlowId:managerBrowser.id,flowId:browser.id,day:'2026-10-26',cleanId:browserClean.id,cleanDay:'2026-10-29',normalCleanId:normalClean.id,normalCleanDay:'2026-10-28'}));
+ const oilRecords=[];
+ for(const [label,day,legacy]of [[117,'11',true],[118,'12',true],[121,'23',false],[122,'24',false]]){
+  const date=new Date('2026-10-'+day);let r;
+  if(legacy)r=await prisma.controleQualidadeOleoRegistro.create({data:{data:date,temperatura:150,fitaOleo:'10',orientacao:'Orientação histórica sintética',observacao:'Observação histórica preservada',responsavel:'Executor histórico inconclusivo',horarioExecucao:'08:30'}});
+  else {const u=await save(operator,oilAdapter,'2026-10-'+day+':'+randomUUID(),form({temperatura:'150',fitaOleo:'__SEM_AFERICAO__',horarioExecucao:'08:30'}));r=await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{fluxoId:u.id}});for(const op of ['VINCULO_LEGADO','REVOGACAO_ASSINATURA'])await prisma.fluxoEvento.create({data:{fluxoId:u.id,operacao:op,versaoNova:u.versao,estadoNovo:u.estado,usuarioId:operator.id,usuarioNome:operator.nomeCompleto,usuarioPerfil:operator.perfil,justificativa:'Evidência histórica sintética'}});}
+  assert.equal((await require('../src/app/controle-qualidade-oleo/signature-policy.ts').oilRecordSignatureEligibility(prisma,nutri,r,'individual')).allowed,false);assert((await review(nutri,{module:'oleo',date,flowId:r.fluxoId||undefined,legacyRecordId:legacy?r.id:undefined})).allowed);
+  oilRecords.push({equivalente:label,id:r.id,day:'2026-10-'+day,legacy});
+ }
+ await check('Óleo final: rota retroativa correta, senha/justificativa/token, permissão, competência e preservação',async()=>{
+  const access=require('../src/app/controle-qualidade-oleo/retroactive-access.tsx').oilRetroactiveAccess;
+  const before=await fingerprint();for(const r of oilRecords){const row=await prisma.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:r.id}}),sc={module:'oleo',date:row.data,flowId:row.fluxoId||undefined,legacyRecordId:r.legacy?r.id:undefined};
+   const entry=await access(nutri,r.id);assert(entry.href.includes(r.legacy?'legado=':'fluxo='));assert.equal((await access(denied,r.id)).href,undefined);assert((await access(denied,r.id)).reason.includes('assinar_retroativo'));
+   for(const patch of [{password:'wrong'},{justification:''},{token:'stale'},{confirmed:false}])await assert.rejects(()=>signRetro(nutri,sc,patch));
+  }assert.equal(await fingerprint(),before);
+  const closed=await prisma.controleQualidadeOleoRegistro.findFirstOrThrow({where:{data:new Date('2026-09-20')}});assert((await access(nutri,closed.id)).reason.includes('Competência fechada'));
+  const labels=require('../src/lib/review-presentation.ts');assert.equal(labels.signatureBadgeLabel(null),'Assinado pelo Supervisor');assert.equal(labels.signatureBadgeLabel(JSON.stringify({operacao:'REVISAO_RETROATIVA',natureza:'Revisão técnica retroativa com ressalvas'})),'Assinado pelo Supervisor');assert.equal(labels.signatureBadgeLabel(JSON.stringify({operacao:'REVISAO_RETROATIVA',natureza:'Revisão gerencial retroativa'})),'Revisão gerencial');assert.equal(labels.reviewSignatureLabel(null),'Pendente de revisão');
+ });
+ await check('Óleo legado: falha de auditoria desfaz adoção, vínculo e assinatura atomicamente',async()=>{
+  const r=oilRecords.find(r=>r.legacy),row=await inspect.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:r.id}}),before=await fingerprint();
+  await inspect.$executeRawUnsafe("CREATE FUNCTION test_oil_audit_failure() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''Falha sintetica oleo''; END'");await inspect.$executeRawUnsafe('CREATE TRIGGER test_oil_audit_failure BEFORE INSERT ON log_assinatura FOR EACH ROW EXECUTE FUNCTION test_oil_audit_failure()');
+  try{await assert.rejects(()=>signRetro(nutri,{module:'oleo',date:row.data,legacyRecordId:row.id}),/Falha sintetica oleo/);}finally{await inspect.$executeRawUnsafe('DROP TRIGGER test_oil_audit_failure ON log_assinatura');await inspect.$executeRawUnsafe('DROP FUNCTION test_oil_audit_failure()');}
+  assert.deepEqual(await inspect.controleQualidadeOleoRegistro.findUniqueOrThrow({where:{id:row.id}}),row);assert.equal(await prisma.fluxoOperacional.findUnique({where:{id:'oil-legacy-'+row.id}}),null);assert.equal(await fingerprint(),before);
+ });
+ const protectedOil=await save(operator,oilAdapter,'2026-10-25:'+randomUUID(),form({temperatura:'150',fitaOleo:'__SEM_AFERICAO__',horarioExecucao:'08:30'}));await sign(nutri,[protectedOil],oilSignatureBridge(password,false));
+ const oilControl=await latest(protectedOil.id);
+ fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,oilRecords,oilControlId:protectedOil.id,oilControlSnapshot:JSON.stringify(oilControl),nutri:nutri.nomeUsuario,manager:manager.nomeUsuario,operator:operator.nomeUsuario,managerFlowId:managerBrowser.id,flowId:browser.id,day:'2026-10-26',cleanId:browserClean.id,cleanDay:'2026-10-29',normalCleanId:normalClean.id,normalCleanDay:'2026-10-28'}));
  assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,'.env'))).digest('hex'),envHash);
  fs.writeFileSync(path.join(dir,'results.json'),JSON.stringify({database,outcomes},null,2));console.log('PASS '+outcomes.length+' grupos locais de assinatura retroativa.');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{await prisma.$disconnect();await inspect.$disconnect();});

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { OilRetroactiveReviewAccess } from "./retroactive-access";
+import { SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import type { PerfilUsuario } from "@prisma/client";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-session";
@@ -37,6 +40,8 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
   const hidden=<><input type="hidden" name="chave" value={unit?.chave??`legacy:${id}`}/><input type="hidden" name="id" value={unit?.id??""}/><input type="hidden" name="versao" value={unit?.versao??0}/><input type="hidden" name="originalUpdatedAt" value={record.updatedAt.toISOString()}/></>;
   const signatureName=unit?.assinaturaVigente?.usuarioNome??record.assinaturaSupervisorNome??legacy?.daily?.usuarioNomeSnapshot??"Nome não registrado";
   const signatureDate=unit?.assinaturaVigente?.assinadoEm??record.assinaturaSupervisorEm??legacy?.daily?.assinadoEm;
+  const signatureProfile=unit?.assinaturaVigente?.usuarioPerfil??record.assinaturaSupervisorPerfil??legacy?.daily?.usuarioPerfilSnapshot;
+  const signatureObservation=unit?.assinaturaVigente?.mecanismo.includes("retroativa") ? JSON.stringify({operacao:"REVISAO_RETROATIVA",natureza:unit.assinaturaVigente.mecanismo}) : legacy?.daily?.observacao;
   const versions=query.auditoria==="1"&&unit?await prisma.fluxoVersao.findMany({where:{fluxoId:unit.id},orderBy:{versao:"asc"}}):[];
   const signatures=unit?await prisma.fluxoAssinaturaVinculo.findMany({where:{fluxoId:unit.id},include:{assinatura:true}}):[];
   const original=unit?.versoes[0]?.rascunho as Record<string,string>|undefined;
@@ -45,7 +50,7 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
     {query.feedback&&<p className="bpma-card" role="status">{String(query.feedback)}</p>}
     {monthClosed&&<p className="bpma-card">Competência fechada. Registro disponível somente para consulta.</p>}
     {revocation&&<p className="bpma-card">Pendente de assinatura válida. A assinatura anterior foi revogada em procedimento autorizado e permanece identificável no histórico. Temperaturas, fita, responsável e horários originais estão preservados; esta regularização não libera edição dos dados.</p>}
-    {signed&&<section className="bpma-card space-y-3"><p>Registro assinado</p><p>Este registro já foi assinado. Solicite a reabertura à nutricionista ou a um usuário autorizado para realizar alterações.</p><p>Assinado por {signatureName}{signatureDate?` em ${formatAppDateTime(signatureDate)}`:""}</p>{canReopen&&<Link className="btn-secondary" href={`${url}?confirmar=reabrir`}>Reabrir para correção</Link>}</section>}
+    {signed&&<section className="bpma-card space-y-3"><p>Registro assinado</p>{signatureDate?<SupervisorSignatureStatus signature={{usuarioNomeSnapshot:signatureName,usuarioPerfilSnapshot:signatureProfile&&["DEV","GERENTE","NUTRICIONISTA","COLABORADOR"].includes(signatureProfile)?signatureProfile as PerfilUsuario:null,assinadoEm:signatureDate,observacao:signatureObservation}}/>:<p>Assinado por {signatureName}. Data não registrada.</p>}<p>Este registro já foi assinado. Solicite a reabertura à nutricionista ou a um usuário autorizado para realizar alterações.</p>{canReopen&&<Link className="btn-secondary" href={`${url}?confirmar=reabrir`}>Reabrir para correção</Link>}</section>}
     {unit?.estado==="REABERTO"&&<p className="bpma-card">Correção autorizada. Aguardando nova assinatura. A assinatura anterior permanece no histórico.</p>}
     {canReopen&&query.confirmar==="reabrir"&&<form action={reopenOilWorkflowAction} role="dialog" aria-label="Confirmar reabertura" className="bpma-card space-y-3">{hidden}<p>A assinatura anterior deixará de validar somente esta verificação. Os dados e as evidências anteriores serão preservados.</p><input type="hidden" name="confirmar" value="true"/><label>Justificativa obrigatória<textarea className="bpma-input" name="justificativa" required maxLength={4000}/></label><Link className="btn-secondary" href={url}>Cancelar</Link><button className="btn-primary">Confirmar reabertura</button></form>}
     <form key={`${id}:${unit?.versao??record.updatedAt.toISOString()}`} action={saveOilWorkflowAction} className="bpma-card grid gap-4 md:grid-cols-2">{hidden}<fieldset className="contents" disabled={!canEdit}>
@@ -54,7 +59,8 @@ export async function OilSavedRecordPage({id,query={}}:{id:number;query?:Record<
       <label className="md:col-span-2">Observação<textarea className="bpma-input" name="observacao" defaultValue={record.observacao??""} maxLength={4000}/></label>
       <button className="btn-primary" name="intent" value="complete">Salvar Alterações</button>
     </fieldset></form>
-    {!signed&&unit?.preenchimentoCompleto&&<section className="bpma-card space-y-2" id="revisao-oleo">
+    <OilRetroactiveReviewAccess user={user} recordId={record.id}/>
+    {!signed&&(!unit||unit.preenchimentoCompleto)&&<section className="bpma-card space-y-2" id="revisao-oleo">
       <h2 className="font-semibold">Validação da supervisora</h2>
       {monthClosed?<p>Competência fechada. A assinatura depende de reabertura autorizada.</p>
         :revocation&&!canSign?<p>{signatureEligibility?.reason??"Esta verificação exige conferência da autoria original antes da nova assinatura."}</p>

@@ -26,7 +26,7 @@ export async function CompatibleDayReview(props: {
     prisma.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:code,dataReferencia:date}}})
   ]);
   if(code==="amostras")return <div className="space-y-2"><SupervisorSignatureStatus signature={legacySignature}/><p>Cada serviço é validado separadamente na tela do serviço. Assinaturas anteriores permanecem no histórico.</p><ul>{units.map(unit=><li key={unit.id}><Link href={`/controle-buffet-amostras/servico/${unit.chave.split(":")[0]}?data=${props.dateInput}`}>{unit.amostras[0]?.servico.nome??"Abrir serviço"} — {unit.assinaturaVigente?reviewSignatureLabel(unit.assinaturaVigente):"Consultar preenchimento e validação"}</Link></li>)}</ul>{legacyCount>0&&<p>Registros legados sem versão permanecem consultáveis. Novas assinaturas exigem regularização autorizada.</p>}</div>;
-  if (!units.length) return code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
+  if (!units.length) return code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>{code==="oleo"?"Para autoria histórica limitada, utilize a revisão retroativa autorizada indicada na verificação.":"Registros antigos exigem comprovação do responsável original antes da validação."}</p>}</> : <SignDayForm {...props} />;
   let eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
   if(code === "oleo") {
     // The legacy day form is not the only valid review mechanism: individual
@@ -69,7 +69,7 @@ export async function CompatibleDayReview(props: {
         <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
         <button className="btn-primary">Assinar verificações selecionadas</button>
       </form>}
-      {legacyCount>0&&<p>Os registros sem vínculo de versão exigem comprovação de autoria e regularização específica antes da nova assinatura.</p>}
+      {legacyCount>0&&<p>Registros históricos sem vínculo de versão podem utilizar a ação Assinar retroativamente, quando elegíveis. A autoria original limitada permanece registrada em auditoria.</p>}
     </div>;
   }
   if(code==="temperatura"||code==="rastreabilidade"){

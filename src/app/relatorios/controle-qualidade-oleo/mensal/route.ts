@@ -1,5 +1,4 @@
-import { reviewSignatureLabel } from "@/lib/review-presentation";
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -470,7 +469,7 @@ export async function GET(request: NextRequest) {
         fitaOleo: formatOilStrip(record.fitaOleo),
         temperatura: formatTemperature(record.temperatura),
         responsavel: valueOrDash(record.responsavel),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reviewSignatureLabel(record.fluxo.assinaturaVigente)+(record.fluxo.assinaturaVigente?.assinadoEm?` — ${formatAppDateTime(record.fluxo.assinaturaVigente.assinadoEm)}`:"") : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
         observacao: valueOrDash(record.observacao?.trim() || record.orientacao)
       };
     }),
@@ -479,7 +478,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "oleo", month, year), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

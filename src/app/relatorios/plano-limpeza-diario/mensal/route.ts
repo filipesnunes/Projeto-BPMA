@@ -1,6 +1,5 @@
 import { currentCleaningDaySignatures } from "@/lib/cleaning-day-signatures";
-import { retroactiveNature } from "@/lib/review-presentation";
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -766,7 +765,7 @@ export async function GET(request: NextRequest) {
   const supervisorByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      `${signature.usuarioNomeSnapshot}${retroactiveNature(signature.observacao) ? " — " + retroactiveNature(signature.observacao) : ""}`
+      reportSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,assinadoEm:signature.assinadoEm,observacao:signature.observacao})
     ])
   );
 
@@ -793,7 +792,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "limpeza_diaria", month, year), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

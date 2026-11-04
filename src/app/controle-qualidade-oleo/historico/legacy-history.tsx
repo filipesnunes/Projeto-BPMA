@@ -1,4 +1,5 @@
 import { technicalReviewPending } from "@/lib/review-presentation";
+import { OilRetroactiveReviewAccess } from "../retroactive-access";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
 import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
@@ -428,6 +429,7 @@ export default async function ControleQualidadeOleoHistoricoPage({ searchParams 
                     <td className="px-3 py-2">{registro.responsavel}</td>
                     <td className="px-3 py-2 max-w-80 whitespace-normal break-words">
                       {registro.observacao ?? registro.orientacao}
+                      <OilRetroactiveReviewAccess user={authUser} recordId={registro.id}/>
                       <Link className="btn-secondary block" href={`/controle-qualidade-oleo/registro/${registro.id}${registro.fluxoId&&!registro.assinaturaSupervisorEm?"#revisao-oleo":""}`}>{registro.fluxoId&&!registro.assinaturaSupervisorEm&&(canSignOilSupervisor(authUser,"individual")||canSignDay)?"Revisar e assinar":canCorrectOil(authUser,registro.data)&&!registro.assinaturaSupervisorEm&&!(!registro.fluxoId&&rawAssinaturasHistorico.some(s=>+s.dataReferencia===+registro.data))?"Editar":"Consultar registro"}</Link>
                       {registro.assinaturaSupervisorNome&&<p>Registro assinado por {registro.assinaturaSupervisorNome}</p>}
                       {!registro.fluxoId&&rawAssinaturasHistorico.some(s=>+s.dataReferencia===+registro.data)&&<p>Registro assinado por {rawAssinaturasHistorico.find(s=>+s.dataReferencia===+registro.data)?.usuarioNomeSnapshot}</p>}

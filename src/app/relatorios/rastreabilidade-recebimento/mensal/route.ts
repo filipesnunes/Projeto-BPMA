@@ -1,4 +1,4 @@
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -624,7 +624,7 @@ export async function GET(request: NextRequest) {
         responsavelRecebimento: true,
         nota: {
           select: {
-            fluxo: {select:{estado:true,assinaturaVigente:{select:{usuarioNome:true}}}},
+            fluxo: {select:{estado:true,assinaturaVigente:{select:{usuarioNome:true,mecanismo:true,assinadoEm:true}}}},
             notaFiscal: true
           }
         }
@@ -641,7 +641,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         dataReferencia: true,
-        usuarioNomeSnapshot: true
+        usuarioNomeSnapshot: true, assinadoEm:true, observacao:true
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -703,7 +703,7 @@ export async function GET(request: NextRequest) {
         embalagem: labelConformidade(record.embalagem),
         acaoCorretiva: valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelRecebimento),
-        supervisor: record.nota?.fluxo ? (record.nota.fluxo.estado === "FECHADO" ? valueOrDash(record.nota.fluxo.assinaturaVigente?.usuarioNome) : record.nota.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : valueOrDash(dailySignature?.usuarioNomeSnapshot)
+        supervisor: record.nota?.fluxo ? (record.nota.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.nota.fluxo.assinaturaVigente) : record.nota.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Completo — assinatura pendente") : dailySignature?reportSignatureLabel({usuarioNome:dailySignature.usuarioNomeSnapshot,assinadoEm:dailySignature.assinadoEm,observacao:dailySignature.observacao}):"-"
       };
     }),
     closureResponsible,
@@ -711,7 +711,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "rastreabilidade", month, year), {
+  return new NextResponse(renderReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

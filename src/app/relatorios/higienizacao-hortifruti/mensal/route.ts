@@ -1,4 +1,4 @@
-import { appendRetroactiveReviews } from "@/lib/retroactive-report";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { UNKNOWN_PROCEDURE_TIME, procedureObservation } from "@/lib/procedure-time";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
   const dailySignaturesByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      signature.usuarioNomeSnapshot
+      reportSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,assinadoEm:signature.assinadoEm,observacao:signature.observacao})
     ])
   );
   const signedRecordDates = new Set(
@@ -190,7 +190,7 @@ export async function GET(request: NextRequest) {
     })
   };
 
-  return new NextResponse(await appendRetroactiveReviews(renderMonthlySanitaryReportDocument(report), "hortifruti", month, year), {
+  return new NextResponse(renderMonthlySanitaryReportDocument(report), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

@@ -1,5 +1,5 @@
 import { pendingOilReviewDates } from "@/lib/monthly-periods";
-import { retroactiveNature, technicalReviewPending } from "@/lib/review-presentation";
+import { retroactiveNature, technicalReviewPending, signatureBadgeLabel } from "@/lib/review-presentation";
 import { DaySignatureForm } from "./day-signature-form";
 import {legacyReviewScope} from "@/lib/legacy-review-scope";
 import {parseAppDateInput} from "@/lib/date-time";
@@ -39,9 +39,10 @@ export function SupervisorSignatureStatus({
   return (
     <div className="space-y-1 text-sm">
       <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
-        {retroactiveNature(signature.observacao) ?? "Assinado pelo Supervisor"}
+        {signatureBadgeLabel(signature.observacao)}
       </span>
       <p>{signature.usuarioNomeSnapshot}</p>
+      {retroactiveNature(signature.observacao)?.includes("retroativa") && <p className="text-xs text-slate-500">Assinatura retroativa</p>}
       {technicalReviewPending(signature.observacao) && <p className="text-xs">Revisão registrada; não substitui revisão técnica quando exigida.</p>}
       <p className="text-xs text-slate-500 dark:text-slate-400">
         {signature.usuarioPerfilSnapshot ? getRoleLabel(signature.usuarioPerfilSnapshot) : "Perfil não informado"} em {formatAppDateTime(signature.assinadoEm)}

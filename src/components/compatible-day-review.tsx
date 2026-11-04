@@ -28,11 +28,48 @@ export async function CompatibleDayReview(props: {
   if (!units.length) return code === "oleo" || code === "temperatura" || code === "rastreabilidade" ? <><SupervisorSignatureStatus signature={legacySignature}/>{props.canSign&&!legacySignature&&legacyCount>0&&<p>Registros antigos exigem comprovação do responsável original antes da validação.</p>}</> : <SignDayForm {...props} />;
   let eligible = units.filter(unit => unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado));
   if(code === "oleo") {
+    // The legacy day form is not the only valid review mechanism: individual
+    // supervisor signatures use a separate permission. Show the eligible
+    // individual action directly in the day's history and explain blockers.
     const { getCurrentUser } = await import("@/lib/auth-session");
     const { oilRecordSignatureEligibility } = await import("@/app/controle-qualidade-oleo/signature-policy");
+    const { canSignOilSupervisor } = await import("@/lib/oil-signature-permissions");
+    const { isOperationalMonthClosed } = await import("@/lib/monthly-reopening");
     const user=await getCurrentUser();
-    const eligibility=await Promise.all(eligible.map(async unit=>Boolean(props.canSign&&user&&unit.oleo&&(await oilRecordSignatureEligibility(prisma,user,unit.oleo,"daily",unit.versao)).allowed)));
-    eligible=eligible.filter((_,index)=>eligibility[index]);
+    const monthClosed=await isOperationalMonthClosed("oleo",date.getUTCMonth()+1,date.getUTCFullYear());
+    const individualAllowed=Boolean(user&&canSignOilSupervisor(user,"individual"));
+    const dailyAllowed=Boolean(user&&canSignOilSupervisor(user,"daily"));
+    const decisions=await Promise.all(units.map(async unit=>{
+      if(unit.assinaturaVigente||unit.estado==="FECHADO")return {unit,reason:"Esta verificação já possui assinatura vigente.",eligible:false};
+      if(!unit.preenchimentoCompleto||!["COMPLETO","REABERTO"].includes(unit.estado))return {unit,reason:"A verificação ainda não está concluída.",eligible:false};
+      if(monthClosed)return {unit,reason:"Competência fechada. Solicite a reabertura autorizada.",eligible:false};
+      if(!user||!individualAllowed&&!dailyAllowed)return {unit,reason:"Seu usuário não possui autorização técnica de assinatura do óleo.",eligible:false};
+      if(!unit.oleo)return {unit,reason:"Verificação sem dados operacionais.",eligible:false};
+      const kind=individualAllowed?"individual" as const:"daily" as const;
+      const result=await oilRecordSignatureEligibility(prisma,user,unit.oleo,kind,unit.versao);
+      return {unit,reason:result.reason,eligible:result.allowed};
+    }));
+    const signable=decisions.filter(d=>d.eligible);
+    return <div className="mt-4 space-y-3" id="revisao-oleo">
+      <h3 className="font-semibold">Revisão e assinatura das verificações</h3>
+      {decisions.map(({unit,reason,eligible})=><section key={unit.id} className="space-y-2 rounded-lg border p-3">
+        <p className="font-medium">Verificação #{unit.oleo?.id??"—"} — versão {unit.versao}</p>
+        {eligible&&individualAllowed?<form action={signOilWorkflowAction} className="space-y-2">
+          <input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`}/>
+          <input type="hidden" name="mecanismo" value="individual"/>
+          <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
+          <button className="btn-primary">Assinar verificação</button>
+        </form>:eligible&&dailyAllowed?<p>Esta verificação pode ser assinada na revisão diária abaixo.</p>:<p role="status" className="text-sm">{reason}</p>}
+      </section>)}
+      {dailyAllowed&&!individualAllowed&&signable.length>0&&<form action={signOilWorkflowAction} className="space-y-3 rounded-lg border p-4">
+        <input type="hidden" name="mecanismo" value="diaria"/>
+        <p className="font-medium">Revisão diária — verificações selecionadas</p>
+        {signable.map(({unit})=><label className="block text-sm" key={unit.id}><input type="checkbox" name="unidade" value={`${unit.id}:${unit.versao}`} defaultChecked/> Verificação #{unit.oleo?.id} — versão {unit.versao}</label>)}
+        <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
+        <button className="btn-primary">Assinar verificações selecionadas</button>
+      </form>}
+      {legacyCount>0&&<p>Os registros sem vínculo de versão exigem comprovação de autoria e regularização específica antes da nova assinatura.</p>}
+    </div>;
   }
   if(code==="temperatura"||code==="rastreabilidade"){
     const {getCurrentUser}=await import("@/lib/auth-session");const user=await getCurrentUser();

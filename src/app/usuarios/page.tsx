@@ -1,3 +1,4 @@
+import { registerRetroactiveReviewPermissions } from "@/lib/register-retroactive-review-permissions";
 import { registerTemperatureCorrectionPermission } from "@/lib/register-temperature-correction-permission";
 import { registerOilCorrectionPermission } from "@/lib/register-oil-correction-permission";
 import Link from "next/link";
@@ -62,6 +63,7 @@ export default async function UsuariosPage({ searchParams }: UsuariosPageProps) 
   }
   await registerTemperatureCorrectionPermission();
   await registerOilCorrectionPermission();
+  if (hasPermission(authUser, "usuarios.editar_permissoes")) await prisma.$transaction(registerRetroactiveReviewPermissions);
 
   const params = await searchParams;
   const activeTab = firstParam(params.tab) === "perfis" ? "perfis" : "usuarios";

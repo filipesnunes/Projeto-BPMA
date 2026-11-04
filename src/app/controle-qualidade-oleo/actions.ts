@@ -174,7 +174,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error("Não há registros no período selecionado para fechamento.");
     }
 
-    await closeOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano, password: senhaConfirmacao }, "legacy");
+    await closeOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano, password: senhaConfirmacao, observacao: getInputValue(formData,"observacao"), confirmPending: getInputValue(formData,"confirmarPendencias")==="sim" }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(
@@ -205,7 +205,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    await reopenOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano });
+    await reopenOperationalMonth({ user: actor, moduleCode: "oleo", mes, ano, password: String(formData.get("senhaConfirmacao") ?? ""), reason: String(formData.get("justificativa") ?? "") });
 
     revalidateModulePaths();
     redirectWithFeedback(

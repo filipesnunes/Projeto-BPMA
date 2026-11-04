@@ -1906,7 +1906,7 @@ async function reopenMonthByType(params: {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    await reopenOperationalMonth({ user: actor, moduleCode: params.tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano });
+    await reopenOperationalMonth({ user: actor, moduleCode: params.tipo === TipoPlanoLimpeza.DIARIO ? "limpeza_diaria" : "limpeza_semanal", mes, ano, password: String(params.formData.get("senhaConfirmacao") ?? ""), reason: String(params.formData.get("justificativa") ?? "") });
 
     revalidateModulePaths();
     redirectWithFeedback(

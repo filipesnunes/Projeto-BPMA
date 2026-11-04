@@ -20,10 +20,11 @@ export function PeriodActionForm({ code, month, year, close = false }: { code: O
           <input type="hidden" name="moduloCodigo" value={code} />
           <input type="hidden" name="mes" value={month} /><input type="hidden" name="ano" value={year} />
           <input type="hidden" name="confirmacao" value="sim" />
-          {close ? <>
+          <>
             <label className="block text-sm">Confirme sua senha *<input required type="password" name="senhaConfirmacao" className="bpma-input" /></label>
-            <label className="block text-sm">Observação do fechamento<textarea name="observacao" rows={2} className="bpma-input" /></label>
-          </> : null}
+            <label className="block text-sm">{close ? "Observação do fechamento" : "Justificativa da reabertura *"}<textarea name={close ? "observacao" : "justificativa"} required={!close} maxLength={4000} rows={2} className="bpma-input" /></label>
+          </>
+          {close && code==="oleo" && <label className="flex gap-2"><input type="checkbox" name="confirmarPendencias" value="sim"/>Confirmo o fechamento com eventuais assinaturas pendentes nas datas informadas, preservando-as. A observação deve justificar esta exceção.</label>}
           <div className="btn-group"><button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancelar</button><ConfirmButton close={close} /></div>
         </form>
       </section>

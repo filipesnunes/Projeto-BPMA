@@ -1,5 +1,7 @@
 // Real actions, pages and report routes against an isolated in-memory adapter.
 // No environment file, database connection, upload, seed or operational mutation.
+process.env.DATABASE_URL='postgresql://isolated:isolated@127.0.0.1:1/adapter_only';
+process.env.DIRECT_URL=process.env.DATABASE_URL;
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,6 +13,7 @@ const mocks = new Map();
 Module._load = function (name, parent, isMain) {
   if (mocks.has(name)) return mocks.get(name);
   if (name === 'server-only') return {};
+  if(parent && path.resolve(path.dirname(parent.filename), name) === path.join(root,'src/lib/prisma')) return mocks.get('@/lib/prisma');
   if (name.startsWith('@/')) name = path.join(root, 'src', name.slice(2));
   return originalLoad.call(this, name, parent, isMain);
 };
@@ -34,6 +37,7 @@ mocks.set('@/lib/authz', new Proxy({}, { get: () => async () => {} }));
 mocks.set('@/lib/rbac', { getRoleLabel: () => 'Teste', canAccessReports: () => true, canViewManagementSections: () => true, canManageModuleOptions: () => true, canDeleteOperationalRecords: () => true });
 mocks.set('@/lib/image-upload', { parseImageUploadFromFormData: async () => null, hasStoredImage: () => false });
 mocks.set('@/lib/local-image-storage', { saveTemperatureEquipmentEvidenceImage: async () => { throw Error('Unexpected upload'); } });
+const syntheticPasswordHash=load('src/lib/password.ts').hashPassword('valid');
 const dates = load('src/lib/date-time.ts');
 const today = dates.getAppDate();
 const date = (s) => new Date(`${s}T00:00:00Z`);
@@ -91,6 +95,7 @@ const prisma = new Proxy({}, { get(_target, model) {
   return {
     findMany: async (args) => find(args), findFirst: async (args) => find(args)[0] ?? null,
     findUnique: async (args) => find(args)[0] ?? null,
+    findUniqueOrThrow: async (args) => {const row=find(args)[0];assert(row);return row;},
     count: async (args) => find(args).length,
     aggregate: async () => ({ _min: { data: today }, _max: { data: today } }),
     create: async ({data}) => { if (model === 'logAssinatura' && failAudit) throw Error('Audit unavailable'); const row = { id: rows.length + 1, createdAt: new Date(), updatedAt: new Date(), ...data }; rows.push(row); return row; },
@@ -102,7 +107,7 @@ const prisma = new Proxy({}, { get(_target, model) {
 mocks.set('@/lib/prisma', { prisma });
 const { NextRequest } = require('next/server');
 async function action(fn, values, expected = 'success') {
-  const form = new FormData(); for (const [key,value] of Object.entries(values)) form.set(key,String(value));
+  const form = new FormData(); for (const [key,value] of Object.entries({senhaConfirmacao:'valid',justificativa:'Reabertura sintética auditada',confirmarPendencias:'sim',observacao:'Pendências sintéticas reconhecidas',...values})) form.set(key,String(value));
   try { await fn(form); assert.fail('Expected redirect'); } catch(e) {
     if (!(e instanceof Redirect)) throw e;
     const params = new URL(e.url,'http://localhost').searchParams;
@@ -150,6 +155,7 @@ async function main() {
     for(const key of Object.keys(tables)) delete tables[key];
     tables.fechamentoMensalModulo = [{...closure('outro_modulo'),id:90}, closure(code,8), ...(mode !== 'legacy' ? [closure(code)] : [])];
     tables[model] = [legacy(tipo,8), ...(mode !== 'generic' ? [legacy(tipo)] : [])];
+    tables.usuario=[{id:1,senhaHash:syntheticPasswordHash}];
     tables.assinaturaDiariaModulo = structuredClone(daily);
     tables.logAssinatura = [{ id: 1, observacao:'Original preservado' }];
     for(const record of records) tables[record] = [];
@@ -166,7 +172,7 @@ async function main() {
       assert(await reopen.isOperationalMonthClosed(code,9,2026));
       for(const role of ['GERENTE','NUTRICIONISTA','COLABORADOR']) {
         actor.perfil=role;
-        await assert.rejects(()=>reopen.reopenOperationalMonth({user:actor,moduleCode:code,mes:9,ano:2026}),/DEV/);
+        await assert.rejects(()=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:code,mes:9,ano:2026}),/Sem permissão/);
       }
       actor.perfil='DEV';
       await action(actions.reopenPeriodAction,{moduloCodigo:code,mes:9,ano:2026,confirmacao:'sim'});
@@ -181,7 +187,7 @@ async function main() {
       assert.equal(JSON.parse(tables.logAssinatura.at(-1).observacao).operacao,'REABERTURA_MENSAL');
       assert.equal(await reopen.isOperationalMonthClosed(code,9,2026),false);
       assert.equal(await reopen.isOperationalMonthClosed(code,10,2026),false,'Current month stays open');
-      await assert.rejects(()=>reopen.reopenOperationalMonth({user:actor,moduleCode:code,mes:8,ano:2026}),/09\/2026 já está reaberto/);
+      await assert.rejects(()=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:code,mes:8,ano:2026}),/09\/2026 já está reaberto/);
       const html = await report(reportModule);
       assert.match(html,/Reaberto/);assert(!html.includes('Fechamento mensal:</strong> Assinado digitalmente'));
       const beforeReload = JSON.stringify(open);
@@ -225,23 +231,23 @@ async function main() {
       assert.match(await report(reportModule),/Assinado digitalmente/);
       for(const key of records) tables[key]=opSnapshot[key];
       Object.assign(actor,actorBefore);
-      await reopen.reopenOperationalMonth({user:actor,moduleCode:code,mes:8,ano:2026});
+      await reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:code,mes:8,ano:2026});
       assert.equal(tables.fechamentoMensalModulo.find(p=>p.moduloCodigo===code&&p.mes===8).status,'REABERTO');
     }
     process.stdout.write(`PASS ${code}: generic/legacy/both, state, permissions, audit, blockers, reclose, reports\n`);
   }
   reset('hortifruti','higienizacaoHortifrutiFechamento');
   actor.perfil='DEV';
-  const simultaneous=await Promise.allSettled([8,9].map(mes=>reopen.reopenOperationalMonth({user:actor,moduleCode:'hortifruti',mes,ano:2026})));
+  const simultaneous=await Promise.allSettled([8,9].map(mes=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'hortifruti',mes,ano:2026})));
   assert.equal(simultaneous.filter(r=>r.status==='fulfilled').length,1);
   assert.equal(tables.fechamentoMensalModulo.filter(p=>p.moduloCodigo==='hortifruti'&&p.status==='REABERTO').length,1);
   tables.fechamentoMensalModulo.push({...closure('temperatura'),id:91});
-  await reopen.reopenOperationalMonth({user:actor,moduleCode:'temperatura',mes:9,ano:2026});
+  await reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'temperatura',mes:9,ano:2026});
   assert.equal(tables.fechamentoMensalModulo.filter(p=>p.status==='REABERTO').length,2,'Other module can reopen');
   for(const failure of ['audit','update']) {
     reset('hortifruti','higienizacaoHortifrutiFechamento');
     const snapshot=JSON.stringify(tables);failAudit=failure==='audit';failUpdate=failure==='update';
-    await assert.rejects(()=>reopen.reopenOperationalMonth({user:actor,moduleCode:'hortifruti',mes:9,ano:2026}));
+    await assert.rejects(()=>reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'hortifruti',mes:9,ano:2026}));
     failAudit=false;failUpdate=false;assert.equal(JSON.stringify(tables),snapshot,'Rollback restores all writes');
   }
   for(const role of ['COLABORADOR','GERENTE','NUTRICIONISTA']) {
@@ -288,7 +294,7 @@ async function main() {
   actor.perfil='COLABORADOR';
   let result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error');assert.match(result.message,/mês.*fechado/);
-  actor.perfil='DEV';await reopen.reopenOperationalMonth({user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});
+  actor.perfil='DEV';await reopen.reopenOperationalMonth({password:'valid',reason:'Reabertura sintética auditada',user:actor,moduleCode:'rastreabilidade',mes:9,ano:2026});
   actor.perfil='COLABORADOR';
   result=await receiving.saveNotaItemsStateAction({status:'idle',message:''},edit);
   assert.equal(result.status,'error','Reabrir o mês não concede edição retroativa');

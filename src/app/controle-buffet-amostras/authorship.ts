@@ -17,6 +17,19 @@ type Evidence = {
   eventos: Array<{ operacao: string; versaoNova: number; usuarioId: number }>;
   amostras: Array<{ id: number; itemNome: string; responsavelUsuarioId: number }>;
 };
+
+// A declaration of non-service is not a measured procedure. Retrospective review
+// keeps both its declaring author and any later correction as historical evidence.
+export function buffetAuthorshipReservations(source: Evidence, reviewerId: number) {
+  const findings: string[] = [];
+  for (const row of source.amostras) {
+    const history=[...source.versoes].sort((a,b)=>a.versao-b.versao).flatMap(v=>buffetVersionRecords(v.dados).filter(r=>r.id===row.id));
+    const last=history.at(-1);
+    const result=buffetAuthorshipEligibility({...source,amostras:[row]},reviewerId);
+    if(!result.allowed) findings.push(`${row.itemNome}: ${last?.status==="NAO_SERVIDO" ? "declaração Não servido, sem execução atestada; " : "aferição; "}${result.reason.replace("A validação exige regularização autorizada.","Limitação preservada nesta revisão.")}`);
+  }
+  return findings;
+}
 export function buffetAuthorshipEligibility(source: Evidence, reviewerId: number) {
   const unknown = (item?: string) => ({ allowed: false, reason: `Não é possível comprovar a autoria original${item ? ` de ${item}` : ""}. A validação exige regularização autorizada.` });
   if (source.eventos.some(e => e.operacao === "VINCULO_LEGADO") || source.versoes.some(v => object(v.rascunho).registroLegadoOriginal)) return unknown();

@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDateTime } from "@/lib/date-time";
 import { getOperationalSignatureModule, isOperationalSignatureModuleCode } from "@/lib/module-signatures";
 import { canCloseMonthlyPeriod, canReopenMonthlyPeriod, canViewMonthlyPeriods } from "@/lib/monthly-period-permissions";
-import { listLegacyMonthlyClosures, monthlyPeriodCounts } from "@/lib/monthly-periods";
+import { pendingOilReviewDates, listLegacyMonthlyClosures, monthlyPeriodCounts } from "@/lib/monthly-periods";
 import { prisma } from "@/lib/prisma";
 import { PeriodActionForm } from "../period-action-form";
 
@@ -24,6 +24,7 @@ export default async function MonthlyPeriodsPage({ params, searchParams }: { par
   periods.sort((a, b) => b.ano - a.ano || b.mes - a.mes);
   const reopened = periods.find(p => p.status === "REABERTO");
   const counts = await Promise.all(periods.map(p => monthlyPeriodCounts(modulo, p.mes, p.ano)));
+  const pendingDates = modulo === "oleo" ? await Promise.all(periods.map(p=>pendingOilReviewDates(p.mes,p.ano))) : [];
   return <div className="space-y-6">
     <section className="bpma-card"><h1 className="text-2xl font-semibold">Gerenciamento de Períodos</h1><p className="mt-2">{config.nome}</p><Link href={config.historyPath.replace(/\/historico$/, "")} className="btn-secondary mt-4">Voltar ao módulo</Link></section>
     {feedback.feedback ? <p role="status" className={`bpma-card ${feedback.feedbackType === "error" ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>{feedback.feedback}</p> : null}
@@ -32,7 +33,7 @@ export default async function MonthlyPeriodsPage({ params, searchParams }: { par
       {periods.map((period, index) => <tr key={`${period.ano}-${period.mes}`} className={`border-t border-slate-200 dark:border-slate-700 ${period.status === "REABERTO" ? "bg-amber-50 dark:bg-amber-950" : ""}`}>
         <td className="p-3">{String(period.mes).padStart(2, "0")}/{period.ano}</td><td className="p-3 font-medium">{period.status === "REABERTO" ? "Reaberto" : period.reopenedAt ? "Fechado novamente" : "Fechado"}</td>
         <td className="p-3">{formatAppDateTime(period.signedAt)}{period.status === "REABERTO" ? <p className="text-xs">Fechamento anterior</p> : null}</td><td className="p-3">{period.signedBy}</td>
-        <td className="p-3">{period.reopenedAt ? formatAppDateTime(period.reopenedAt) : "—"}</td><td className="p-3">{period.reopenedBy || "—"}</td><td className="p-3">{counts[index].pending ?? "Não contabilizadas neste módulo"}</td>
+        <td className="p-3">{period.reopenedAt ? formatAppDateTime(period.reopenedAt) : "—"}</td><td className="p-3">{period.reopenedBy || "—"}</td><td className="p-3">{pendingDates[index] ? `${pendingDates[index].length} dia(s) sem revisão: ${pendingDates[index].join(", ")}` : counts[index].pending ?? "Não contabilizadas neste módulo"}</td>
         <td className="p-3"><div className="btn-group"><Link href={`${config.historyPath}?filtroMes=${period.mes}&filtroAno=${period.ano}`} className="btn-secondary">Ver registros</Link>
           {period.status === "REABERTO" ? (canCloseMonthlyPeriod(user, modulo) ? <PeriodActionForm code={modulo} month={period.mes} year={period.ano} close /> : null) : canReopenMonthlyPeriod(user, modulo) && !reopened ? <PeriodActionForm code={modulo} month={period.mes} year={period.ano} /> : null}
         </div>{period.status !== "REABERTO" && reopened ? <p className="mt-2 text-xs">Outro período já está reaberto.</p> : null}</td>

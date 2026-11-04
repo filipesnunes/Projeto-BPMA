@@ -83,7 +83,7 @@ export async function reopenModuleMonthlyClosureAction(formData: FormData) {
     returnTo = getSafeReturnTo(formData, config.historyPath);
     const mes = Number(getInputValue(formData, "mes"));
     const ano = Number(getInputValue(formData, "ano"));
-    await reopenOperationalMonth({ user: await getCurrentUserForAction(), moduleCode: config.codigo, mes, ano });
+    await reopenOperationalMonth({ user: await getCurrentUserForAction(), moduleCode: config.codigo, mes, ano, password: getInputValue(formData, "senhaConfirmacao"), reason: getInputValue(formData, "justificativa") });
     redirectWithFeedback(returnTo, "success", `Mês ${String(mes).padStart(2, "0")}/${ano} Reaberto com Sucesso.`);
   } catch (error) {
     rethrowIfRedirectError(error);
@@ -93,12 +93,8 @@ export async function reopenModuleMonthlyClosureAction(formData: FormData) {
   }
 }
 
-export async function signModuleDayAction(formData: FormData) {
-  const moduloCodigo = getInputValue(formData, "moduloCodigo");
-  const moduleConfig = getOperationalSignatureModule(moduloCodigo);
-  const returnTo = getSafeReturnTo(formData, moduleConfig.historyPath);
-
-  try {
+async function persistModuleDay(formData: FormData) {
+  const moduleConfig = getOperationalSignatureModule(getInputValue(formData, "moduloCodigo"));
     const actor = await getCurrentUserForAction();
     if (!canSignModuleDay(actor, moduleConfig.codigo)) {
       throw new Error("Seu perfil não pode assinar dias como responsável técnico.");
@@ -115,7 +111,7 @@ export async function signModuleDayAction(formData: FormData) {
       const {signLegacyOilDay}=await import("@/app/controle-qualidade-oleo/legacy-day-signature");
       await signLegacyOilDay(actor,dataReferencia,senhaConfirmacao,observacao);
       revalidatePath(moduleConfig.historyPath);
-      redirectWithFeedback(returnTo,"success","Dia assinado pelo supervisor com sucesso.");
+      return;
     }
 
     if(["temperatura","amostras","rastreabilidade"].includes(moduleConfig.codigo))throw Error("Utilize a revisão das versões selecionadas. No Buffet, abra o serviço completo. Registros sem autoria comprovada exigem regularização autorizada.");
@@ -128,23 +124,42 @@ export async function signModuleDayAction(formData: FormData) {
       const scope=await legacyReviewScope(tx,moduleConfig.codigo,dataReferencia);
       if(!scope.rows.length)throw Error("Não há registros elegíveis neste dia.");
       if(getInputValue(formData,"escopo")!==scope.token)throw Error("O conteúdo mudou. Recarregue o dia antes de assinar.");
-      if(moduleConfig.codigo!=="hortifruti"&&scope.rows.some(row=>"status" in row&&row.status!=="CONCLUIDO"))throw Error("Conclua a execução e a supervisão dos itens antes da revisão técnica do dia.");
+      if(moduleConfig.codigo!=="hortifruti"&&scope.rows.some(row=>"status" in row&&(!["CONCLUIDO","AGUARDANDO_SUPERVISOR"].includes(row.status)||!("assinaturaResponsavel" in row)||!row.assinaturaResponsavel.trim())))throw Error("Conclua a execução e a assinatura dos executores antes da revisão do dia.");
       if(scope.rows.some(row=>"assinaturaResponsavelUsuarioId" in row&&(!row.assinaturaResponsavelUsuarioId||row.assinaturaResponsavelUsuarioId===reviewer.id)))throw Error("A revisão técnica exige executor identificado e independente.");
       const credentials=await tx.usuario.findUniqueOrThrow({where:{id:reviewer.id},select:{senhaHash:true}});
       if(!senhaConfirmacao||!verifyPassword(senhaConfirmacao,credentials.senhaHash))throw Error("Senha inválida para assinatura.");
       if(await tx.assinaturaDiariaModulo.findUnique({where:{moduloCodigo_dataReferencia:{moduloCodigo:moduleConfig.codigo,dataReferencia}}}))throw Error("Este dia já foi assinado pelo supervisor.");
       const signedAt=getAppNow();
+      if (moduleConfig.codigo === "limpeza_diaria" || moduleConfig.codigo === "limpeza_semanal") {
+        for (const row of scope.rows) {
+          if (!("assinaturaSupervisor" in row) || row.assinaturaSupervisor.trim()) continue;
+          const data = { assinaturaSupervisor: reviewer.nomeCompleto, assinaturaSupervisorUsuarioId: reviewer.id,
+            assinaturaSupervisorNomeUsuario: reviewer.nomeUsuario, assinaturaSupervisorPerfil: reviewer.perfil,
+            assinaturaSupervisorDataHora: signedAt, status: "CONCLUIDO" as const, observacaoSupervisor: observacao || null };
+          const where = { id: row.id, updatedAt: row.updatedAt, assinaturaSupervisor: "" };
+          if (moduleConfig.codigo === "limpeza_diaria") await tx.planoLimpezaDiarioRegistro.update({ where, data });
+          else await tx.planoLimpezaSemanalExecucao.update({ where, data });
+        }
+      }
       await tx.assinaturaDiariaModulo.create({data:{moduloCodigo:moduleConfig.codigo,dataReferencia,usuarioId:reviewer.id,usuarioNomeSnapshot:reviewer.nomeCompleto,usuarioPerfilSnapshot:reviewer.perfil,responsavelTecnico:true,assinadoEm:signedAt,observacao:observacao||null}});
       await tx.logAssinatura.create({data:{usuarioId:reviewer.id,nomeUsuario:reviewer.nomeUsuario,nomeCompleto:reviewer.nomeCompleto,perfil:reviewer.perfil,tipo:"RESPONSAVEL_TECNICO",modulo:moduleConfig.codigo,referenciaId:formatAppDateInput(dataReferencia),assinadoEm:signedAt,observacao:JSON.stringify({responsabilidade:"revisao_tecnica_do_dia",escopo:scope.token,registros:scope.rows.map(row=>({id:row.id,updatedAt:row.updatedAt})),observacao})}});
     },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable});
 
-    revalidatePath(moduleConfig.historyPath);
-    revalidatePath(new URL(returnTo, "http://localhost").pathname);
-    redirectWithFeedback(returnTo, "success", "Dia assinado pelo supervisor com sucesso.");
-  } catch (error) {
-    rethrowIfRedirectError(error);
-    redirectWithFeedback(returnTo, "error", getErrorMessage(error));
-  }
+
+  revalidatePath(moduleConfig.historyPath);
+  revalidatePath("/relatorios", "layout");
+}
+
+export async function signModuleDayState(_state: {status:string;message:string}, formData: FormData) {
+  try { await persistModuleDay(formData); return {status:"success",message:"Dia assinado pelo supervisor com sucesso."}; }
+  catch(error) { return {status:"error",message:getErrorMessage(error)}; }
+}
+
+export async function signModuleDayAction(formData: FormData) {
+  const moduleConfig = getOperationalSignatureModule(getInputValue(formData, "moduloCodigo"));
+  const returnTo = getSafeReturnTo(formData, moduleConfig.historyPath);
+  try { await persistModuleDay(formData); redirectWithFeedback(returnTo,"success","Dia assinado pelo supervisor com sucesso."); }
+  catch(error) { rethrowIfRedirectError(error); redirectWithFeedback(returnTo,"error",getErrorMessage(error)); }
 }
 
 export async function signModuleMonthlyClosureAction(formData: FormData) {
@@ -169,7 +184,7 @@ export async function signModuleMonthlyClosureAction(formData: FormData) {
 
     await validateSignaturePassword({ user: actor, password: senhaConfirmacao });
 
-    await closeOperationalMonth({ user: actor, moduleCode: moduleConfig.codigo, mes, ano, observacao, password: senhaConfirmacao });
+    await closeOperationalMonth({ user: actor, moduleCode: moduleConfig.codigo, mes, ano, observacao, password: senhaConfirmacao, confirmPending: getInputValue(formData,"confirmarPendencias")==="sim" });
 
     revalidatePath(moduleConfig.historyPath);
     revalidatePath(new URL(returnTo, "http://localhost").pathname);

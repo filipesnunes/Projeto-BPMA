@@ -1,3 +1,4 @@
+import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -802,7 +803,7 @@ export async function GET(request: NextRequest) {
     closureStatus: reopenedLabel ?? (closureResponsible ? "Assinado digitalmente" : "Pendente de assinatura")
   };
 
-  return new NextResponse(renderReportDocument(report), {
+  return new NextResponse(await appendRetroactiveReviews(renderReportDocument(report), "temperatura", month, year), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

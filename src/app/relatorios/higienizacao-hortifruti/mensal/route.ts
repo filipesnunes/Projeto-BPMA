@@ -1,3 +1,4 @@
+import { appendRetroactiveReviews } from "@/lib/retroactive-report";
 import { UNKNOWN_PROCEDURE_TIME, procedureObservation } from "@/lib/procedure-time";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -189,7 +190,7 @@ export async function GET(request: NextRequest) {
     })
   };
 
-  return new NextResponse(renderMonthlySanitaryReportDocument(report), {
+  return new NextResponse(await appendRetroactiveReviews(renderMonthlySanitaryReportDocument(report), "hortifruti", month, year), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store"

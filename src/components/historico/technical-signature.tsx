@@ -1,3 +1,5 @@
+import { pendingOilReviewDates } from "@/lib/monthly-periods";
+import { DaySignatureForm } from "./day-signature-form";
 import {legacyReviewScope} from "@/lib/legacy-review-scope";
 import {parseAppDateInput} from "@/lib/date-time";
 import { formatAppDateTime } from "@/lib/date-time";
@@ -10,7 +12,6 @@ import type { OperationalSignatureModuleCode } from "@/lib/module-signatures";
 import { getRoleLabel, type UserRole } from "@/lib/rbac";
 
 import {
-  signModuleDayAction,
   signModuleMonthlyClosureAction
 } from "@/app/historico-operacional/actions";
 
@@ -62,42 +63,16 @@ export async function SignDayForm({
   alreadySigned: boolean;
   hasOperationalWarnings?: boolean;
 }) {
-  if (alreadySigned || !canSign || !["hortifruti","limpeza_diaria","limpeza_semanal"].includes(moduleCode)) {
+  if (alreadySigned) return <p role="status" className="mt-4 rounded border border-emerald-500 p-3">A revisão deste dia está assinada. Confira o responsável e o horário no Histórico.</p>;
+  if (!canSign || !["hortifruti","limpeza_diaria","limpeza_semanal"].includes(moduleCode)) {
     return null;
   }
 
   const date=parseAppDateInput(dateInput);if(!date)return null;
   const scope=await legacyReviewScope(prisma,moduleCode,date);
   if(!scope.rows.length)return null;
-  return (
-    <form action={signModuleDayAction} className="mt-4 space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-      <input type="hidden" name="escopo" value={scope.token} />
-      <input type="hidden" name="moduloCodigo" value={moduleCode} />
-      <input type="hidden" name="dataReferencia" value={dateInput} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <div>
-        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-          Esta assinatura valida a revisão de todos os registros deste dia.
-        </p>
-        {hasOperationalWarnings ? (
-          <p className="mt-1 text-sm text-amber-700 dark:text-amber-200">
-            Existem pendências, alertas ou não conformidades neste dia. A assinatura registra a revisão sem ocultar esses pontos.
-          </p>
-        ) : null}
-      </div>
-      <label className="block text-sm text-slate-700 dark:text-slate-200">
-        Confirme sua senha *
-        <input type="password" name="senhaConfirmacao" required className="bpma-input" />
-      </label>
-      <label className="block text-sm text-slate-700 dark:text-slate-200">
-        Observação da revisão
-        <textarea name="observacao" rows={2} className="bpma-input" />
-      </label>
-      <button type="submit" className="btn-primary">
-        Assinar dia
-      </button>
-    </form>
-  );
+  return <><p>{hasOperationalWarnings ? "Existem pendências ou alertas no dia; a revisão não os oculta." : ""}</p><DaySignatureForm historyPath={returnTo.split("?")[0]} fields={{escopo:scope.token,moduloCodigo:moduleCode,dataReferencia:dateInput,returnTo}}/></>;
+
 }
 
 export async function MonthlyClosureSection({
@@ -125,6 +100,7 @@ export async function MonthlyClosureSection({
   const isClosed = Boolean(signedClosure) || legacy?.status === "ASSINADO";
   const state = await prisma.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes: month, ano: year } } });
   const reopened = state?.status === "REABERTO";
+  const oilPending = moduleCode === "oleo" ? await pendingOilReviewDates(month,year) : [];
 
   return (
     <section id="fechamento-mensal" className="bpma-card">
@@ -141,6 +117,7 @@ export async function MonthlyClosureSection({
       </div>
 
       <p className="mt-3 text-sm font-medium">{reopened ? "Período reaberto" : isClosed ? "Período fechado" : "Período aberto normalmente"}</p>
+      <Link href={`/historico-operacional/revisao-retroativa?modulo=${moduleCode}&data=${year}-${String(month).padStart(2,"0")}-01`} className="btn-secondary">Consultar assinaturas retroativas</Link>
       {!signedClosure && legacy?.status === "ASSINADO" ? (
         <p className="text-sm">Fechamento assinado por {legacy.responsavelTecnico} em {formatAppDateTime(legacy.dataAssinatura)}.</p>
       ) : null}
@@ -179,6 +156,7 @@ export async function MonthlyClosureSection({
             Observação do fechamento
             <textarea name="observacao" rows={2} className="bpma-input" />
           </label>
+          {oilPending.length>0&&<label className="block"><input type="checkbox" name="confirmarPendencias" value="sim" required/>Confirmo o fechamento com {oilPending.length} dia(s) pendentes: {oilPending.join(", ")}. Informe a justificativa na observação.</label>}
           <button type="submit" className="btn-primary">
             Assinar Fechamento Mensal
           </button>

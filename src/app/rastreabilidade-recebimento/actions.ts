@@ -674,7 +674,7 @@ export async function reopenMonthAction(formData: FormData) {
       throw new Error("Informe um mês e ano válidos para reabertura.");
     }
 
-    await reopenOperationalMonth({ user: actor, moduleCode: "rastreabilidade", mes, ano });
+    await reopenOperationalMonth({ user: actor, moduleCode: "rastreabilidade", mes, ano, password: String(formData.get("senhaConfirmacao") ?? ""), reason: String(formData.get("justificativa") ?? "") });
 
     revalidateModulePaths();
     redirectWithFeedback(

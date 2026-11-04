@@ -72,18 +72,29 @@ async function openLegacyClosure(db: Prisma.TransactionClient, code: Operational
 }
 
 export async function reopenOperationalMonth(params: {
-  user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number;
+  user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; password: string; reason: string;
 }) {
-  const { user, moduleCode, mes, ano } = params;
+  const { moduleCode, mes, ano } = params;
+  let user = params.user;
   getOperationalSignatureModule(moduleCode);
   if (!canReopenMonthlyPeriod(user, moduleCode)) {
-    throw new Error("Apenas o usuário DEV pode reabrir meses.");
+    throw new Error("Sem permissão para reabrir este módulo.");
   }
   validateMonthlyPeriod(mes, ano);
+
+  if (!params.reason.trim() || params.reason.trim().length > 4000) {
+    throw new Error("Informe a justificativa da reabertura (até 4000 caracteres).");
+  }
 
   await prisma.$transaction(async (tx) => {
     // All period transitions acquire the same module-specific lock. Other modules are independent.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${moduleCode}), 17326)`;
+    const { refreshWorkflowActor } = await import("@/app/controle-temperatura-equipamentos/workflow-adapter");
+    const { verifyPassword } = await import("./password");
+    user = await refreshWorkflowActor(tx, user);
+    if (!canReopenMonthlyPeriod(user, moduleCode)) throw Error("Sem permissão para reabrir este módulo.");
+    const credentials = await tx.usuario.findUniqueOrThrow({where:{id:user.id},select:{senhaHash:true}});
+    if (!params.password || !verifyPassword(params.password, credentials.senhaHash)) throw Error("Senha inválida para reabertura.");
     const reopened = await tx.fechamentoMensalModulo.findFirst({ where: { moduloCodigo: moduleCode, status: "REABERTO" } });
     if (reopened) throw new Error(`Não é possível reabrir este mês porque ${String(reopened.mes).padStart(2, "0")}/${reopened.ano} já está reaberto. Finalize as pendências e feche esse período antes de reabrir outro mês.`);
     const generic = await tx.fechamentoMensalModulo.findUnique({ where: {
@@ -100,7 +111,7 @@ export async function reopenOperationalMonth(params: {
       usuarioId: user.id, nomeUsuario: user.nomeUsuario, nomeCompleto: user.nomeCompleto,
       perfil: user.perfil, tipo: "FECHAMENTO_MENSAL", modulo: moduleCode,
       referenciaId: `${String(mes).padStart(2, "0")}/${ano}`, assinadoEm: getAppNow(),
-      observacao: JSON.stringify({ operacao: "REABERTURA_MENSAL", modulo: moduleCode, mes, ano,
+      observacao: JSON.stringify({ operacao: "REABERTURA_MENSAL", modulo: moduleCode, mes, ano, justificativa: params.reason.trim(),
         fechamentoGenericoAnterior: generic, fechamentoEspecificoAnterior: legacy,
         assinaturasDiariasPreservadas: true })
     } });

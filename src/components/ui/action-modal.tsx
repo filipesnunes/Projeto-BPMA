@@ -1,5 +1,7 @@
 ﻿import Link from "next/link";
 import type { ReactNode } from "react";
+import { Suspense } from "react";
+import { ModalFeedback } from "./modal-feedback";
 
 type ActionModalProps = {
   title: string;
@@ -40,6 +42,7 @@ export function ActionModal({
             </Link>
           </div>
         </div>
+        <Suspense fallback={null}><ModalFeedback /></Suspense>
         <div className="mt-4">{children}</div>
       </section>
     </div>

@@ -18,10 +18,10 @@ async function transition(form: FormData, operation: "reopen" | "close") {
     if (!canViewMonthlyPeriods(user, config.codigo)) throw new Error("Seu perfil não pode acessar o gerenciamento deste módulo.");
     const params = { user, moduleCode: config.codigo, mes: Number(text(form, "mes")), ano: Number(text(form, "ano")) };
     if (text(form, "confirmacao") !== "sim") throw new Error("Confirme a operação antes de continuar.");
-    if (operation === "reopen") await reopenOperationalMonth(params);
+    if (operation === "reopen") await reopenOperationalMonth({ ...params, password: text(form, "senhaConfirmacao"), reason: text(form, "justificativa") });
     else {
       await validateSignaturePassword({ user, password: text(form, "senhaConfirmacao") });
-      await closeReopenedOperationalMonth({ ...params, observacao: text(form, "observacao"), password: text(form, "senhaConfirmacao") });
+      await closeReopenedOperationalMonth({ ...params, observacao: text(form, "observacao"), password: text(form, "senhaConfirmacao"), confirmPending: text(form,"confirmarPendencias")==="sim" });
     }
     redirect(`${returnTo}?feedbackType=success&feedback=${encodeURIComponent(operation === "reopen" ? "Período reaberto com sucesso." : "Período fechado novamente com sucesso.")}`);
   } catch (error) {

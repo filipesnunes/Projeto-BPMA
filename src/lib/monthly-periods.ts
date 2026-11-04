@@ -26,6 +26,16 @@ export function monthlyDateRange(mes: number, ano: number) {
   return { gte: new Date(Date.UTC(ano, mes - 1, 1)), lt: new Date(Date.UTC(ano, mes, 1)) };
 }
 
+export async function pendingOilReviewDates(mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
+  const range=monthlyDateRange(mes,ano);
+  const [rows,daily]=await Promise.all([
+    db.controleQualidadeOleoRegistro.findMany({where:{data:range,excluidoEm:null},include:{fluxo:{select:{assinaturaVigenteId:true,estado:true}}}}),
+    db.assinaturaDiariaModulo.findMany({where:{moduloCodigo:"oleo",dataReferencia:range},select:{dataReferencia:true}})
+  ]);
+  const days=new Set(daily.map(row=>row.dataReferencia.toISOString().slice(0,10)));
+  return [...new Set(rows.filter(row=>row.fluxo ? !row.fluxo.assinaturaVigenteId || row.fluxo.estado!=="FECHADO" : !row.assinaturaSupervisorEm&&!days.has(row.data.toISOString().slice(0,10))).map(row=>row.data.toISOString().slice(0,10)))].sort();
+}
+
 // The same counts and blocking conditions used by the module closing actions.
 // Missing daily supervisor signatures remain advisory under the existing policy.
 export async function monthlyPeriodCounts(code: OperationalSignatureModuleCode, mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
@@ -75,12 +85,12 @@ async function updateLegacyClosing(db: Prisma.TransactionClient, code: Operation
   }
 }
 
-export async function closeReopenedOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string }) {
+export async function closeReopenedOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string; confirmPending?: boolean }) {
   return closeOperationalMonth(params, "management");
 }
 
 // This context is chosen by server code, never by a submitted form field.
-export async function closeOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string }, context: "history" | "legacy" | "management" = "history") {
+export async function closeOperationalMonth(params: { user: AuthenticatedUser; moduleCode: OperationalSignatureModuleCode; mes: number; ano: number; observacao?: string; password?: string; confirmPending?: boolean }, context: "history" | "legacy" | "management" = "history") {
   const { moduleCode, mes, ano } = params;
   let user = params.user;
   const management = context === "management";
@@ -109,11 +119,15 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
     const legacy = await findLegacyMonthlyClosure(moduleCode, mes, ano, tx);
     if (!management && (period || legacy?.status === "ASSINADO")) throw new Error("Este período já está fechado.");
     const counts = await validateMonthlyClosing(moduleCode, mes, ano, tx);
+    const pendingDates = moduleCode === "oleo" ? await pendingOilReviewDates(mes,ano,tx) : [];
+    if (pendingDates.length && (!params.confirmPending || !params.observacao?.trim() || params.observacao.trim().length>4000)) {
+      throw Error(`Há ${pendingDates.length} dia(s) com assinatura pendente: ${pendingDates.join(", ")}. Confirme especificamente o fechamento com pendências e informe a justificativa.`);
+    }
     const signedAt = getAppNow();
     await tx.logAssinatura.create({ data: {
       usuarioId: user.id, nomeUsuario: user.nomeUsuario, nomeCompleto: user.nomeCompleto, perfil: user.perfil,
       tipo: "FECHAMENTO_MENSAL", modulo: moduleCode, referenciaId: `${String(mes).padStart(2, "0")}/${ano}`, assinadoEm: signedAt,
-      observacao: JSON.stringify({ operacao: management ? "NOVO_FECHAMENTO_MENSAL" : "FECHAMENTO_MENSAL", mes, ano, modulo: moduleCode, fechamentoAnterior: period, fechamentoEspecificoAnterior: legacy, observacao: params.observacao || null, ...(oilAuthorization?{autorizacao:oilAuthorization}:{}) })
+      observacao: JSON.stringify({ operacao: management ? "NOVO_FECHAMENTO_MENSAL" : "FECHAMENTO_MENSAL", mes, ano, modulo: moduleCode, fechamentoAnterior: period, fechamentoEspecificoAnterior: legacy, observacao: params.observacao || null, ...(pendingDates.length?{excecaoAssinaturasPendentes:{datas:pendingDates,confirmacaoExplicita:true}}:{}), ...(oilAuthorization?{autorizacao:oilAuthorization}:{}) })
     } });
     const data = {
       status: "FECHADO", usuarioId: user.id, usuarioNomeSnapshot: user.nomeCompleto, usuarioPerfilSnapshot: user.perfil,

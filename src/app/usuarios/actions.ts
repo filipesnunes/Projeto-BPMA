@@ -1,4 +1,5 @@
 "use server";
+import { registerRetroactiveReviewPermissions } from "@/lib/register-retroactive-review-permissions";
 
 import { Prisma, type PerfilUsuario } from "@prisma/client";
 import { redirect } from "next/navigation";
@@ -759,6 +760,7 @@ export async function updateProfilePermissionsAction(formData: FormData) {
     const resumo = `Adicionadas: ${added.length}; removidas: ${removed.length}.`;
 
     await prisma.$transaction(async (tx) => {
+      await registerRetroactiveReviewPermissions(tx);
       await tx.perfilPermissao.deleteMany({
         where: { perfilId: profile.id }
       });

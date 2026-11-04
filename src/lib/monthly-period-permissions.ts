@@ -11,8 +11,8 @@ export function canViewMonthlyPeriods(user: PermissionAwareUser, code: Operation
 }
 
 export function canReopenMonthlyPeriod(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {
-  // Preserve the existing DEV-only reopening policy; never infer this from GERENTE.
-  return user.perfil === "DEV" && hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.reabrir_mes`);
+  return hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.acessar`)
+    && hasPermission(user, `${getOperationalSignatureModule(code).permissionPrefix}.reabrir_mes`);
 }
 
 export function canCloseMonthlyPeriod(user: PermissionAwareUser, code: OperationalSignatureModuleCode) {

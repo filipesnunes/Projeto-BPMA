@@ -29,6 +29,8 @@ export function ReopenMonthForm({ moduleCode, month, year, returnTo }: {
           <input type="hidden" name="ano" value={year} />
           <input type="hidden" name="returnTo" value={returnTo} />
           <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancelar</button>
+          <label>Confirme sua senha *<input type="password" name="senhaConfirmacao" required className="bpma-input" /></label>
+          <label>Justificativa *<textarea name="justificativa" required maxLength={4000} className="bpma-input" /></label>
           <ConfirmButton />
         </form>
       </section>

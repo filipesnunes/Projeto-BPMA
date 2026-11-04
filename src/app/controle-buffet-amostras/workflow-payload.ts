@@ -1,3 +1,4 @@
+import { validateBuffetRow } from "./row-validation";
 import {findAcaoCorretivaByName} from "./catalog";
 import "server-only";
 import {Prisma, StatusItemBuffetAmostra, type ClassificacaoItemBuffetAmostra} from "@prisma/client";
@@ -147,43 +148,11 @@ export function getRegistroItemIssue(
     return null;
   }
 
-  const temperaturaAmbiente = input.temperaturaTipo === "AMBIENTE";
-  const usaGarrafaTermica = item.usaGarrafaTermica;
-  const values = [
-    usaGarrafaTermica ? "" : input.tcEquipamentoInput,
-    input.primeiraTcInput,
-    input.acaoCorretivaInput,
-    input.observacao,
-    temperaturaAmbiente ? "Ambiente" : ""
-  ];
-  const hasAnyValue = values.some((value) => value.trim().length > 0);
-
-  if (!hasAnyValue) {
-    return { kind: "blank", missingFields: [] };
-  }
-
-  if (temperaturaAmbiente) {
-    return null;
-  }
-
-  const missingFields: string[] = [];
-  const tcEquipamento = parseTemperatureInput(input.tcEquipamentoInput);
-  const primeiraTc = parseTemperatureInput(input.primeiraTcInput);
-
-  if (!usaGarrafaTermica && tcEquipamento === null) {
-    missingFields.push("TC Equipamento");
-  }
-
-  if (primeiraTc === null) {
-    missingFields.push("TC do Alimento");
-  } else {
-    const avaliacao = avaliarTemperaturaBuffet(item.classificacao, primeiraTc);
-    if (avaliacao.exigeAcaoCorretiva && !input.acaoCorretivaInput) {
-      missingFields.push("ação corretiva");
-    }
-  }
-
-  return missingFields.length > 0 ? { kind: "incomplete", missingFields } : null;
+  const missingFields = validateBuffetRow(item, {
+    temperaturaTipo: input.temperaturaTipo, tcEquipamento: input.tcEquipamentoInput,
+    primeiraTc: input.primeiraTcInput, acaoCorretiva: input.acaoCorretivaInput
+  });
+  return missingFields.length ? { kind: "incomplete", missingFields } : null;
 }
 
 export function buildNaoServidoPayload(params: {

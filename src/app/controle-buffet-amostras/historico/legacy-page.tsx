@@ -1,3 +1,5 @@
+import {buffetServiceReview} from "../service-review";
+import {isOperationalMonthClosed} from "@/lib/monthly-reopening";
 import { scopedLegacyDaySignatures } from "@/lib/operational-workflow/compatible-records";
 import { redirect } from "next/navigation";
 import { CompatibleDayReview } from "@/components/compatible-day-review";
@@ -351,6 +353,12 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     return buildPathWithParams(query);
   };
   const diaSelecionado = diaAberto ? diasHistorico.find((dia) => dia.dataInput === diaAberto) : null;
+  const serviceReviews = new Map<string, Awaited<ReturnType<typeof buffetServiceReview>>>();
+  if(diaSelecionado){
+    const date=parseDateInput(diaSelecionado.dataInput)!;
+    const closed=await isOperationalMonthClosed("amostras",date.getUTCMonth()+1,date.getUTCFullYear());
+    for(const service of diaSelecionado.services)if(service.workflowId&&!service.assinadoNutricionista)serviceReviews.set(service.workflowId,await buffetServiceReview(prisma,authUser,service.workflowId,closed));
+  }
   const editReturnTo = diaSelecionado ? buildOpenDayHref(diaSelecionado.dataInput) : returnTo;
   const editFormReturnTo = registroParaEditar
     ? buildEditRecordHref(formatAppDateInput(registroParaEditar.data), registroParaEditar.id)
@@ -571,7 +579,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
                       {service.tipoServicoLabel} - responsável: {service.responsavelExecucao}
                     </p>
                   </div>
-                  <div className="space-y-2"><ServiceStatusBadge status={service.status} /><p className="text-sm">{service.itensPreenchidos} preenchidos · {service.itensNaoServidos} não servidos · {service.itensPendentes??0} pendentes</p><p className="text-sm">{service.workflowState==="REABERTO"?"Revisão pendente":service.assinadoNutricionista?`Assinado pelo supervisor — ${service.assinaturaNutricionistaResumo}`:"Pendente de assinatura"}</p><Link className="btn-secondary" href={`${MODULE_PATH}/servico/${service.servicoId}?data=${service.dataInput}${service.workflowId ? "#validacao-servico" : ""}`}>{service.workflowId && !service.assinadoNutricionista ? ((service.itensPendentes??0)===0 && ["COMPLETO","REABERTO"].includes(service.workflowState??"") ? "Revisar e assinar" : "Conferir pendências") : "Abrir serviço"}</Link></div>
+                  <div className="space-y-2"><ServiceStatusBadge status={service.status} /><p className="text-sm">{service.itensPreenchidos} preenchidos · {service.itensNaoServidos} não servidos · {service.itensPendentes??0} pendentes</p><p className="text-sm">{service.workflowState==="REABERTO"?"Revisão pendente":service.assinadoNutricionista?`Assinado pelo supervisor — ${service.assinaturaNutricionistaResumo}`:"Pendente de assinatura"}</p><Link className="btn-secondary" href={`${MODULE_PATH}/servico/${service.servicoId}?data=${service.dataInput}${service.workflowId ? "#validacao-servico" : ""}`}>{service.workflowId && !service.assinadoNutricionista ? (serviceReviews.get(service.workflowId)?.allowed ? "Revisar e assinar" : (service.itensPendentes??0)>0 || serviceReviews.get(service.workflowId)?.issues.length ? "Conferir pendências" : "Assinatura indisponível") : "Abrir serviço"}</Link>{service.workflowId&&!service.assinadoNutricionista&&!serviceReviews.get(service.workflowId)?.allowed&&<p className="text-sm">{serviceReviews.get(service.workflowId)?.reason}</p>}</div>
                 </div>
                 <div className="mt-3 overflow-x-auto">
                   <table className="min-w-[1180px] divide-y divide-slate-200 text-sm dark:divide-slate-700">

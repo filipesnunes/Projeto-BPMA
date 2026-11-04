@@ -8,9 +8,9 @@ import {buffetSnapshot, type BuffetDraft} from "@/app/controle-buffet-amostras/w
 import {receivingSnapshot} from "@/app/rastreabilidade-recebimento/workflow-adapter";
 import {workflowReviewEligibility} from "./review-eligibility";
 import {buffetProgress} from "@/app/controle-buffet-amostras/progress";
-import {getRegistroItemIssue} from "@/app/controle-buffet-amostras/workflow-payload";
-import {avaliarTemperaturaBuffet} from "@/app/controle-buffet-amostras/utils";
-import {normalizeOption} from "@/app/controle-buffet-amostras/options";
+import {validateBuffetRow} from "@/app/controle-buffet-amostras/row-validation";
+import {buffetRecordValues} from "@/app/controle-buffet-amostras/row-save";
+import {formatAppDateInput} from "@/lib/date-time";
 import {getAppDate} from "@/lib/date-time";
 export type GroupModule="amostras"|"rastreabilidade";
 export function groupSignatureBridge(module:GroupModule,mechanism:string,password:string):WorkflowSignatureBridge {
@@ -20,15 +20,12 @@ export function groupSignatureBridge(module:GroupModule,mechanism:string,passwor
  if(module==="amostras"){
  const draft=version.rascunho as unknown as BuffetDraft;
  if(!buffetProgress(source.amostras,draft.manifest).complete)throw Error("Há itens pendentes.");
- for(const row of source.amostras){
-   if(row.status==="NAO_SERVIDO")continue;
-   const issue=getRegistroItemIssue({nome:row.itemNome,classificacao:row.classificacao,usaGarrafaTermica:row.usaGarrafaTermica},{
-     tcEquipamentoInput:String(row.tcEquipamento??""),primeiraTcInput:String(row.primeiraTc??""),
-     temperaturaTipo:row.temperaturaAmbiente?"AMBIENTE":"NUMERICA",acaoCorretivaInput:row.acaoCorretiva?.trim()??"",observacao:row.observacao??"",naoServido:false
-   });
-   const corrective=!row.temperaturaAmbiente&&row.primeiraTc!==null&&avaliarTemperaturaBuffet(row.classificacao,row.primeiraTc).exigeAcaoCorretiva;
-   if(issue||corrective&&normalizeOption(row.acaoCorretiva??"")===normalizeOption("Não se aplica"))throw Error(`Revise os campos obrigatórios e a ação corretiva de ${row.itemNome} antes de assinar.`);
- }
+ const actions=await tx.controleBuffetAmostraAcaoCorretiva.findMany({where:{ativo:true},select:{nome:true}});
+ const issues=source.amostras.flatMap(row=>{
+   const missing=validateBuffetRow({nome:row.itemNome,classificacao:row.classificacao,usaGarrafaTermica:row.usaGarrafaTermica},buffetRecordValues(row),{date:formatAppDateInput(unit.dataReferencia),actions,historicalAction:row.acaoCorretiva});
+   return missing.length?[row.itemNome+": "+missing.join(", ")]:[];
+ });
+ if(issues.length)throw Error("Revise todos os itens antes de assinar: "+issues.join("; "));
  snapshot=buffetSnapshot(source.amostras,draft.manifest);}
  else{if(!source.recebimento||source.recebimento.excluidoEm||source.recebimento.statusNota!=="FINALIZADA"||!source.recebimento.itens.length||source.recebimento.itens.some(i=>i.statusGeral==="PENDENTE"))throw Error("Finalize a conferência antes de assinar.");snapshot=receivingSnapshot(source.recebimento);}
  return{snapshot,draft:version.rascunho as Prisma.InputJsonObject,complete:true,resolved:version.resolvidos,required:version.obrigatorios};},

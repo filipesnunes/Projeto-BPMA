@@ -3,7 +3,8 @@ import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
 import {getAppDate} from "@/lib/date-time";
 import {buildRegistroPayload,buildNaoServidoPayload,type RegistroItemPayload} from "./workflow-payload";
 import {saveBuffetWorkflowState} from "./workflow-actions";
-import {prepareBuffetRow} from "./row-save";
+import type {BuffetRowIssue} from "./row-validation";
+import {prepareBuffetRow, BuffetRowError} from "./row-save";
 import { readExecutionTime, assertProcedureDate } from "@/lib/procedure-time";
 import { saveActiveBuffetRecord } from "@/lib/active-buffet-record";
 
@@ -62,6 +63,7 @@ type FormActionState = {
   status: "idle" | "success" | "error";
   message: string;
   invalidRowKey?: string;
+  issues?: BuffetRowIssue[];
   servicoId?: number;
   dataInput?: string;
 };
@@ -528,8 +530,10 @@ export async function saveServicoItemsStateAction(
     > = [];
 
     const pendingMessages:string[]=[];
+    const issues:BuffetRowIssue[]=[];
     if(new Set(rowKeys).size!==rowKeys.length)throw Error("Linhas duplicadas.");
-    for(const rowKey of rowKeys){
+    const allRowKeys=[...new Set([...rowKeys,...servico.itens.map(link=>`item-${link.itemId}`),...registros.filter(row=>row.itemExtra).map(row=>`extra-${row.id}`)])];
+    for(const rowKey of allRowKeys){
       try{
         if(!/^(item|extra)-[1-9]\d*$/.test(rowKey))throw Error("Linha inválida para salvar.");
         const fixed=rowKey.startsWith("item-"),id=Number(rowKey.slice(fixed?5:6));
@@ -537,13 +541,14 @@ export async function saveServicoItemsStateAction(
         const item=fixed?fixedItemsById.get(id):existing?{nome:existing.itemNome,classificacao:existing.classificacao,usaGarrafaTermica:existing.usaGarrafaTermica}:null;
         if(!item)throw Error("Item não configurado para este serviço.");
         if(existing?.status==="ASSINADO"||existing?.assinaturaDataHora)continue;
-        const prepared=await prepareBuffetRow(prisma,{form:formData,rowKey,item,date:data,actor,old:existing});
+        const prepared=await prepareBuffetRow(prisma,{form:formData,rowKey,item,date:data,actor,old:existing,complete:true});
         if(prepared.issues.length)pendingMessages.push(`${item.nome}: ${prepared.issues.join(", ")}`);
         if(!prepared.payload)continue;
         if(fixed)updates.push({type:"fixed",itemId:id,payload:prepared.payload});
         else updates.push({type:"extra",registroId:id,payload:prepared.payload});
-      }catch(error){return{status:"error",message:getErrorMessage(error,"Não foi possível salvar os itens. Verifique os campos obrigatórios."),invalidRowKey:rowKey};}
+      }catch(error){const existing=rowKey.startsWith("item-")?fixedItemsById.get(Number(rowKey.slice(5))):extraRegistrosById.get(Number(rowKey.slice(6)));issues.push({rowKey,nome:existing&&"nome" in existing?existing.nome:existing&&"itemNome" in existing?existing.itemNome:rowKey,missingFields:error instanceof BuffetRowError?error.missingFields:[getErrorMessage(error,"Verifique os campos obrigatórios.")]});}
     }
+    if(issues.length)return {status:"error",message:"Confira todos os itens destacados antes de salvar.",issues};
     await prisma.$transaction(async (tx) => {
       for (const update of updates) {
         if (update.type === "fixed") {

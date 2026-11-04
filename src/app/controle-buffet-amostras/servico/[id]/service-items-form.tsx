@@ -1,7 +1,8 @@
 "use client";
+import { validateBuffetRow, suggestedBuffetAction, type BuffetRowIssue, type BuffetValues } from "../../row-validation";
 import { ExecutionTimeFields } from "@/components/forms/execution-time-fields";
 
-import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import { startTransition, useCallback, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type {
@@ -17,6 +18,7 @@ import {
 import { ItemStatusBadge, TemperatureStatusBadge } from "../../status-badges";
 import {
   avaliarTemperaturaBuffet,
+  parseTemperatureInput,
   getClassificacaoLabel,
   normalizeSearchText,
   THERMAL_BOTTLE_EQUIPMENT_LABEL
@@ -26,18 +28,12 @@ type ActionState = {
   status: "idle" | "success" | "error";
   message: string;
   invalidRowKey?: string;
+  issues?: BuffetRowIssue[];
 };
 
 type AcaoCorretivaOption = {
   id: number;
   nome: string;
-};
-
-type PendingItemIssue = {
-  rowKey: string;
-  nome: string;
-  kind: "blank" | "incomplete";
-  missingFields: string[];
 };
 
 export type ServiceItemFormRow = {
@@ -100,16 +96,6 @@ function AddExtraSubmitButton() {
       {pending ? "Adicionando..." : "Adicionar Item"}
     </button>
   );
-}
-
-function parseTemperatureInput(value: string): number | null {
-  const normalized = value.replace(",", ".").trim();
-  if (!normalized) {
-    return null;
-  }
-
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function getTemperatureTypeDefault(row: ServiceItemFormRow): "" | "NUMERICA" | "AMBIENTE" {
@@ -221,10 +207,8 @@ export function ServiceItemsForm({
   const [state, formAction, isSaving] = useActionState(saveServicoItemsStateAction, INITIAL_STATE);
   const changedFields = useRef(new Set<string>());
   const formRef = useRef<HTMLFormElement | null>(null);
-  const confirmPendingInputRef = useRef<HTMLInputElement | null>(null);
-  const bypassConfirmationRef = useRef(false);
-  const [pendingIssues, setPendingIssues] = useState<PendingItemIssue[]>([]);
-  const [highlightedRows, setHighlightedRows] = useState<Set<string>>(new Set());
+  const [pendingIssues, setPendingIssues] = useState<BuffetRowIssue[]>([]);
+  const [temperatures, setTemperatures] = useState<Record<string, string>>({});
   const [itemSearch, setItemSearch] = useState("");
   const [ambientRows, setAmbientRows] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(rows.map((row) => [row.rowKey, row.temperaturaAmbiente]))
@@ -241,11 +225,7 @@ export function ServiceItemsForm({
   useEffect(() => {
     if (state.status === "success") {
       setPendingIssues([]);
-      setHighlightedRows(new Set());
-      bypassConfirmationRef.current = false;
-      if (confirmPendingInputRef.current) {
-        confirmPendingInputRef.current.value = "false";
-      }
+
       router.refresh();
     }
   }, [router, state.status]);
@@ -257,188 +237,56 @@ export function ServiceItemsForm({
     );
   }, [rows]);
 
-  const clearRowCollectionFields = (rowKey: string) => {
-    const form = formRef.current;
-    if (!form) {
-      return;
+  const valuesFor = useCallback((row: ServiceItemFormRow, data: FormData): BuffetValues => {
+    const values: BuffetValues = {tcEquipamento:row.tcEquipamento,primeiraTc:row.primeiraTc,temperaturaTipo:getTemperatureTypeDefault(row),acaoCorretiva:row.acaoCorretiva,observacao:row.observacao,naoServido:String(row.status==="NAO_SERVIDO"),horarioExecucao:row.horarioExecucao??"",horarioNaoInformado:String(Boolean(row.horarioNaoInformado)),justificativaHorario:row.justificativaHorario??""};
+    for(const field of Object.keys(values))if(data.has(row.rowKey+"-"+field))values[field]=String(data.get(row.rowKey+"-"+field)??"");
+    if(changedFields.current.has(row.rowKey+"-horarioNaoInformado")&&!data.has(row.rowKey+"-horarioNaoInformado"))values.horarioNaoInformado="false";
+    return values;
+  }, []);
+  const collectPendingIssues = useCallback((data: FormData): BuffetRowIssue[] => rows.filter(row=>!row.bloqueado).flatMap(row=>{
+    const missingFields=validateBuffetRow(row,valuesFor(row,data),{date:dataInput,actions:acoesCorretivas,historicalAction:row.acaoCorretiva});
+    return missingFields.length?[{rowKey:row.rowKey,nome:row.nome,missingFields}]:[];
+  }),[rows,dataInput,acoesCorretivas,valuesFor]);
+  useEffect(()=>{
+    const form=formRef.current;if(!form)return;
+    for(const row of rows){
+      if(row.bloqueado)continue;
+      const action=form.elements.namedItem(row.rowKey+"-acaoCorretiva") as HTMLSelectElement|null;
+      if(!action||action.value)continue;
+      const suggested=suggestedBuffetAction(row,valuesFor(row,new FormData(form)),acoesCorretivas);
+      if(suggested){action.value=suggested;changedFields.current.add(row.rowKey+"-acaoCorretiva");}
     }
-
-    const fieldNames = [
-      `${rowKey}-temperaturaTipo`,
-      `${rowKey}-tcEquipamento`,
-      `${rowKey}-primeiraTc`,
-      `${rowKey}-acaoCorretiva`
-    ];
-
-    for (const fieldName of fieldNames) {
-      const field = form.elements.namedItem(fieldName) as
-        | HTMLInputElement
-        | HTMLSelectElement
-        | null;
-
-      if (field) {
-        field.value = "";
-      }
-    }
-  };
-
-  const setRowNonServed = (rowKey: string, checked: boolean) => {
-    setNonServedRows((current) => ({
-      ...current,
-      [rowKey]: checked
-    }));
-
-    if (checked) {
-      setAmbientRows((current) => ({
-        ...current,
-        [rowKey]: false
-      }));
-      clearRowCollectionFields(rowKey);
-      setHighlightedRows((current) => {
-        const next = new Set(current);
-        next.delete(rowKey);
-        return next;
-      });
-      setPendingIssues((current) =>
-        current.filter((issue) => issue.rowKey !== rowKey)
-      );
-    }
-  };
-
-  const collectPendingIssues = (formData: FormData): PendingItemIssue[] => {
-    const issues: PendingItemIssue[] = [];
-
-    for (const row of rows) {
-      if (row.bloqueado) {
-        continue;
-      }
-
-      const tcEquipamento = String(formData.get(`${row.rowKey}-tcEquipamento`) ?? "").trim();
-      const primeiraTc = String(formData.get(`${row.rowKey}-primeiraTc`) ?? "").trim();
-      const temperaturaTipo = String(formData.get(`${row.rowKey}-temperaturaTipo`) ?? "").trim();
-      const acaoCorretiva = String(formData.get(`${row.rowKey}-acaoCorretiva`) ?? "").trim();
-      const observacao = String(formData.get(`${row.rowKey}-observacao`) ?? "").trim();
-      const naoServido =
-        String(formData.get(`${row.rowKey}-naoServido`) ?? "").trim() === "true";
-
-      if (naoServido) {
-        continue;
-      }
-
-      const temperaturaAmbiente = temperaturaTipo === "AMBIENTE";
-      const hasAnyValue = [
-        row.usaGarrafaTermica ? "" : tcEquipamento,
-        primeiraTc,
-        acaoCorretiva,
-        observacao,
-        temperaturaAmbiente ? "Ambiente" : ""
-      ].some(Boolean);
-
-      if (!hasAnyValue) {
-        issues.push({
-          rowKey: row.rowKey,
-          nome: row.nome,
-          kind: "blank",
-          missingFields: []
-        });
-        continue;
-      }
-
-      const missingFields: string[] = [];
-      if (temperaturaAmbiente) {
-        if (
-          acaoCorretiva &&
-          !acoesCorretivas.some((option) => option.nome === acaoCorretiva) && acaoCorretiva !== row.acaoCorretiva
-        ) {
-          missingFields.push("ação corretiva válida");
-        }
-
-        if (missingFields.length > 0) {
-          issues.push({
-            rowKey: row.rowKey,
-            nome: row.nome,
-            kind: "incomplete",
-            missingFields
-          });
-        }
-        continue;
-      }
-
-      const tcEquipamentoNumber = parseTemperatureInput(tcEquipamento);
-      const primeiraTcNumber = parseTemperatureInput(primeiraTc);
-
-      if (!row.usaGarrafaTermica && tcEquipamentoNumber === null) {
-        missingFields.push("TC Equipamento");
-      }
-
-      if (primeiraTcNumber === null) {
-        missingFields.push("TC do Alimento");
-      } else {
-        const avaliacao = avaliarTemperaturaBuffet(row.classificacao, primeiraTcNumber);
-        if (avaliacao.exigeAcaoCorretiva && !acaoCorretiva) {
-          missingFields.push("ação corretiva");
-        }
-      }
-
-      if (
-        acaoCorretiva &&
-        !acoesCorretivas.some((option) => option.nome === acaoCorretiva) && acaoCorretiva !== row.acaoCorretiva
-      ) {
-        missingFields.push("ação corretiva válida");
-      }
-
-      if (missingFields.length > 0) {
-        issues.push({
-          rowKey: row.rowKey,
-          nome: row.nome,
-          kind: "incomplete",
-          missingFields
-        });
-      }
-    }
-
-    return issues;
-  };
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if(isSaving)return;
+    setPendingIssues(collectPendingIssues(new FormData(form)));
+  },[collectPendingIssues,rows,valuesFor,acoesCorretivas]);
+  useEffect(()=>{if(state.status==="error"&&state.issues)setPendingIssues(state.issues);},[state]);
+  const recheck = () => {if(formRef.current)setPendingIssues(collectPendingIssues(new FormData(formRef.current)));};
+  const changeRow = (event: FormEvent<HTMLFormElement>) => {
+    const target=event.target as HTMLInputElement;
+    const row=rows.find(row=>target.name?.startsWith(row.rowKey+"-"));if(!row)return;
+    const field=target.name.slice(row.rowKey.length+1);
+    changedFields.current.add(row.rowKey+"-"+(field==="naoServidoToggle"?"naoServido":field));
     const form=event.currentTarget;
-    form.querySelectorAll('input[data-row-change]').forEach(input=>input.remove());
-    for(const name of changedFields.current){const hidden=document.createElement('input');hidden.type='hidden';hidden.name='changedField';hidden.value=name;hidden.dataset.rowChange='true';form.appendChild(hidden);}
-    if (workflowVersion!==undefined || bypassConfirmationRef.current) {
-      bypassConfirmationRef.current = false;
-      const data=new FormData(form);
-      startTransition(()=>formAction(data));
-      return;
+    if(["primeiraTc","temperaturaTipo"].includes(field)){
+      const values=valuesFor(row,new FormData(form));
+      const action=form.elements.namedItem(row.rowKey+"-acaoCorretiva") as HTMLSelectElement|null;
+      const suggested=suggestedBuffetAction(row,values,acoesCorretivas);
+      if(action&&action.value!==suggested){action.value=suggested;changedFields.current.add(row.rowKey+"-acaoCorretiva");}
+      setTemperatures(current=>({...current,[row.rowKey]:values.primeiraTc}));
     }
-
-    if (confirmPendingInputRef.current) {
-      confirmPendingInputRef.current.value = "false";
-    }
-
-    const issues = collectPendingIssues(new FormData(event.currentTarget));
-    if (issues.length === 0) {
-      setPendingIssues([]);
-      setHighlightedRows(new Set());
-      const data=new FormData(form);
-      startTransition(()=>formAction(data));
-      return;
-    }
-
-    event.preventDefault();
-    setPendingIssues(issues);
-    setHighlightedRows(new Set(issues.map((issue) => issue.rowKey)));
+    // Wait for checkbox/ambient controls to commit their disabled/hidden fields.
+    requestAnimationFrame(recheck);
   };
-
-  const submitWithPendingConfirmation = () => {
-    if (confirmPendingInputRef.current) {
-      confirmPendingInputRef.current.value = "true";
-    }
-
-    bypassConfirmationRef.current = true;
-    setPendingIssues([]);
-    formRef.current?.requestSubmit();
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();if(isSaving)return;
+    const form=event.currentTarget;
+    const data=new FormData(form);
+    for(const name of changedFields.current)data.append("changedField",name);
+    const issues=collectPendingIssues(data);setPendingIssues(issues);
+    if(issues.length)return;
+    startTransition(()=>formAction(data));
+  };
+  const locateIssue = (rowKey:string) => {
+    setItemSearch("");requestAnimationFrame(()=>document.getElementById(rowKey)?.scrollIntoView({behavior:"smooth",block:"center"}));
   };
 
   if (rows.length === 0) {
@@ -457,8 +305,6 @@ export function ServiceItemsForm({
     );
   }
 
-  const blankIssues = pendingIssues.filter((issue) => issue.kind === "blank");
-  const incompleteIssues = pendingIssues.filter((issue) => issue.kind === "incomplete");
 
   return (
     <div className="space-y-4">
@@ -493,18 +339,17 @@ export function ServiceItemsForm({
         />
       </label>
 
-      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={handleSubmit} aria-busy={isSaving} onChangeCapture={event=>{const target=event.target as HTMLInputElement;if(/^(item|extra)-\d+-/.test(target.name))changedFields.current.add(target.name);}} noValidate={workflowVersion!==undefined}>{workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
+      {pendingIssues.length>0&&<section className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900 dark:bg-red-950 dark:text-red-100" aria-label="Resumo de pendências">
+        <p role="status">Encontramos {pendingIssues.length} itens que precisam de conferência.</p>
+        <ul>{pendingIssues.map(issue=><li key={issue.rowKey}><button type="button" className="text-left underline" onClick={()=>locateIssue(issue.rowKey)}>{issue.nome}: {issue.missingFields.join(", ")}</button></li>)}</ul>
+      </section>}
+      <button type="button" className="btn-secondary" onClick={recheck}>Conferir pendências</button>
+      <form ref={formRef} action={formAction} className="space-y-4" onSubmit={handleSubmit} aria-busy={isSaving} onChange={changeRow} noValidate>
+        {workflowVersion!==undefined&&<input type="hidden" name="versao" value={workflowVersion}/>}
         <input type="hidden" name="rowIntentVersion" value="1"/>
         <input type="hidden" name="servicoId" value={String(servicoId)} />
         <input type="hidden" name="data" value={dataInput} />
         <input type="hidden" name="returnTo" value={returnTo} />
-        <input
-          ref={confirmPendingInputRef}
-          type="hidden"
-          name="confirmarItensPendentes"
-          defaultValue="false"
-        />
-
         {normalizedItemSearch && !hasSearchMatches ? (
           <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
             Nenhum item encontrado.
@@ -513,11 +358,12 @@ export function ServiceItemsForm({
 
         <div className="grid gap-3 xl:grid-cols-2">
           {rows.map((row) => {
+            const currentFood=parseTemperatureInput(temperatures[row.rowKey]??row.primeiraTc);
             const acaoEstaAtiva = acoesCorretivas.some(
               (option) => option.nome === row.acaoCorretiva
             );
             const invalid =
-              state.invalidRowKey === row.rowKey || highlightedRows.has(row.rowKey);
+              pendingIssues.some(issue=>issue.rowKey===row.rowKey);
             const matchesSearch =
               !normalizedItemSearch ||
               normalizeSearchText(row.nome).includes(normalizedItemSearch);
@@ -531,6 +377,7 @@ export function ServiceItemsForm({
 
             return (
               <section
+                id={row.rowKey}
                 key={row.rowKey}
                 className={`${hiddenBySearch ? "hidden" : ""} rounded-lg border p-4 ${
                   invalid
@@ -540,6 +387,7 @@ export function ServiceItemsForm({
                     : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
                 }`}
               >
+                {pendingIssues.filter(issue=>issue.rowKey===row.rowKey).map(issue=><p key={issue.rowKey} role="status" className="mb-3 text-sm text-red-800 dark:text-red-200">Pendente: {issue.missingFields.join("; ")}.</p>)}
                 <input type="hidden" name="rowKey" value={row.rowKey} />
                 {!row.bloqueado && !naoServido && <ExecutionTimeFields required={false} date={dataInput} prefix={row.rowKey + "-"} defaultTime={row.horarioExecucao ?? ""} defaultUnknown={row.horarioNaoInformado} defaultJustification={row.justificativaHorario ?? ""} />}
                 <input
@@ -577,7 +425,7 @@ export function ServiceItemsForm({
                         Ambiente
                       </span>
                     ) : (
-                      <TemperatureStatusBadge status={row.statusTemperatura} />
+                      <TemperatureStatusBadge status={currentFood===null?null:avaliarTemperaturaBuffet(row.classificacao,currentFood).status} />
                     )}
                   </div>
                 </div>
@@ -589,7 +437,7 @@ export function ServiceItemsForm({
                     checked={naoServido}
                     disabled={row.bloqueado}
                     className="h-5 w-5"
-                    onChange={(event) => {changedFields.current.add(`${row.rowKey}-naoServido`);setRowNonServed(row.rowKey, event.target.checked);}}
+                    onChange={(event) => {changedFields.current.add(`${row.rowKey}-naoServido`);setNonServedRows(current=>({...current,[row.rowKey]:event.target.checked}));}}
                   />
                   <span>Não servido</span>
                 </label>
@@ -665,6 +513,7 @@ export function ServiceItemsForm({
                     Ação Corretiva
                     <select
                       name={`${row.rowKey}-acaoCorretiva`}
+                      aria-invalid={pendingIssues.some(issue=>issue.rowKey===row.rowKey&&issue.missingFields.some(field=>field.includes("ação corretiva")))}
                       defaultValue={row.acaoCorretiva}
                       className={inputClassName}
                       disabled={collectionDisabled}
@@ -703,7 +552,7 @@ export function ServiceItemsForm({
                   <p>
                     Status: <ItemStatusBadge status={row.status} />
                   </p>
-                  {row.status==="PENDENTE"&&row.pendingReason&&<p className="sm:col-span-2">Pendente: {row.pendingReason}.</p>}
+
                   <p>
                     Assinatura: <strong>{row.assinaturaResumo ?? "-"}</strong>
                   </p>
@@ -718,71 +567,7 @@ export function ServiceItemsForm({
         </div>
       </form>
 
-      {pendingIssues.length > 0 ? (
-        <div className="bpma-modal-backdrop">
-          <section className="bpma-modal-panel max-w-2xl">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              Confirmar salvamento com itens pendentes
-            </h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Alguns itens não foram preenchidos. Confirme apenas se esses itens não foram
-              servidos ou se realmente não precisam de registro neste serviço.
-            </p>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {blankIssues.length > 0 ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
-                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                    Itens sem preenchimento
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm text-slate-600 dark:text-slate-300">
-                    {blankIssues.map((issue) => (
-                      <li key={issue.rowKey}>- {issue.nome}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {incompleteIssues.length > 0 ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
-                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                    Itens incompletos
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm text-amber-800 dark:text-amber-200">
-                    {incompleteIssues.map((issue) => (
-                      <li key={issue.rowKey}>
-                        - {issue.nome}: falta {issue.missingFields.join(", ")}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-
-            <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-              Ao confirmar, esses itens serão registrados como <strong>Não servido</strong> e
-              não continuarão como pendência do serviço.
-            </p>
-
-            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setPendingIssues([])}
-              >
-                Voltar e preencher
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={submitWithPendingConfirmation}
-              >
-                Salvar mesmo assim
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
     </div>
   );
 }

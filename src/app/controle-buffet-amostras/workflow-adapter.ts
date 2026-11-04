@@ -7,7 +7,7 @@ import {Prisma, type ControleBuffetAmostraRegistro} from "@prisma/client";
 import {assertWorkflowEdit} from "@/lib/operational-workflow/policy";
 import type {WorkflowAdapter} from "@/lib/operational-workflow/contracts";
 import {getAppNow,parseAppDateInput} from "@/lib/date-time";
-import {prepareBuffetRow} from "./row-save";
+import {prepareBuffetRow, BuffetRowError, BuffetValidationError} from "./row-save";
 
 import {isServicoDisponivelNaData} from "./utils";
 
@@ -39,10 +39,20 @@ export const buffetAdapter:WorkflowAdapter={
  throw Error("Assine o serviço completo pela Validação do Serviço.");
  }else{
  const keys=input.getAll("rowKey").map(String);if(keys.some(key=>! /^(item|extra)-[1-9]\d*$/.test(key))||new Set(keys).size!==keys.length)throw Error("Linhas inválidas ou duplicadas.");
- for(const rowKey of keys){const itemId=rowKey.startsWith("item-")?Number(rowKey.slice(5)):null;const old=source.amostras.find(r=>itemId?r.itemId===itemId:r.itemExtra&&r.id===Number(rowKey.slice(6)));
+ const allKeys=text(input,"intent")==="complete"?[...new Set([...keys,...draft.manifest.map(i=>`item-${i.id}`),...source.amostras.filter(r=>r.itemExtra).map(r=>`extra-${r.id}`)])]:keys;
+ const actions=await tx.controleBuffetAmostraAcaoCorretiva.findMany({where:{ativo:true},select:{nome:true}});
+ const errors:import("./row-validation").BuffetRowIssue[]=[];
+ const preparedRows: Array<{rowKey:string; itemId:number|null; old:ControleBuffetAmostraRegistro|undefined; prepared:Awaited<ReturnType<typeof prepareBuffetRow>>}> = [];
+ for(const rowKey of allKeys){const itemId=rowKey.startsWith("item-")?Number(rowKey.slice(5)):null;const old=source.amostras.find(r=>itemId?r.itemId===itemId:r.itemExtra&&r.id===Number(rowKey.slice(6)));
  const item=itemId?draft.manifest.find(i=>i.id===itemId):old?{nome:old.itemNome,classificacao:old.classificacao,usaGarrafaTermica:old.usaGarrafaTermica}:null;if(!item)throw Error("Item não pertence a este serviço.");
  if((old?.status==="ASSINADO"||old?.assinaturaDataHora)&&unit.estado!=="REABERTO")continue;
- const prepared=await prepareBuffetRow(tx,{form:input,rowKey,item,date,actor:user,old,previous:draft.rows[rowKey],complete:text(input,"intent")==="complete"});
+ try {
+ const prepared=await prepareBuffetRow(tx,{form:input,rowKey,item,date,actor:user,old,previous:draft.rows[rowKey],actions,complete:text(input,"intent")==="complete"});
+ preparedRows.push({rowKey,itemId,old,prepared});
+ } catch(error) { if(!(error instanceof BuffetRowError))throw error; errors.push({rowKey,nome:item.nome,missingFields:error.missingFields}); }
+ }
+ if(errors.length)throw new BuffetValidationError(errors);
+ for(const {rowKey,itemId,old,prepared} of preparedRows){
  if(prepared.unchanged)continue;
  draft.rows[rowKey]=prepared.row;draft.issues??={};
  if(prepared.issues.length)draft.issues[rowKey]=prepared.issues;else delete draft.issues[rowKey];

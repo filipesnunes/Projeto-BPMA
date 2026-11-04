@@ -1,6 +1,6 @@
 import {BuffetSignatureHistory} from "./signature-history";
 import { buffetLinkedItemOrder, buffetItemOrder, presentBuffetManifest } from "./item-ordering";
-import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
+import {buffetServiceReview} from "./service-review";
 import {buffetProgress} from "./progress";
 ﻿import Link from "next/link";
 import {redirect,notFound} from "next/navigation";
@@ -29,7 +29,7 @@ export async function BuffetWorkflowPage({params,searchParams}:{params:Promise<{
  const catalogOrder=draft&&!blocked?await prisma.controleBuffetAmostraItem.findMany({where:{id:{in:manifest.map(item=>item.id)}},orderBy:buffetItemOrder,select:{id:true}}):[];
  const displayedManifest=draft&&!blocked?presentBuffetManifest(manifest,catalogOrder):manifest;
  const rows=[...displayedManifest.map(item=>row(item,`item-${item.id}`,records.find(r=>r.itemId===item.id))),...records.filter(r=>r.itemExtra).map(r=>row({nome:r.itemNome,classificacao:r.classificacao,usaGarrafaTermica:r.usaGarrafaTermica},`extra-${r.id}`,r))];const url=`/controle-buffet-amostras/servico/${service.id}?data=${formatAppDateInput(date)}`;const actions=await prisma.controleBuffetAmostraAcaoCorretiva.findMany({where:{ativo:true},orderBy:{ordem:'asc'}});
- const review=unit?await workflowReviewEligibility(prisma,user,"amostras",unit.id,unit.versao,"modulo.amostras.assinar_servico"):{allowed:false,reason:""};
+ const review=unit?await buffetServiceReview(prisma,user,unit.id,monthClosed):{allowed:false,reason:""};
  const progress=buffetProgress(records,manifest);
  return <div className="space-y-5"><header className="bpma-card [overflow-wrap:anywhere]"><h1 className="text-xl font-semibold">{service.nome} — {formatAppDateInput(date)}</h1><nav className="flex gap-3"><Link href="/controle-buffet-amostras">Voltar ao módulo</Link><Link href="/controle-buffet-amostras/historico">Histórico</Link></nav>{(hasPermission(user,"modulo.amostras.acessar_historico")||hasPermission(user,"modulo.amostras.editar_historico"))&&<form method="get" className="mt-3 flex flex-wrap gap-3"><label>Data do serviço<input type="date" className="bpma-input" name="data" defaultValue={formatAppDateInput(date)} max={formatAppDateInput(getAppDate())}/></label><button className="btn-secondary">Consultar data</button></form>}</header>{query.feedback&&<p role="status" className="bpma-card">{String(query.feedback)}</p>}{!unit&&<p className="bpma-card">Preencha os itens do serviço e salve.</p>}
  

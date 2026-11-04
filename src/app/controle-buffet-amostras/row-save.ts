@@ -1,3 +1,4 @@
+import { validateBuffetRow, type BuffetRowIssue } from "./row-validation";
 import "server-only";
 import type { ControleBuffetAmostraRegistro, Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "@/lib/auth-session";
@@ -10,20 +11,31 @@ import { buildRegistroPayload, buildNaoServidoPayload, getRegistroItemIssue, typ
 
 export const buffetRowFields = ["tcEquipamento", "primeiraTc", "temperaturaTipo", "acaoCorretiva", "observacao", "naoServido", "horarioExecucao", "horarioNaoInformado", "justificativaHorario"] as const;
 export type BuffetRowValues = Record<string, string>;
-export class BuffetRowError extends Error { constructor(public rowKey: string, message: string) { super(message); } }
+export class BuffetRowError extends Error { constructor(public rowKey: string, message: string, public missingFields: string[] = [message]) { super(message); } }
+export class BuffetValidationError extends Error {
+  constructor(public issues: BuffetRowIssue[]) { super("Resolva as pendências: " + issues.map(issue => issue.nome + ": " + issue.missingFields.join(", ")).join("; ")); }
+}
 export function buffetRecordValues(record: ControleBuffetAmostraRegistro): BuffetRowValues {
   return { tcEquipamento: String(record.tcEquipamento ?? ""), primeiraTc: String(record.primeiraTc ?? ""), temperaturaTipo: record.temperaturaAmbiente ? "AMBIENTE" : record.primeiraTc !== null ? "NUMERICA" : "", acaoCorretiva: record.acaoCorretiva ?? "", observacao: record.observacao ?? "", naoServido: String(record.status === "NAO_SERVIDO"), horarioExecucao: record.horarioExecucao ?? "", horarioNaoInformado: String(record.horarioNaoInformado), justificativaHorario: record.justificativaHorario ?? "" };
 }
 
-export async function prepareBuffetRow(db: Prisma.TransactionClient, params: { form: FormData; rowKey: string; item: RegistroItemSource; date: Date; actor: AuthenticatedUser; old?: ControleBuffetAmostraRegistro; previous?: BuffetRowValues; complete?: boolean }) {
+export async function prepareBuffetRow(db: Prisma.TransactionClient, params: { form: FormData; rowKey: string; item: RegistroItemSource; date: Date; actor: AuthenticatedUser; old?: ControleBuffetAmostraRegistro; previous?: BuffetRowValues; complete?: boolean; actions?: readonly {nome:string}[] }) {
   const { form, rowKey, item, date, actor, old } = params;
   try {
     const settled = old && old.status !== "PENDENTE";
     const base = settled ? buffetRecordValues(old) : { ...(old ? buffetRecordValues(old) : {}), ...params.previous };
+    if (params.complete) {
+      const effective = { ...base };
+      for (const field of buffetRowFields) if (form.has(rowKey + "-" + field)) effective[field] = String(form.get(rowKey + "-" + field) ?? "").trim();
+      if (form.getAll("changedField").includes(rowKey + "-horarioNaoInformado") && !form.has(rowKey + "-horarioNaoInformado")) effective.horarioNaoInformado = "false";
+      const actions = params.actions ?? await db.controleBuffetAmostraAcaoCorretiva.findMany({ where: { ativo: true }, select: { nome: true } });
+      const missing = validateBuffetRow(item, effective, { date: formatAppDateInput(date), actions, historicalAction: old?.acaoCorretiva });
+      if (missing.length) throw new BuffetRowError(rowKey, missing.join(", "), missing);
+    }
     const changed = new Set(form.getAll("changedField").map(String));
     const patch = form.get("rowIntentVersion") === "1";
-    if(old&&!buffetRowFields.some(field=>form.has(rowKey+"-"+field))&&!buffetRowFields.some(field=>changed.has(rowKey+"-"+field)))return {row:base,payload:null,issues:[] as string[],unchanged:true};
-    if (patch && old && !buffetRowFields.some(field => changed.has(rowKey + "-" + field))) {
+    if(old&&!(params.complete&&old.status==="PENDENTE")&&!buffetRowFields.some(field=>form.has(rowKey+"-"+field))&&!buffetRowFields.some(field=>changed.has(rowKey+"-"+field)))return {row:base,payload:null,issues:[] as string[],unchanged:true};
+    if (patch && old && !(params.complete&&old.status==="PENDENTE") && !buffetRowFields.some(field => changed.has(rowKey + "-" + field))) {
       if(buffetRowFields.some(field=>form.has(rowKey+"-"+field)&&String(form.get(rowKey+"-"+field)??"").trim()!==(base[field]??"")))throw Error("O formulário enviou alterações sem identificar os campos editados. Os dados anteriores foram preservados; recarregue e tente novamente.");
       return { row: base, payload: null, issues: [] as string[], unchanged: true };
     }
@@ -73,5 +85,5 @@ export async function prepareBuffetRow(db: Prisma.TransactionClient, params: { f
       return { row, payload, issues, unchanged: false };
     }
     return { row, payload: preserve(await buildRegistroPayload({ actor: originalActor, item, input: { ...fields, execution }, existingCorrectiveAction: old?.acaoCorretiva }, db)), issues, unchanged: false };
-  } catch (error) { throw new BuffetRowError(rowKey, error instanceof Error ? error.message : "Não foi possível validar o item."); }
+  } catch (error) { if (error instanceof BuffetRowError) throw error; throw new BuffetRowError(rowKey, error instanceof Error ? error.message : "Não foi possível validar o item."); }
 }

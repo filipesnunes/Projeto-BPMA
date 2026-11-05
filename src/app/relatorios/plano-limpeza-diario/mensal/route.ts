@@ -1,5 +1,5 @@
 import { currentCleaningDaySignatures } from "@/lib/cleaning-day-signatures";
-import { reportSignatureLabel } from "@/lib/review-presentation";
+import { reportSupervisorName } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -765,7 +765,7 @@ export async function GET(request: NextRequest) {
   const supervisorByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      reportSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,assinadoEm:signature.assinadoEm,observacao:signature.observacao})
+      reportSupervisorName({usuarioNome:signature.usuarioNomeSnapshot,observacao:signature.observacao})
     ])
   );
 

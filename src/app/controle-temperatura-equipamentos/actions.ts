@@ -455,6 +455,16 @@ export async function updateCatalogOptionAction(formData: FormData) {
       ativoInput === "true" ? true : ativoInput === "false" ? false : option.ativo;
 
     await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"temperatura"}), 17326)`;
+      const current = await tx.controleTemperaturaEquipamentoOpcao.findUniqueOrThrow({ where: { id: optionId } });
+      if (current.nome !== nome) {
+        // Historical names are signed content. Count all persisted references,
+        // including excluded records, which the operational middleware hides.
+        const references = current.tipo === TipoOpcaoTemperaturaEquipamento.EQUIPAMENTO
+          ? await tx.$queryRaw<Array<{ used: boolean }>>`SELECT EXISTS (SELECT 1 FROM controle_temperatura_equipamentos WHERE equipamento = ${current.nome}) AS used`
+          : await tx.$queryRaw<Array<{ used: boolean }>>`SELECT EXISTS (SELECT 1 FROM controle_temperatura_equipamentos WHERE "acaoCorretiva" = ${current.nome}) AS used`;
+        if (references[0]?.used) throw new Error("Esta opção já possui aferições e seu nome histórico não pode ser alterado. Inative-a e cadastre uma nova opção para os próximos registros.");
+      }
       await tx.controleTemperaturaEquipamentoOpcao.update({
         where: { id: optionId },
         data: {
@@ -465,21 +475,6 @@ export async function updateCatalogOptionAction(formData: FormData) {
         }
       });
 
-      if (option.nome !== nome) {
-        if (option.tipo === TipoOpcaoTemperaturaEquipamento.EQUIPAMENTO) {
-          await tx.controleTemperaturaEquipamento.updateMany({
-            where: { equipamento: option.nome },
-            data: { equipamento: nome }
-          });
-        }
-
-        if (option.tipo === TipoOpcaoTemperaturaEquipamento.ACAO_CORRETIVA) {
-          await tx.controleTemperaturaEquipamento.updateMany({
-            where: { acaoCorretiva: option.nome },
-            data: { acaoCorretiva: nome }
-          });
-        }
-      }
     });
 
     revalidateModulePaths();

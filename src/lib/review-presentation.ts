@@ -38,3 +38,15 @@ export function reportSignatureLabel(signature?: { usuarioNome: string; assinado
   const label = reviewSignatureLabel({ usuarioNome: signature.usuarioNome, mecanismo: nature ?? undefined });
   return `${label}${signature.assinadoEm ? ` — ${formatAppDateTime(signature.assinadoEm)}` : ""}${nature?.includes("retroativa") && !isNonTechnicalRetroactive(nature) ? " — Assinatura retroativa" : ""}`;
 }
+
+// Only the two reports whose supervision cells require a name-only display.
+// Nontechnical reviews remain explicitly classified, rather than impersonating
+// a technical supervisor. Persisted evidence and other reports are untouched.
+export function reportSupervisorName(signature?: { usuarioNome: string; mecanismo?: string | null; observacao?: string | null } | null) {
+  if (!signature) return "-";
+  const nature = retroactiveNature(signature.observacao) ?? signature.mecanismo;
+  if (technicalReviewPending(signature.observacao) || isNonTechnicalRetroactive(nature)) {
+    return `${signature.usuarioNome} — ${nature?.includes("gerencial") ? "Revisão gerencial" : "Revisão operacional"}; não substitui revisão técnica`;
+  }
+  return signature.usuarioNome;
+}

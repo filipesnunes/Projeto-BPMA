@@ -1,4 +1,4 @@
-import { reportSignatureLabel } from "@/lib/review-presentation";
+import { reportSupervisorName } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -227,7 +227,7 @@ function buildServiceTables(
             ? "-"
             : valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelNome),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSupervisorName(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
       }))
     }));
 }

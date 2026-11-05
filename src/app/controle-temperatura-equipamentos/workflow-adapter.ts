@@ -13,6 +13,7 @@ import { canSignModuleDay } from "@/lib/module-signatures";
 import { verifyPassword } from "@/lib/password";
 import type { AuthenticatedUser } from "@/lib/auth-session";
 import {temperatureCorrectionAudit,temperatureAuditValues} from "./correction-audit";
+import { assertTemperatureSnapshotIntegrity } from "./snapshot-integrity";
 
 export type TemperatureDraft = Record<string, string>;
 const fields = ["temperaturaAferida", "statusOperacionalEquipamento", "observacaoStatusOperacional", "horarioAfericao", "horarioNaoInformado", "justificativaHorario"];
@@ -125,7 +126,9 @@ export function temperatureSignatureBridge(password: string, daily: boolean): Wo
       } });
       const version = source.versoes[0];
       if (!source.temperatura || source.temperatura.excluidoEm || !version?.completo) throw new Error("Aferição incompleta ou excluída.");
-      return { snapshot: temperatureSnapshot(source.temperatura), draft: version.rascunho as Prisma.InputJsonObject,
+      const snapshot = temperatureSnapshot(source.temperatura);
+      assertTemperatureSnapshotIntegrity(source.temperatura, version.dados, snapshot);
+      return { snapshot, draft: version.rascunho as Prisma.InputJsonObject,
         complete: true, resolved: 1, required: 1 };
     },
     async sign(tx, user, units, signedAt) {

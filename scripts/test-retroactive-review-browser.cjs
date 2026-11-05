@@ -31,9 +31,24 @@ let browser,socket;
   await evaluate('document.fonts.ready.then(()=>Promise.all([...document.images].map(i=>i.decode().catch(()=>{}))))');
   const bytes=Buffer.from((await send('Page.printToPDF',{printBackground:true,preferCSSPageSize:true})).data,'base64');fs.writeFileSync(path.join(dir,name+'.pdf'),bytes);
   const {pathToFileURL}=require('node:url');const {getDocument}=await import(pathToFileURL(path.join(dir,'pdf-tools/node_modules/pdfjs-dist/legacy/build/pdf.mjs')).href);const pdf=await getDocument({data:new Uint8Array(bytes),useSystemFonts:true}).promise;const pageTexts=[];for(let i=1;i<=pdf.numPages;i++)pageTexts.push((await(await pdf.getPage(i)).getTextContent()).items.map(item=>item.str).join(' '));
-  assert(pageTexts.every(text=>text.trim().length>0),'PDF com página vazia: '+name);const normalized=pageTexts.join(' ').replace(/\s+/g,' ');assert(!normalized.includes('Trilha de revisões retroativas'));assert(!normalized.includes('Revisão documental sintética'));const nameOnly=name.startsWith('amostras-')||name==='limpeza-gerencial';const visibleNature=nature.includes('gerencial')?'Revisão gerencial':nature.includes('técnica')?'Assinatura retroativa':'Revisão operacional';
-  for(const expected of (nameOnly?[person]:[visibleNature,person,new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo'}).format(new Date(date)),new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(date))]))assert(normalized.replace(/\s/g,'').includes(expected.replace(/\s/g,'')),'PDF missing '+expected+' in '+name);
-  if(nameOnly){const cells=await evaluate("[...document.querySelectorAll('table.service-table>tbody>tr>td:last-child,table.week-table tr td.day-cell')].map(e=>e.textContent.trim())");assert(cells.some(value=>nature.includes('gerencial')?value.startsWith(person+' — Revisão gerencial'):value===person),'Célula específica sem data/hora: '+name);assert(!cells.filter(value=>value.includes(person)).some(value=>/\d{2}:\d{2}|Assinatura retroativa|com ressalvas/.test(value)));}
+  assert(pageTexts.every(text=>text.trim().length>0),'PDF com página vazia: '+name);const normalized=pageTexts.join(' ').replace(/\s+/g,' ');
+  for(const forbidden of ['Trilha de revisões retroativas','Revisão documental sintética','Itens persistidos resolvidos. A assinatura do serviço é uma etapa independente.','Assinatura retroativa','Revisão técnica retroativa','com ressalvas'])assert(!normalized.includes(forbidden),'Texto indevido no PDF '+name+': '+forbidden);
+  const nameOnly=name==='limpeza-gerencial'||name==='limpeza_semanal-validado';
+  const dateText=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo'}).format(new Date(date));
+  const label=person+(nature.includes('gerencial')?' — Revisão gerencial; não substitui revisão técnica':nature.includes('operacional')?' — Revisão operacional; não substitui revisão técnica':'')+(nameOnly?'':' — '+dateText);
+  assert(normalized.replace(/\s/g,'').includes(label.replace(/\s/g,'')),'PDF missing '+label+' in '+name);
+  const cells=await evaluate("[...document.querySelectorAll('td')].filter(e=>!e.querySelector('table')).map(e=>e.textContent.trim().replace(/\\s+/g,' '))");
+  assert(cells.includes(label),'Célula de supervisão no formato esperado: '+name+' '+label);
+  const supervisorCells=await evaluate(`(()=>{
+    const clean=e=>e.textContent.trim().replace(/\\s+/g,' ');
+    if(${JSON.stringify(name)}==='limpeza-gerencial')return [...document.querySelectorAll('table.week-table tr')].filter(row=>[...row.querySelectorAll('th')].some(th=>th.textContent.trim()==='Supervisão')).flatMap(row=>[...row.querySelectorAll('td.day-cell')].map(clean));
+    const selector=${JSON.stringify(name.startsWith('amostras-')?'table.service-table>tbody>tr>td:last-child':name==='limpeza_semanal-validado'?'table.week-table>tbody>tr>td:nth-child(6)':name==='temperatura-validado'?'table.temperature-table tr.day-row td:nth-child(6), table.temperature-table tr.day-row td:nth-child(11)':name==='oleo-validado'?'table.records-table>tbody>tr>td:nth-child(5)':name==='hortifruti-validado'?'table.records-table>tbody>tr>td:nth-child(7)':'table.receiving-table>tbody>tr>td:last-child')};
+    return [...document.querySelectorAll(selector)].filter(e=>e.colSpan===1).map(clean);
+  })()`);
+  assert(supervisorCells.includes(label),'Supervisão localizada na coluna específica de '+name);
+  for(const cell of supervisorCells){assert(!/\d{2}:\d{2}|Assinatura retroativa|Revisão técnica retroativa|com ressalvas/i.test(cell),'Supervisão com hora ou mecanismo: '+name+' '+cell);if(nameOnly)assert(!/\d{2}\/\d{2}\/\d{4}/.test(cell),'Limpeza com data na supervisão');}
+  assert(!/\d{2}:\d{2}|Assinatura retroativa|com ressalvas/.test(label));
+  fs.writeFileSync(path.join(dir,name+'.png'),Buffer.from((await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})).data,'base64'));
   const numpages=pdf.numPages;await pdf.destroy();
   pdfChecks.push({file:name+'.pdf',nature,person,pages:numpages,passed:true});
  };

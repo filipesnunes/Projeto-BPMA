@@ -69,6 +69,7 @@ export async function reopenTemperatureWorkflowAction(form: FormData) {
   } catch (error) { rethrowIfRedirectError(error); result(returnTo, message(error), true); }
 }
 export async function signTemperatureWorkflowAction(form: FormData) {
+  const returnTo=temperatureHistoryReturnTo(value(form,"returnTo"))??`${base}/historico`;
   try {
     const authenticated = await getCurrentUserForAction();
     const legacyId=Number(value(form,"legacyRecordId"));
@@ -78,10 +79,10 @@ export async function signTemperatureWorkflowAction(form: FormData) {
       return { id, version: Number(revision) };
     });
     await signWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), scope,
-      bridge: temperatureSignatureBridge(value(form, "senha"), value(form, "mecanismo") === "diaria"),
+      bridge: temperatureSignatureBridge(value(form, "senha"), value(form, "mecanismo") === "diaria", {confirmed:value(form,"confirmarIdentidadeEquipamento")==="sim",tokens:form.getAll("nomenclatura").map(String)}),
       prepare:legacyId>0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"sign"):undefined });
-    refresh(); result(`${base}/historico`, "Validação registrada para as versões selecionadas.");
-  } catch (error) { rethrowIfRedirectError(error); result(`${base}/historico`, message(error), true); }
+    refresh(); result(returnTo, "Validação registrada para as versões selecionadas.");
+  } catch (error) { rethrowIfRedirectError(error); result(returnTo, message(error), true); }
 }
 export async function deleteTemperatureWorkflowAction(form: FormData) {
   try {

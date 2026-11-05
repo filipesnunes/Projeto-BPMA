@@ -416,7 +416,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         dataReferencia: true,
-        usuarioNomeSnapshot: true, assinadoEm: true
+        usuarioNomeSnapshot: true, observacao:true, assinadoEm: true
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -469,7 +469,7 @@ export async function GET(request: NextRequest) {
         fitaOleo: formatOilStrip(record.fitaOleo),
         temperatura: formatTemperature(record.temperatura),
         responsavel: valueOrDash(record.responsavel),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? `${valueOrDash(record.assinaturaSupervisorNome)} — ${formatAppDateTime(record.assinaturaSupervisorEm)}` : dailySignature ? `${valueOrDash(dailySignature.usuarioNomeSnapshot)} — ${formatAppDateTime(dailySignature.assinadoEm)}` : "Pendente de assinatura",
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : "Pendente de assinatura") : record.assinaturaSupervisorEm ? reportSignatureLabel({usuarioNome:valueOrDash(record.assinaturaSupervisorNome),assinadoEm:record.assinaturaSupervisorEm}) : dailySignature ? reportSignatureLabel({usuarioNome:dailySignature.usuarioNomeSnapshot,assinadoEm:dailySignature.assinadoEm,observacao:dailySignature.observacao}) : "Pendente de assinatura",
         observacao: valueOrDash(record.observacao?.trim() || record.orientacao)
       };
     }),

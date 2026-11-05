@@ -15,7 +15,8 @@ export async function signRetroactiveAction(_state: { status: string; message: s
     if (ids?.some(id => !Number.isSafeInteger(id) || id < 1)) throw Error("Seleção inválida.");
     const result = await signRetroactiveReview({ authenticated: await getCurrentUserForAction(),
       scope: { module: config.codigo, date, flowId: text("fluxo") || undefined, recordIds: ids, legacyRecordId: text("legado") ? Number(text("legado")) : undefined },
-      token: text("escopo"), password: text("senha"), justification: text("justificativa"), confirmed: text("confirmacao") === "sim" });
+      token: text("escopo"), password: text("senha"), justification: text("justificativa"), confirmed: text("confirmacao") === "sim",
+      nameConfirmation:{confirmed:text("confirmarIdentidadeEquipamento")==="sim",tokens:form.getAll("nomenclatura").map(String)} });
     revalidatePath(config.historyPath.replace(/\/historico$/, ""), "layout");
     revalidatePath("/historico-operacional/revisao-retroativa");
     revalidatePath("/relatorios", "layout");

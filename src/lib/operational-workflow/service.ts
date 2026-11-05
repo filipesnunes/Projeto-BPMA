@@ -123,6 +123,7 @@ export type WorkflowSignatureBridge = {
   // Revalidate the actual domain data in this transaction, not a UI boolean.
   validate(tx: Tx, unit: FluxoOperacional): Promise<WorkflowContent>;
   canReplaceSignature?(tx: Tx, user: AuthenticatedUser, unit: FluxoOperacional): Promise<boolean>;
+  reconcileBeforeSign?(tx: Tx, user: AuthenticatedUser, scope: readonly { id: string; version: number }[]): Promise<readonly { id: string; version: number }[]>;
 };
 
 export async function signWorkflow(params: {
@@ -135,8 +136,10 @@ export async function signWorkflow(params: {
     const user = await params.actor(tx);
     assertWorkflowAccess(user, bridge.module);
     await params.prepare?.(tx, user);
+    const signingScope = bridge.reconcileBeforeSign ? await bridge.reconcileBeforeSign(tx, user, scope) : scope;
+    if (signingScope.length !== scope.length || signingScope.some((item,index)=>item.id!==scope[index].id)) throw Error("O conjunto de aferições foi alterado. Atualize a consulta.");
     const originals: FluxoOperacional[] = [];
-    for (const item of scope) {
+    for (const item of signingScope) {
       const unit = await tx.fluxoOperacional.findUnique({ where: { id: item.id, modulo: bridge.module } });
       if (!unit || unit.excluidoEm) throw new Error("Registro operacional não encontrado.");
       assertWorkflowVersion(unit.versao, item.version);

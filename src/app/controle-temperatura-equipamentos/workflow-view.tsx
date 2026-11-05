@@ -1,3 +1,4 @@
+import { TemperatureSignatureIdentity } from "./name-confirmation";
 import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import { TemperatureSavedRecordPage } from "./saved-record-page";
 import { legacyTemperatureId } from "./legacy-workflow";
@@ -68,7 +69,7 @@ export async function TemperatureWorkflowList({ query, history = false }: { quer
     </tbody></table></section>
     {history && eligible.length > 0 && canSignModuleDay(user,"temperatura") && <form action={signTemperatureWorkflowAction} className="bpma-card space-y-3">
       <h2 className="font-semibold">Assinatura diária — selecionar aferições</h2><p>Apenas as versões selecionadas serão validadas. Outros equipamentos e turnos permanecem independentes.</p>
-      <input type="hidden" name="mecanismo" value="diaria" />
+      <input type="hidden" name="mecanismo" value="diaria" /><TemperatureSignatureIdentity scope={eligible.map(unit=>({id:unit.id,version:unit.versao}))}/>
       {eligible.map(unit => <label className="block" key={unit.id}><input type="checkbox" name="unidade" value={`${unit.id}:${unit.versao}`} /> {unit.temperatura?.equipamento} — {parseTemperatureKey(unit.chave).shift} — versão {unit.versao}</label>)}
       <label className="block">Confirme sua senha <input className="bpma-input" type="password" name="senha" required autoComplete="current-password" /></label><button className="btn-primary">Assinar aferições selecionadas</button>
     </form>}
@@ -135,7 +136,7 @@ export async function TemperatureWorkflowEditor({ query }: { query: WorkflowQuer
         <div className="md:col-span-2 flex gap-3"><button className="btn-primary" name="intent" value="draft" formNoValidate>Salvar Registro</button></div>
       </fieldset>
     </form>
-    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && (await workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_historico")).allowed && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
+    {unit && !closedMonth && unit.preenchimentoCompleto && ["COMPLETO","REABERTO"].includes(unit.estado) && (await workflowReviewEligibility(prisma,user,"temperatura",unit.id,unit.versao,"modulo.temperatura.assinar_historico")).allowed && <form className="bpma-card space-y-3" action={signTemperatureWorkflowAction}><input type="hidden" name="unidade" value={`${unit.id}:${unit.versao}`} /><input type="hidden" name="mecanismo" value="individual" /><h2>Validação individual do supervisor</h2><TemperatureSignatureIdentity scope={[{id:unit.id,version:unit.versao}]}/><label>Confirme sua senha<input className="bpma-input" type="password" name="senha" required /></label><button className="btn-primary">Validar aferição</button></form>}
     {unit?.temperatura && unit.preenchimentoCompleto && !formalClosed && !closedMonth && ["DEV","GERENTE","NUTRICIONISTA"].includes(user.perfil) && hasPermission(user,"modulo.temperatura.excluir_registro") && <details className="bpma-card"><summary>Excluir aferição</summary><form action={deleteTemperatureWorkflowAction}>{hidden}<input type="hidden" name="registroId" value={unit.temperatura.id} /><p>Excluir apenas esta aferição de {equipment.nome}, {formatAppDateInput(identity.date)}, {identity.shift}.</p><textarea className="bpma-input" name="justificativa" required maxLength={4000} placeholder="Justificativa obrigatória" /><button className="btn-secondary">Confirmar exclusão</button></form></details>}
     {unit && <section className="bpma-card"><h2>Histórico da aferição</h2><ol>{unit.eventos.map(event => <li key={event.id}>{event.criadoEm.toLocaleString("pt-BR",{timeZone:"America/Sao_Paulo"})} — {event.operacao} — {event.usuarioNome} — versão {event.versaoNova}{event.justificativa ? ` — ${event.justificativa}` : ""}</li>)}</ol></section>}
   </div>;

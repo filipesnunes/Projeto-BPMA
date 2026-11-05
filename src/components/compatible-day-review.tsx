@@ -1,4 +1,5 @@
 import { reviewSignatureLabel } from "@/lib/review-presentation";
+import { TemperatureSignatureIdentity } from "@/app/controle-temperatura-equipamentos/name-confirmation";
 import Link from "next/link";
 import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import { SignDayForm, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
@@ -90,6 +91,7 @@ export async function CompatibleDayReview(props: {
       <input type="hidden" name="mecanismo" value={code === "temperatura" ? "diaria" : "DIARIA"}/>
       <p className="font-medium">Assinatura do dia — registros salvos</p>
       {eligible.map(unit=><label className="block text-sm" key={unit.id}><input type="checkbox" name="unidade" value={`${unit.id}:${unit.versao}`} defaultChecked/> {label(unit)} — versão {unit.versao}</label>)}
+      {code === "temperatura" && <TemperatureSignatureIdentity scope={eligible.map(unit=>({id:unit.id,version:unit.versao}))}/>}
       <label className="block">Confirme sua senha<input className="bpma-input" type="password" name="senha" required autoComplete="current-password"/></label>
       <button className="btn-primary">Assinar dia</button>
     </form>}

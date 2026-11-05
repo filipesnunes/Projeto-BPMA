@@ -68,9 +68,14 @@ const retroAction=require('../src/app/historico-operacional/revisao-retroativa/a
    await assert.rejects(()=>temperatureSignatureBridge(password,false).validate(prisma,current),e=>e.message.includes('#'+current.temperatura.id)&&e.message.includes('equipamento')&&e.message.includes(u.dataReferencia.toISOString().slice(0,10)));
   }
  });
- await check('Assinatura coletiva identifica aferição/turno/campo e preserva atomicamente todos os registros',async()=>{
-  const good=consistent[0],bad=affected[0],before=await fingerprint();await assert.rejects(()=>sign(nutri,[good,bad],temperatureSignatureBridge(password,true)),e=>e.message.includes('#'+bad.temperatura.id)&&e.message.includes('manhã')&&e.message.includes('equipamento'));
-  assert.equal((await latest(good.id)).assinaturaVigenteId,null);assert.equal((await latest(bad.id)).assinaturaVigenteId,null);assert.equal(await fingerprint(),before);
+ await check('Renomeações estáveis de 01/02/03 reconciliam e assinam coletivamente, preservando versões e aferições',async()=>{
+  const names=require('../src/app/controle-temperatura-equipamentos/nomenclature.ts');
+  for(const date of ['2026-11-01','2026-11-02','2026-11-03']){
+   const units=affected.filter(u=>u.dataReferencia.toISOString().startsWith(date)),old=await Promise.all(units.map(u=>latest(u.id)));
+   assert((await names.temperatureNameChanges(prisma,units.map(u=>({id:u.id,version:u.versao})))).every(c=>c.proven));
+   await sign(nutri,units,temperatureSignatureBridge(password,true));
+   for(const [i,u]of units.entries()){const after=await latest(u.id);assert.equal(after.versao,u.versao+1);assert(after.assinaturaVigenteId);assert.deepEqual(after.temperatura,old[i].temperatura);assert.deepEqual(after.versoes.filter(v=>v.versao===u.versao),old[i].versoes);assert(after.eventos.some(e=>e.operacao==='RECONCILIACAO_NOMENCLATURA'));}
+  }
  });
  await check('Consistentes de 01/02/03 assinam individualmente e por dia sem novo salvamento',async()=>{
   for(const date of ['2026-11-01','2026-11-02','2026-11-03']){
@@ -110,16 +115,54 @@ const retroAction=require('../src/app/historico-operacional/revisao-retroativa/a
  await check('Retroativa autorizada assina conteúdo consistente e mantém divergência real bloqueada',async()=>{
   const u=await make(await equipment('Retroativa'),'2026-11-03'),scope={module:'temperatura',date:u.dataReferencia,flowId:u.id};const preview=await retro.retroactiveReviewScope(prisma,nutri,scope);assert(preview.allowed);
   const before=await latest(u.id);await retro.signRetroactiveReview({authenticated:nutri,scope,token:preview.token,password,justification:'Revisão técnica sintética',confirmed:true});const after=await latest(u.id);assert(after.assinaturaVigenteId);assert.deepEqual(after.temperatura,before.temperatura);assert.deepEqual(after.versoes,before.versoes);
-  const bad=affected[0],rejected=await retro.retroactiveReviewScope(prisma,nutri,{module:'temperatura',date:bad.dataReferencia,flowId:bad.id});assert.equal(rejected.allowed,false);assert(rejected.reason.includes('#'+bad.temperatura.id));
+  const bad=signable,rejected=await retro.retroactiveReviewScope(prisma,nutri,{module:'temperatura',date:bad.dataReferencia,flowId:bad.id});assert.equal(rejected.allowed,false);assert(rejected.reason.includes('#'+bad.temperatura.id));
  });
  await check('Formatador específico: somente nome técnico nos dois relatórios, gerencial explícito e data compartilhada preservada',async()=>{
   const fmt=require('../src/lib/review-presentation.ts'),who='Camila sintética',date=new Date('2026-11-05T13:40:00Z');
   for(const mecanismo of ['SERVICO','Revisão técnica retroativa com ressalvas'])assert.equal(fmt.reportSupervisorName({usuarioNome:who,mecanismo}),who);
   assert.equal(fmt.reportSupervisorName(null),'-');assert.match(fmt.reportSupervisorName({usuarioNome:who,mecanismo:'Revisão gerencial retroativa com ressalvas'}),/Revisão gerencial/);assert(!fmt.reportSupervisorName({usuarioNome:who,mecanismo:'Revisão gerencial retroativa'}).includes('2026'));
   assert(fmt.reportSignatureLabel({usuarioNome:who,mecanismo:'Revisão técnica retroativa',assinadoEm:date}).includes('05/11/2026'));
+  for(const mecanismo of ['SERVICO','ASSINATURA_DIARIA','REVISAO_INDIVIDUAL','Revisão técnica retroativa com ressalvas'])assert.equal(fmt.reportSignatureLabel({usuarioNome:who,mecanismo,assinadoEm:date}),who+' — 05/11/2026');
+  assert.equal(fmt.reportSignatureLabel(null),'-');assert.equal(fmt.reportSignatureLabel({usuarioNome:who,assinadoEm:new Date('2026-11-05T01:00:00Z')}),who+' — 04/11/2026');
+ });
+ const names=require('../src/app/controle-temperatura-equipamentos/nomenclature.ts');
+ const rename=async(u,manual=false)=>{
+  const current=await latest(u.id);if(manual)await inspect.fluxoOperacional.update({where:{id:u.id},data:{chave:'legacy:'+current.temperatura.id}});
+  await inspect.controleTemperaturaEquipamento.update({where:{id:current.temperatura.id},data:{equipamento:current.temperatura.equipamento+' novo'}});
+  if(!manual){const id=Number(u.chave.split(':')[0]);await inspect.controleTemperaturaEquipamentoOpcao.update({where:{id},data:{nome:current.temperatura.equipamento+' novo'}});}
+  return latest(u.id);
+ };
+ await check('Identidade sem referência estável exige confirmação específica e mantém autoria original',async()=>{
+  const u=await rename(await make(await equipment('Identidade manual'),'2026-11-02'),true),scope=[{id:u.id,version:u.versao}];
+  const changes=await names.temperatureNameChanges(prisma,scope);assert.equal(changes.length,1);assert.equal(changes[0].proven,false);const before=await latest(u.id),fp=await fingerprint();
+  await assert.rejects(()=>sign(nutri,[u],temperatureSignatureBridge(password,false)),/confirmar a identificação/);
+  await assert.rejects(()=>sign(nutri,[u],temperatureSignatureBridge(password,false,{confirmed:true,tokens:['inválido']})),/confirmar a identificação/);
+  assert.equal(await fingerprint(),fp);const tokens=changes.map(c=>`${c.id}:${c.version}:${c.token}`);
+  await assert.rejects(()=>sign(nutri,[u],temperatureSignatureBridge('wrong',false,{confirmed:true,tokens})),/Senha/);
+  await sign(nutri,[u],temperatureSignatureBridge(password,false,{confirmed:true,tokens}));const after=await latest(u.id);assert.deepEqual(after.temperatura,before.temperatura);assert.deepEqual(after.versoes.filter(v=>v.versao===u.versao),before.versoes);const event=after.eventos.find(e=>e.operacao==='RECONCILIACAO_NOMENCLATURA');assert.equal(JSON.parse(event.justificativa).comprovacao,'CONFIRMACAO_EXPLICITA');assert.equal(JSON.parse(event.justificativa).execucaoHistoricaReatribuida,false);
+ });
+ await check('Confirmação única para dois turnos e token obsoleto recusado',async()=>{
+  const a=await rename(await make(await equipment('Manual lote A'),'2026-11-02','MANHA'),true),b=await rename(await make(await equipment('Manual lote B'),'2026-11-02','TARDE'),true),scope=[a,b].map(u=>({id:u.id,version:u.versao}));const changes=await names.temperatureNameChanges(prisma,scope),tokens=changes.map(c=>`${c.id}:${c.version}:${c.token}`);
+  const before=await fingerprint();await inspect.controleTemperaturaEquipamento.update({where:{id:b.temperatura.id},data:{equipamento:b.temperatura.equipamento+' novamente'}});await assert.rejects(()=>sign(nutri,[a,b],temperatureSignatureBridge(password,true,{confirmed:true,tokens})),/confirmar a identificação/);assert.equal(await fingerprint(),before);
+  const fresh=await names.temperatureNameChanges(prisma,scope);await sign(nutri,[a,b],temperatureSignatureBridge(password,true,{confirmed:true,tokens:fresh.map(c=>`${c.id}:${c.version}:${c.token}`)}));assert.equal((await latest(a.id)).assinaturaVigenteId,(await latest(b.id)).assinaturaVigenteId);
+ });
+ await check('Nome com temperatura divergente não é reconciliado e falha de auditoria desfaz o lote inteiro',async()=>{
+  const a=await rename(await make(await equipment('Rollback A'),'2026-11-01')),b=await make(await equipment('Rollback B'),'2026-11-01');const prior=await Promise.all([latest(a.id),latest(b.id)]);
+  await inspect.controleTemperaturaEquipamento.update({where:{id:a.temperatura.id},data:{temperaturaAferida:4}});await assert.rejects(()=>sign(nutri,[a,b],temperatureSignatureBridge(password,true)),/temperaturaAferida/);await inspect.controleTemperaturaEquipamento.update({where:{id:a.temperatura.id},data:{temperaturaAferida:a.temperatura.temperaturaAferida,updatedAt:a.temperatura.updatedAt}});
+  await inspect.$executeRawUnsafe("CREATE FUNCTION nomenclature_test_failure() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''Falha sintetica nomenclatura''; END'");await inspect.$executeRawUnsafe('CREATE TRIGGER nomenclature_test_failure BEFORE INSERT ON log_assinatura FOR EACH ROW EXECUTE FUNCTION nomenclature_test_failure()');
+  try{await assert.rejects(()=>sign(nutri,[a,b],temperatureSignatureBridge(password,true)),/Falha sintetica nomenclatura/);}finally{await inspect.$executeRawUnsafe('DROP TRIGGER nomenclature_test_failure ON log_assinatura');await inspect.$executeRawUnsafe('DROP FUNCTION nomenclature_test_failure()');}assert.deepEqual(await Promise.all([latest(a.id),latest(b.id)]),prior);
+ });
+ await check('Retroativa integra reconciliação de nomes, sem enfraquecer token ou permissão',async()=>{
+  const u=await rename(await make(await equipment('Retro nome'),'2026-11-03'),true),scope={module:'temperatura',date:u.dataReferencia,flowId:u.id},preview=await retro.retroactiveReviewScope(prisma,nutri,scope);assert(preview.allowed);assert.equal(preview.nomenclature.length,1);const before=await latest(u.id),tokens=preview.nomenclature.map(c=>`${c.id}:${c.version}:${c.token}`);
+  const params={authenticated:nutri,scope,token:preview.token,password,justification:'Confirmação sintética de nomenclatura',confirmed:true};await assert.rejects(()=>retro.signRetroactiveReview(params),/confirmar a identificação/);await assert.rejects(()=>retro.signRetroactiveReview({...params,token:'stale',nameConfirmation:{confirmed:true,tokens}}),/mudou/);await retro.signRetroactiveReview({...params,nameConfirmation:{confirmed:true,tokens}});const after=await latest(u.id);assert.equal(after.versao,u.versao+1);assert.deepEqual(after.temperatura,before.temperatura);assert.deepEqual(after.versoes.filter(v=>v.versao===u.versao),before.versoes);assert(after.assinaturaVigenteId);
  });
  const browserConsistent=[];for(const date of ['2026-11-01','2026-11-02','2026-11-03'])for(const shift of ['MANHA','TARDE'])browserConsistent.push(await make(await equipment('Navegador '+date+' '+shift),date,shift));
- const browserRetro=await make(await equipment('Navegador retroativa'),'2026-11-03');
- fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,retro:{id:browserRetro.id,version:browserRetro.versao,date:"2026-11-03",recordId:browserRetro.temperatura.id},nutri:nutri.nomeUsuario,operator:operator.nomeUsuario,denied:denied.nomeUsuario,consistent:browserConsistent.map(u=>({id:u.id,version:u.versao,key:u.chave,recordId:u.temperatura.id,date:u.dataReferencia.toISOString().slice(0,10),shift:u.temperatura.turno})),affected:affected.map(u=>({id:u.id,version:u.versao,key:u.chave,recordId:u.temperatura.id,date:u.dataReferencia.toISOString().slice(0,10),shift:u.temperatura.turno}))}));
+ const browserRetro=await rename(await make(await equipment('Navegador retroativa'),'2026-11-03'),true);
+ const browserAffected=[];const browserEq=await equipment('Freezer navegador');
+ for(const [date,shift]of [['2026-11-01','MANHA'],['2026-11-02','MANHA'],['2026-11-02','TARDE'],['2026-11-03','MANHA']])browserAffected.push(await make(browserEq,date,shift));
+ await inspect.controleTemperaturaEquipamentoOpcao.update({where:{id:browserEq.id},data:{nome:tag+' Refrigerador navegador'}});await inspect.controleTemperaturaEquipamento.updateMany({where:{equipamento:browserEq.nome},data:{equipamento:tag+' Refrigerador navegador'}});
+ const browserManual=[await rename(await make(await equipment('Navegador manual A'),'2026-11-02','MANHA'),true),await rename(await make(await equipment('Navegador manual B'),'2026-11-02','TARDE'),true)];
+ const browserIndividual=await rename(await make(await equipment('Navegador individual'),'2026-11-03'));
+ fs.writeFileSync(path.join(dir,'fixtures.json'),JSON.stringify({database,password,manual:browserManual.map(u=>({id:u.id,version:u.versao,key:u.chave,recordId:u.temperatura.id,date:u.dataReferencia.toISOString().slice(0,10),shift:u.temperatura.turno})),individual:{id:browserIndividual.id,version:browserIndividual.versao,key:browserIndividual.chave,recordId:browserIndividual.temperatura.id,date:"2026-11-03"},retro:{id:browserRetro.id,version:browserRetro.versao,date:"2026-11-03",recordId:browserRetro.temperatura.id},nutri:nutri.nomeUsuario,operator:operator.nomeUsuario,denied:denied.nomeUsuario,consistent:browserConsistent.map(u=>({id:u.id,version:u.versao,key:u.chave,recordId:u.temperatura.id,date:u.dataReferencia.toISOString().slice(0,10),shift:u.temperatura.turno})),affected:browserAffected.map(u=>({id:u.id,version:u.versao,key:u.chave,recordId:u.temperatura.id,date:u.dataReferencia.toISOString().slice(0,10),shift:u.temperatura.turno}))}));
  assert.equal(createHash('sha256').update(fs.readFileSync(path.join(root,'.env'))).digest('hex'),envHash);fs.writeFileSync(path.join(dir,'results.json'),JSON.stringify({database,outcomes},null,2));console.log('PASS '+outcomes.length+' grupos de integridade Temperatura.');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{await prisma.$disconnect();await inspect.$disconnect();});

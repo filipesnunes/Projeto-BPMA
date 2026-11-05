@@ -1,4 +1,4 @@
-import { formatAppDateTime } from "./date-time";
+import { formatAppDate, getAppDate } from "./date-time";
 
 // Read persisted evidence; a profile label alone never proves a retroactive
 // review's professional nature. This module is also safe in report renderers.
@@ -34,9 +34,7 @@ export function signatureBadgeLabel(observation?: string | null) {
 
 export function reportSignatureLabel(signature?: { usuarioNome: string; assinadoEm?: Date | null; mecanismo?: string | null; observacao?: string | null } | null) {
   if (!signature) return "-";
-  const nature = retroactiveNature(signature.observacao) ?? signature.mecanismo;
-  const label = reviewSignatureLabel({ usuarioNome: signature.usuarioNome, mecanismo: nature ?? undefined });
-  return `${label}${signature.assinadoEm ? ` — ${formatAppDateTime(signature.assinadoEm)}` : ""}${nature?.includes("retroativa") && !isNonTechnicalRetroactive(nature) ? " — Assinatura retroativa" : ""}`;
+  return `${reportSupervisorName(signature)}${signature.assinadoEm ? ` — ${formatAppDate(getAppDate(signature.assinadoEm))}` : ""}`;
 }
 
 // Only the two reports whose supervision cells require a name-only display.

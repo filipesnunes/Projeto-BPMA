@@ -1,9 +1,10 @@
+import { reconcileTemperatureNames, type NameConfirmation } from "./nomenclature";
 import {workflowReviewEligibility} from "@/lib/operational-workflow/review-eligibility";
 import "server-only";
-import { Prisma, type ControleTemperaturaEquipamento } from "@prisma/client";
+import { Prisma, type FluxoOperacional } from "@prisma/client";
 import type { WorkflowAdapter, WorkflowContent } from "@/lib/operational-workflow/contracts";
 import type { WorkflowSignatureBridge } from "@/lib/operational-workflow/service";
-import { formatAppDateInput, getAppDate, getAppNow, parseAppDateInput } from "@/lib/date-time";
+import { formatAppDateInput, getAppDate, getAppNow } from "@/lib/date-time";
 import { assertProcedureTime, operationalTime } from "@/lib/procedure-time";
 import { parseImageUploadFromFormData } from "@/lib/image-upload";
 import { TEMPERATURE_EVIDENCE_IMAGE_MAX_BYTES } from "@/lib/image-upload-rules";
@@ -13,26 +14,11 @@ import { canSignModuleDay } from "@/lib/module-signatures";
 import { verifyPassword } from "@/lib/password";
 import type { AuthenticatedUser } from "@/lib/auth-session";
 import {temperatureCorrectionAudit,temperatureAuditValues} from "./correction-audit";
-import { assertTemperatureSnapshotIntegrity } from "./snapshot-integrity";
+import { assertTemperatureSnapshotIntegrity, temperatureSnapshot, parseTemperatureKey } from "./snapshot-integrity";
+export { temperatureSnapshot, parseTemperatureKey } from "./snapshot-integrity";
 
 export type TemperatureDraft = Record<string, string>;
 const fields = ["temperaturaAferida", "statusOperacionalEquipamento", "observacaoStatusOperacional", "horarioAfericao", "horarioNaoInformado", "justificativaHorario"];
-export function parseTemperatureKey(key: string) {
-  const match = /^(\d+):(\d{4}-\d{2}-\d{2}):(MANHA|TARDE)(?::[a-f0-9-]{36})?$/.exec(key);
-  const date = match && parseAppDateInput(match[2]);
-  if (!match || !date || !Number.isSafeInteger(Number(match[1])) || Number(match[1]) < 1) throw new Error("Aferição inválida.");
-  return { equipmentId: Number(match[1]), date, shift: match[3] as "MANHA" | "TARDE" };
-}
-
-export function temperatureSnapshot(record: ControleTemperaturaEquipamento): Prisma.InputJsonObject {
-  // Signature metadata is evidence about this content, never part of the content itself.
-  const { assinaturaNutricionistaUsuarioId, assinaturaNutricionistaNome, assinaturaNutricionistaPerfil,
-    assinaturaNutricionistaDataHora, updatedAt, ...content } = record;
-  void assinaturaNutricionistaUsuarioId; void assinaturaNutricionistaNome; void assinaturaNutricionistaPerfil;
-  void assinaturaNutricionistaDataHora; void updatedAt;
-  return JSON.parse(JSON.stringify(content));
-}
-
 export async function refreshWorkflowActor(tx: Prisma.TransactionClient, authenticated: AuthenticatedUser): Promise<AuthenticatedUser> {
   const session = await tx.usuarioSessao.findFirst({ where: { id: authenticated.sessaoId, usuarioId: authenticated.id, expiraEm: { gt: getAppNow() } } });
   const user = await tx.usuario.findUnique({ where: { id: authenticated.id }, include: { perfilAcesso: { include: {
@@ -117,8 +103,27 @@ export const temperatureAdapter: WorkflowAdapter = {
   }
 };
 
-export function temperatureSignatureBridge(password: string, daily: boolean): WorkflowSignatureBridge {
+export function temperatureSignatureBridge(password: string, daily: boolean, confirmation: NameConfirmation = {}): WorkflowSignatureBridge {
+  const authorize = async (tx: Prisma.TransactionClient, user: AuthenticatedUser, units: readonly FluxoOperacional[]) => {
+    if (!units.length || units.some(unit=>unit.dataReferencia>getAppDate())) throw Error("Selecione aferições válidas, sem datas futuras.");
+    if (daily && !canSignModuleDay(user, "temperatura")) throw Error("Você não possui permissão para assinar este dia.");
+    for (const unit of units) {
+      const eligibility = await workflowReviewEligibility(tx, user, "temperatura", unit.id, unit.versao, daily ? "modulo.temperatura.assinar_dia" : "modulo.temperatura.assinar_historico");
+      if (!eligibility.allowed) throw Error(eligibility.reason);
+    }
+    if (!daily && units.length !== 1) throw Error("A revisão individual abrange uma única aferição.");
+    const day = formatAppDateInput(units[0].dataReferencia);
+    if (units.some(unit=>formatAppDateInput(unit.dataReferencia)!==day)) throw Error("A assinatura diária deve abranger uma única data.");
+    const credentials = await tx.usuario.findUniqueOrThrow({where:{id:user.id},select:{senhaHash:true}});
+    if (!password.trim() || !verifyPassword(password.trim(),credentials.senhaHash)) throw Error("Senha inválida para confirmar a assinatura.");
+    return day;
+  };
   return {
+    async reconcileBeforeSign(tx, user, scope) {
+      const units = await Promise.all(scope.map(item=>tx.fluxoOperacional.findUniqueOrThrow({where:{id:item.id,modulo:"temperatura"}})));
+      await authorize(tx,user,units);
+      return reconcileTemperatureNames(tx,user,scope,confirmation);
+    },
     module: "temperatura", mechanism: daily ? "ASSINATURA_DIARIA" : "REVISAO_INDIVIDUAL",
     async validate(tx, unit): Promise<WorkflowContent> {
       const source = await tx.fluxoOperacional.findUniqueOrThrow({ where: { id: unit.id }, include: {
@@ -132,18 +137,7 @@ export function temperatureSignatureBridge(password: string, daily: boolean): Wo
         complete: true, resolved: 1, required: 1 };
     },
     async sign(tx, user, units, signedAt) {
-      if(units.some(unit=>unit.dataReferencia>getAppDate()))throw Error("Não é possível assinar aferições de datas futuras.");
-      if (daily && !canSignModuleDay(user, "temperatura")) throw new Error("Sem permissão para esta assinatura.");
-      for (const unit of units) {
-        const eligibility = await workflowReviewEligibility(tx, user, "temperatura", unit.id, unit.versao,
-          daily ? "modulo.temperatura.assinar_dia" : "modulo.temperatura.assinar_historico");
-        if (!eligibility.allowed) throw Error(eligibility.reason);
-      }
-      if (!daily && units.length !== 1) throw new Error("A revisão individual abrange uma única aferição.");
-      const day = formatAppDateInput(units[0].dataReferencia);
-      if (units.some(unit => formatAppDateInput(unit.dataReferencia) !== day)) throw new Error("A assinatura diária deve abranger uma única data.");
-      const credentials = await tx.usuario.findUniqueOrThrow({ where: { id: user.id }, select: { senhaHash: true } });
-      if (!password.trim() || !verifyPassword(password.trim(), credentials.senhaHash)) throw new Error("Senha inválida para confirmar a assinatura.");
+      const day = await authorize(tx, user, units);
       // Versioned daily scope lives in FluxoAssinatura; never create a blanket
       // legacy daily row that could implicitly validate unsigned legacy records.
       const log = await tx.logAssinatura.create({ data: { usuarioId: user.id, nomeUsuario: user.nomeUsuario,

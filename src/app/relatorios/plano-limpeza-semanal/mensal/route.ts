@@ -1,4 +1,4 @@
-import { retroactiveNature, reportSignatureLabel } from "@/lib/review-presentation";
+import { retroactiveNature, reportSupervisorName } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -277,7 +277,7 @@ function getSupervisorSignature(record: WeeklyRecord | null): string {
   }
 
   if (record.assinaturaSupervisorDataHora) {
-    return reportSignatureLabel({usuarioNome:supervisorName,assinadoEm:record.assinaturaSupervisorDataHora,observacao:record.observacaoSupervisor});
+    return reportSupervisorName({usuarioNome:supervisorName,observacao:record.observacaoSupervisor});
   }
 
   return supervisorName;

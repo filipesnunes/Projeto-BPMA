@@ -16,6 +16,8 @@ import { groupSignatureBridge } from "./operational-workflow/group-signatures";
 import { signWorkflow, type WorkflowSignatureBridge } from "./operational-workflow/service";
 import { buffetAuthorshipReservations } from "@/app/controle-buffet-amostras/authorship";
 import { legacyReviewScope } from "./legacy-review-scope";
+import { temperatureNameChanges, reconcileTemperatureNames, type TemperatureNameChange, type NameConfirmation } from "@/app/controle-temperatura-equipamentos/nomenclature";
+import { temperatureSnapshot } from "@/app/controle-temperatura-equipamentos/snapshot-integrity";
 import { isNonTechnicalRetroactive, retroactiveNature } from "./review-presentation";
 
 export type RetroactiveScope = { module: OperationalSignatureModuleCode; date: Date; flowId?: string; recordIds?: number[]; legacyRecordId?: number };
@@ -31,6 +33,7 @@ function domainBridge(module: OperationalSignatureModuleCode): WorkflowSignature
 // Shared by the preview and by the transaction. No authorization is inferred from UI state.
 export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user: AuthenticatedUser, scope: RetroactiveScope) {
   const warnings: string[] = [];
+  let nomenclature: TemperatureNameChange[] = [];
   let reason = "";
   if (!canReviewRetroactively(user, scope.module)) reason = `É necessária a permissão modulo.${scope.module}.assinar_retroativo e acesso ao módulo.`;
   if (scope.date >= getAppDate()) reason ||= "A assinatura retroativa é exclusiva de datas anteriores ao dia atual.";
@@ -44,12 +47,12 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
     if("semUtilizacao" in record ? !record.semUtilizacao && record.temperatura===null : record.statusOperacionalEquipamento==="EM_OPERACAO" && record.temperaturaAferida===null) reason ||= "Procedimento sem aferição persistida. A revisão não pode inventar uma execução.";
     warnings.push("Registro anterior ao versionamento: autoria original não comprovada. Será preservada uma cópia integral do registro antes da revisão, com vínculo criado na data atual.");
     warnings.push("Esta assinatura registra a revisão presente, sem atestar presença na execução histórica.");
-    return {allowed:!reason,reason,warnings,token:digest(record),version:0,records:JSON.parse(JSON.stringify(record)) as Prisma.JsonValue,rows:[] as Awaited<ReturnType<typeof legacyReviewScope>>["rows"]};
+    return {allowed:!reason,reason,warnings,nomenclature,token:digest(record),version:0,records:JSON.parse(JSON.stringify(record)) as Prisma.JsonValue,rows:[] as Awaited<ReturnType<typeof legacyReviewScope>>["rows"]};
   }
   if (versioned(scope.module)) {
     if (!scope.flowId) throw Error("Selecione um registro ou serviço específico.");
     const unit = await tx.fluxoOperacional.findUniqueOrThrow({ where: { id: scope.flowId }, include: {
-      versoes: { orderBy: { versao: "asc" } }, eventos: { orderBy: { id: "asc" } }, amostras: { where: { excluidoEm: null }, orderBy: { id: "asc" } }, oleo: true, assinaturaVigente: true
+      versoes: { orderBy: { versao: "asc" } }, eventos: { orderBy: { id: "asc" } }, amostras: { where: { excluidoEm: null }, orderBy: { id: "asc" } }, oleo: true, temperatura:true, assinaturaVigente: true
     } });
     if (unit.modulo !== scope.module || +unit.dataReferencia !== +scope.date || unit.excluidoEm) throw Error("Escopo inválido para esta revisão.");
     const technicalUpgrade = unit.estado === "FECHADO" && isNonTechnicalRetroactive(unit.assinaturaVigente?.mecanismo) && retroactiveReviewNature(user) === "Revisão técnica retroativa";
@@ -57,9 +60,15 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
     if (technicalUpgrade) warnings.push("A revisão técnica complementa a revisão anterior, que permanece preservada na auditoria.");
     const bridge = domainBridge(scope.module);
     let content: Awaited<ReturnType<typeof bridge.validate>> | undefined;
-    try { content = await bridge.validate(tx, unit); } catch (error) { reason ||= error instanceof Error ? error.message : "Dados incompletos."; }
     const current = unit.versoes.find(v => v.versao === unit.versao);
-    if (!unit.preenchimentoCompleto || !current?.completo || !content?.complete || !isDeepStrictEqual(current.dados, content.snapshot) || !isDeepStrictEqual(current.rascunho, content.draft)) reason ||= "Versão incompleta ou divergente dos registros persistidos. Solicite conferência; não altere aferições para liberar a assinatura.";
+    try {
+      if (scope.module === "temperatura" && unit.temperatura && current?.completo) {
+        nomenclature = await temperatureNameChanges(tx,[{id:unit.id,version:unit.versao}]);
+        if (nomenclature.length) content = { snapshot:temperatureSnapshot(unit.temperatura),draft:current.rascunho as Prisma.InputJsonObject,complete:true,resolved:current.resolvidos,required:current.obrigatorios };
+      }
+      content ??= await bridge.validate(tx,unit);
+    } catch (error) { reason ||= error instanceof Error ? error.message : "Dados incompletos."; }
+    if (!unit.preenchimentoCompleto || !current?.completo || !content?.complete || !isDeepStrictEqual(current.dados, content.snapshot) && !nomenclature.length || !isDeepStrictEqual(current.rascunho, content.draft)) reason ||= "Versão incompleta ou divergente dos registros persistidos. Confira a aferição antes de assinar.";
     if (scope.module === "amostras") {
       warnings.push(...buffetAuthorshipReservations(unit, user.id));
       const notServed = unit.amostras.filter(r => r.status === "NAO_SERVIDO");
@@ -73,7 +82,7 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
       if (unit.versoes.some(v => v.usuarioId === user.id)) warnings.push("O revisor participou de versões anteriores.");
     }
     warnings.push("A revisão é realizada agora e não atesta presença do revisor na execução histórica.");
-    return { allowed: !reason, reason, warnings, token: digest({ unit, content }), version: unit.versao, records: current?.dados ?? null, rows: [] as Awaited<ReturnType<typeof legacyReviewScope>>["rows"] };
+    return { allowed: !reason, reason, warnings, nomenclature, token: digest({ unit, content, nomenclature }), version: unit.versao, records: nomenclature.length ? content!.snapshot as Prisma.JsonObject : current?.dados ?? null, rows: [] as Awaited<ReturnType<typeof legacyReviewScope>>["rows"] };
   }
   const all = await legacyReviewScope(tx, scope.module, scope.date);
   const rows = scope.recordIds?.length ? all.rows.filter(r => scope.recordIds!.includes(r.id)) : all.rows;
@@ -95,10 +104,10 @@ export async function retroactiveReviewScope(tx: Prisma.TransactionClient, user:
     }
   }
   warnings.push("A revisão é realizada agora e não altera os responsáveis nem as datas operacionais originais.");
-  return { allowed: !reason, reason, warnings, token: digest({ rows, currentDay }), version: 0, records: JSON.parse(JSON.stringify(rows)) as Prisma.JsonValue, rows };
+  return { allowed: !reason, reason, warnings, nomenclature, token: digest({ rows, currentDay }), version: 0, records: JSON.parse(JSON.stringify(rows)) as Prisma.JsonValue, rows };
 }
 
-export async function signRetroactiveReview(params: { authenticated: AuthenticatedUser; scope: RetroactiveScope; token: string; password: string; justification: string; confirmed: boolean }) {
+export async function signRetroactiveReview(params: { authenticated: AuthenticatedUser; scope: RetroactiveScope; token: string; password: string; justification: string; confirmed: boolean; nameConfirmation?: NameConfirmation }) {
   if (!params.confirmed) throw Error("Confirme explicitamente a revisão e suas ressalvas.");
   if (!params.justification.trim() || params.justification.trim().length > 4000) throw Error("Informe a justificativa da revisão (até 4000 caracteres).");
   const { scope } = params;
@@ -132,10 +141,14 @@ export async function signRetroactiveReview(params: { authenticated: Authenticat
       }:undefined,
       bridge: {
       ...bridge, mechanism: user => `${retroactiveReviewNature(user)} com ressalvas`,
+      reconcileBeforeSign: scope.module === "temperatura" ? async(tx,user,items)=>{
+        prepared ??= await check(tx,user);
+        return reconcileTemperatureNames(tx,user,items,{...params.nameConfirmation,replaceNonTechnical:retroactiveReviewNature(user)==="Revisão técnica retroativa"});
+      } : undefined,
       async canReplaceSignature(tx, user) { return (await retroactiveReviewScope(tx, user, scope)).allowed; },
       async sign(tx, user, units, signedAt) {
         const review = prepared ?? await check(tx, user);
-        const evidence = audit(user, review);
+        const evidence = {...audit(user, review),versaoConferida:review.version,versao:units[0].versao};
         const log = await tx.logAssinatura.create({ data: { usuarioId: user.id, nomeUsuario: user.nomeUsuario, nomeCompleto: user.nomeCompleto, perfil: user.perfil,
           tipo: evidence.natureza === "Revisão técnica retroativa" ? "RESPONSAVEL_TECNICO" : "SUPERVISOR", modulo: scope.module,
           referenciaId: formatAppDateInput(scope.date), assinadoEm: signedAt, observacao: JSON.stringify(evidence) } });

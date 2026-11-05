@@ -194,7 +194,7 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       horarioNaoInformado: true,
       fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, mecanismo:true, assinadoEm:true } } } },
       observacoes: true, observacaoStatusOperacional: true,
-      assinaturaNutricionistaNome: true,
+      assinaturaNutricionistaNome: true, assinaturaNutricionistaDataHora:true,
       justificativaHorario: true
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }]
@@ -276,7 +276,7 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : valueOrDash(record.assinaturaNutricionistaNome??params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : record.assinaturaNutricionistaNome?reportSignatureLabel({usuarioNome:record.assinaturaNutricionistaNome,assinadoEm:record.assinaturaNutricionistaDataHora}):valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }
@@ -744,7 +744,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         dataReferencia: true,
-        usuarioNomeSnapshot: true
+        usuarioNomeSnapshot: true, assinadoEm:true, observacao:true
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -764,7 +764,7 @@ export async function GET(request: NextRequest) {
   const supervisorByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      signature.usuarioNomeSnapshot
+      reportSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,assinadoEm:signature.assinadoEm,observacao:signature.observacao})
     ])
   );
 

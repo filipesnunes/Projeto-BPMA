@@ -1,4 +1,4 @@
-import { reportSupervisorName } from "@/lib/review-presentation";
+import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -217,7 +217,7 @@ function buildServiceTables(
     .map(([key, group]) => ({
       key,
       title: group.title,
-      situation: group.records.some(r=>r.status==="PENDENTE"||r.fluxo&&!r.fluxo.preenchimentoCompleto)?"Preenchimento parcial — contém itens pendentes; valores salvos não significam conclusão do serviço.":"Itens persistidos resolvidos. A assinatura do serviço é uma etapa independente.",
+      situation: group.records.some(r=>r.status==="PENDENTE"||r.fluxo&&!r.fluxo.preenchimentoCompleto)?"Preenchimento parcial — contém itens pendentes; valores salvos não significam conclusão do serviço.":"",
       rows: group.records.sort(compareBuffetRecords).map((record) => ({
         produto: getProductLabel(record)+(record.status==="PENDENTE"?" — Pendente de preenchimento":""),
         temperaturaEquipamento: formatRecordTemperature(record, "equipamento"),
@@ -227,7 +227,7 @@ function buildServiceTables(
             ? "-"
             : valueOrDash(record.acaoCorretiva),
         responsavel: valueOrDash(record.responsavelNome),
-        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSupervisorName(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
+        supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Reaberto — nova assinatura pendente" : record.fluxo.preenchimentoCompleto?"Pendente de assinatura":"Preenchimento parcial") : valueOrDash(supervisorByDate.get(formatAppDateInput(record.data)))
       }))
     }));
 }
@@ -628,7 +628,7 @@ export async function GET(request: NextRequest) {
       },
       select: {
         dataReferencia: true,
-        usuarioNomeSnapshot: true
+        usuarioNomeSnapshot: true, assinadoEm:true, observacao:true
       }
     }),
     prisma.fechamentoMensalModulo.findUnique({
@@ -661,7 +661,7 @@ export async function GET(request: NextRequest) {
   const supervisorByDate = new Map(
     dailySignatures.map((signature) => [
       formatAppDateInput(signature.dataReferencia),
-      signature.usuarioNomeSnapshot
+      reportSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,assinadoEm:signature.assinadoEm,observacao:signature.observacao})
     ])
   );
 

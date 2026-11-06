@@ -53,7 +53,6 @@ type ShiftCell = {
 type EquipmentReport = {
   name: string;
   cellsByDayShift: Map<string, ShiftCell>;
-  actionLegend: Array<{code:string;text:string}>;
 };
 
 type MonthlyTemperatureReport = {
@@ -271,7 +270,7 @@ function buildEquipmentReports(params: {
           correctiveAction: inOperation
             ? valueOrEmpty(record.acaoCorretiva)
             : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.MANUTENCAO
-              ? "Em manutenção"
+              ? valueOrEmpty(record.acaoCorretiva) || "Em manutenção"
               : record.statusOperacionalEquipamento === StatusOperacionalEquipamento.INATIVO
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
@@ -281,10 +280,7 @@ function buildEquipmentReports(params: {
       }
     }
 
-    const counts=new Map<string,number>();for(const cell of cellsByDayShift.values())counts.set(cell.correctiveAction,(counts.get(cell.correctiveAction)??0)+1);
-    const actionLegend=[...counts].filter(([text,count])=>text.length>36&&count>1).map(([text],index)=>({code:"AC"+(index+1),text}));
-    for(const cell of cellsByDayShift.values()){const reference=actionLegend.find(a=>a.text===cell.correctiveAction);if(reference)cell.correctiveAction=reference.code;}
-    return { name, cellsByDayShift, actionLegend };
+    return { name, cellsByDayShift };
   });
 }
 
@@ -482,6 +478,7 @@ function renderStyles(): string {
 
       .print-layout-warning { display:none; }
       .print-layout-warning[hidden] { display:none !important; }
+      .continuation-identification { display:none; }
       @media print {
         .equipment-page { width:283mm; gap:3px; break-after:auto; page-break-after:auto; break-before:page; page-break-before:always; }
         .equipment-page:first-child { break-before:auto; page-break-before:auto; }
@@ -497,8 +494,8 @@ function renderStyles(): string {
         .equipment-page .time-notes .note-row { break-inside:auto; }
         .equipment-page .time-notes { font-size:8.2px; line-height:1.15; }
         .equipment-page .footer-block { margin-top:3px; }
-        .equipment-page .action-legend { font-size:8.2px; line-height:1.15; overflow-wrap:anywhere; }
         .print-layout-warning { display:block; font-size:9px; font-weight:bold; }
+        .equipment-page[data-print-overflow="true"] .continuation-identification { display:table-row; }
         .screen-actions {
           display: none;
         }
@@ -575,6 +572,7 @@ function renderEquipmentTable(equipment: EquipmentReport, report: MonthlyTempera
   return `
     <table class="temperature-table">
       <thead>
+        <tr class="continuation-identification"><th colspan="11">Equipamento: ${escapeHtml(equipment.name)} — ${escapeHtml(report.monthYearLabel)} — quadro com continuação</th></tr>
         <tr>
           <th class="day-column" rowspan="2">Dia</th>
           <th colspan="5">${escapeHtml(labelTurno(TurnoTemperaturaEquipamento.MANHA))}</th>
@@ -648,7 +646,6 @@ function renderEquipmentPage(equipment: EquipmentReport, report: MonthlyTemperat
       ${renderEquipmentInfo(equipment, report)}
       <p class="print-layout-warning" hidden>Conteúdo excepcionalmente longo: este equipamento requer continuação. Todos os dados foram preservados; o próximo equipamento inicia em nova página.</p>
       ${renderEquipmentTable(equipment, report)}
-      ${equipment.actionLegend.length?`<div class="action-legend"><strong>Ações corretivas referenciadas no quadro:</strong> ${equipment.actionLegend.map(a=>`<span><strong>${escapeHtml(a.code)}:</strong> ${escapeHtml(a.text)}</span>`).join(" · ")}</div>`:""}
       <div class="footer-block">
         ${renderCorrectiveActionBlock()}
         ${renderClosureSignature(report)}

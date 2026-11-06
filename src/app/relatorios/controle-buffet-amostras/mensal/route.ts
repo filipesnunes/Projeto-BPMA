@@ -43,6 +43,7 @@ type BuffetReportRow = {
 
 type BuffetServiceTable = {
   key: string;
+  date: string;
   title: string;
   rows: BuffetReportRow[];
   situation?: string;
@@ -216,6 +217,7 @@ function buildServiceTables(
     })
     .map(([key, group]) => ({
       key,
+      date: key.slice(0, 10),
       title: group.title,
       situation: group.records.some(r=>r.status==="PENDENTE"||r.fluxo&&!r.fluxo.preenchimentoCompleto)?"Preenchimento parcial — contém itens pendentes; valores salvos não significam conclusão do serviço.":"",
       rows: group.records.sort(compareBuffetRecords).map((record) => ({
@@ -324,6 +326,41 @@ function renderStyles(): string {
         break-before: auto;
         page-break-before: auto;
       }
+
+      .day-block {
+        break-before: page;
+        page-break-before: always;
+      }
+
+      .day-block:first-of-type {
+        break-before: auto;
+        page-break-before: auto;
+      }
+
+      .daily-sanitary-references {
+        margin-top: 8px;
+        break-inside: avoid-page;
+        page-break-inside: avoid;
+      }
+
+      .daily-sanitary-references h3 {
+        margin: 0 0 4px;
+        font-size: inherit;
+      }
+
+      .sanitary-reference-table th,
+      .sanitary-reference-table td {
+        border-color: #777;
+        background: #fff;
+        padding: 3px 5px;
+        text-align: left;
+        white-space: normal;
+      }
+
+      .sanitary-reference-table th:first-child { width: 25%; }
+      .daily-sanitary-references ul,
+      .daily-sanitary-references ol { margin: 0; padding-left: 17px; }
+      .corrective-reference-legend { margin-top: 5px; }
 
       .service-title {
         border: 1px solid #000000;
@@ -524,6 +561,7 @@ function renderServices(report: MonthlyBuffetReport): string {
   if (report.services.length === 0) {
     const emptyService: BuffetServiceTable = {
       key: "empty",
+      date: "",
       title: "CONTROLE DE BUFFET / AMOSTRAS",
       rows: []
     };
@@ -531,7 +569,42 @@ function renderServices(report: MonthlyBuffetReport): string {
     return renderServiceTable(emptyService, report);
   }
 
-  return report.services.map((service) => renderServiceTable(service, report)).join("");
+  const days = new Map<string, BuffetServiceTable[]>();
+  for (const service of report.services) {
+    const services = days.get(service.date) ?? [];
+    services.push(service);
+    days.set(service.date, services);
+  }
+  return [...days].sort(([first], [second]) => first.localeCompare(second)).map(([date, services]) => `
+    <section class="day-block" data-date="${escapeHtml(date)}">
+      ${services.map(service => renderServiceTable(service, report)).join("")}
+      ${renderDailySanitaryReferences(date)}
+    </section>`).join("");
+}
+
+function renderDailySanitaryReferences(date: string): string {
+  return `<div class="daily-sanitary-references" data-date="${escapeHtml(date)}">
+    <h3>Referências sanitárias — ${escapeHtml(formatAppDate(new Date(`${date}T00:00:00Z`)))}</h3>
+    <table class="sanitary-reference-table">
+      <thead><tr><th>Classificação do alimento</th><th>Limites de tempo e temperatura</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">ALIMENTOS QUENTES</th><td><ul>
+          <li>Acima de 60 °C por no máximo 6 horas.</li>
+          <li>Abaixo de 60 °C por no máximo 1 hora.</li>
+        </ul></td></tr>
+        <tr><th scope="row">ALIMENTOS FRIOS</th><td><ul>
+          <li>Até 10 °C por no máximo 4 horas.</li>
+          <li>Entre 10 e 21 °C por no máximo 2 horas.</li>
+          <li>Preparações com carnes e pescados crus — 5 °C por no máximo 2 horas.</li>
+        </ul></td></tr>
+      </tbody>
+    </table>
+    <div class="corrective-reference-legend"><h3>Legenda das ações corretivas</h3><ol>
+      <li>Alimentos expostos por menos de 1 hora no buffet.</li>
+      <li>Alimentos expostos por menos de 2 horas no buffet.</li>
+      <li>Alimento descartado.</li>
+    </ol></div>
+  </div>`;
 }
 
 function renderReportDocument(report: MonthlyBuffetReport): string {
@@ -597,7 +670,7 @@ async function getMonthlyBuffetRecords(month: number, year: number) {
   const records=[...new Map([...legacy,...flows.flatMap(f=>f.amostras)].map(r=>[r.id,r])).values()];
   const draftFlows=flows.filter(f=>!f.amostras.length&&Object.values((f.versoes[0]?.rascunho as {rows?:Record<string,Record<string,string>>})?.rows??{}).some(row=>Object.entries(row).some(([k,v])=>["naoServido","horarioNaoInformado"].includes(k)?v==="true":Boolean(v))));
   const services=draftFlows.length?await prisma.controleBuffetAmostraServico.findMany({where:{id:{in:draftFlows.map(f=>Number(f.chave.split(":")[0]))}},select:{id:true,nome:true}}):[];
-  return{records,drafts:draftFlows.map(f=>({key:f.chave,title:(services.find(s=>s.id===Number(f.chave.split(":")[0]))?.nome??"Serviço")+" — "+formatAppDate(f.dataReferencia),rows:[],situation:"Rascunho salvo — serviço não concluído.",emptyMessage:"Existem campos somente no rascunho. Nenhuma aferição foi concluída para esses itens; os valores digitados continuam disponíveis no Histórico."} satisfies BuffetServiceTable))};
+  return{records,drafts:draftFlows.map(f=>({key:f.chave,date:formatAppDateInput(f.dataReferencia),title:(services.find(s=>s.id===Number(f.chave.split(":")[0]))?.nome??"Serviço")+" — "+formatAppDate(f.dataReferencia),rows:[],situation:"Rascunho salvo — serviço não concluído.",emptyMessage:"Existem campos somente no rascunho. Nenhuma aferição foi concluída para esses itens; os valores digitados continuam disponíveis no Histórico."} satisfies BuffetServiceTable))};
 }
 
 export async function GET(request: NextRequest) {

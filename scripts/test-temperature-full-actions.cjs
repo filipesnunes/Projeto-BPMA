@@ -15,7 +15,7 @@ mocks.set('@/lib/auth-session',{getCurrentUser:async()=>({id:1,perfil:'DEV',nome
 mocks.set('@/lib/rbac',{canAccessReports:()=>true});mocks.set('@/lib/monthly-reopening',{reopenedMonthlyReportLabel:async()=>null});
 mocks.set('@/lib/visual-personalization',{getReportIdentity:async()=>({unitName:'Unidade sintética',logoDataUrl:null})});
 const relative='src/app/relatorios/controle-temperatura-equipamentos/mensal/route.ts',route=require(path.join(root,relative)),{NextRequest}=require('next/server');
-const previous=new Module(path.join(root,relative),module);previous.filename=path.join(root,relative);previous.paths=Module._nodeModulePaths(root);previous._compile(compile(execFileSync('git',['show','HEAD:'+relative],{cwd:root,encoding:'utf8'})),previous.filename);
+const previous=new Module(path.join(root,relative),module);previous.filename=path.join(root,relative);previous.paths=Module._nodeModulePaths(root);previous._compile(compile(execFileSync('git',['show','98b2b6c:'+relative],{cwd:root,encoding:'utf8'})),previous.filename);
 const long='Variação aceitável para o turno, se persistir no turno seguinte acionar a manutenção.';
 const persist='Variação aceitável persistente entre turnos. Acionar a manutenção.';
 const inactive='Equipamento inativo — aferição não aplicável.';

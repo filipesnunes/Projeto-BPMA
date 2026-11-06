@@ -1,4 +1,5 @@
 "use server";
+import { loadTemperatureDayReviews, temperatureDayResult } from "./day-review";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getCurrentUserForAction } from "@/lib/auth-session";
@@ -78,10 +79,13 @@ export async function signTemperatureWorkflowAction(form: FormData) {
       if (!id || !/^\d+$/.test(revision)) throw new Error("Escopo de assinatura inválido.");
       return { id, version: Number(revision) };
     });
+    const reference=legacyId>0?await prisma.controleTemperaturaEquipamento.findUniqueOrThrow({where:{id:legacyId},select:{data:true}}):scope.length?await prisma.fluxoOperacional.findUniqueOrThrow({where:{id:scope[0].id,modulo:"temperatura"},select:{dataReferencia:true}}):null;
     await signWorkflow({ actor: tx => refreshWorkflowActor(tx, authenticated), scope,
       bridge: temperatureSignatureBridge(value(form, "senha"), value(form, "mecanismo") === "diaria", {confirmed:value(form,"confirmarIdentidadeEquipamento")==="sim",tokens:form.getAll("nomenclatura").map(String)}),
       prepare:legacyId>0?(tx,user)=>adoptLegacyTemperature(tx,user,legacyId,value(form,"originalUpdatedAt"),"sign"):undefined });
-    refresh(); result(returnTo, "Validação registrada para as versões selecionadas.");
+    const date=reference&&("data" in reference?reference.data:reference.dataReferencia);
+    const day=date?(await loadTemperatureDayReviews(prisma,[date])).values().next().value:undefined;
+    refresh(); result(returnTo, day?temperatureDayResult(day):"Assinaturas registradas. Atualize o Histórico para conferir as pendências do dia.");
   } catch (error) { rethrowIfRedirectError(error); result(returnTo, message(error), true); }
 }
 export async function deleteTemperatureWorkflowAction(form: FormData) {

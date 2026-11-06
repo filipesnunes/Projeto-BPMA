@@ -1,3 +1,4 @@
+import { TemperatureDaySignatureStatus } from "@/components/historico/temperature-day-signature";
 import { fullTemperatureHistory, MONTH_EDIT } from "../correction-policy";
 import { loadTemperatureHistory, positivePage } from "./history-data";
 import { TemperatureHistoryWorkflows } from "./history-workflows";
@@ -10,7 +11,7 @@ import {
 } from "@prisma/client";
 import Link from "next/link";
 
-import { MonthlyClosureSection, SupervisorSignatureStatus } from "@/components/historico/technical-signature";
+import { MonthlyClosureSection } from "@/components/historico/technical-signature";
 import { ActionModal } from "@/components/ui/action-modal";
 import { getCurrentUser } from "@/lib/auth-session";
 import { formatAppDate, formatAppDateInput, getAppDate } from "@/lib/date-time";
@@ -223,7 +224,7 @@ export default async function ControleTemperaturaHistoricoPage({
                   const key = formatAppDateInput(grupo.data);
                   const alertas = grupo.alertas;
                   const registrosInativos = grupo.inativos;
-                  const assinatura = assinaturasPorData.get(key) ?? null;
+                  const dayReview = data.dayReviews.get(key);
 
                   return (
                     <tr key={key}>
@@ -233,7 +234,7 @@ export default async function ControleTemperaturaHistoricoPage({
                         {alertas > 0 ? "Com alerta" : registrosInativos > 0 ? "Com equipamento fora de operação" : "Completo"}
                       </td>
                       <td className="px-3 py-2">{alertas}</td>
-                      <td className="px-3 py-2"><SupervisorSignatureStatus signature={assinatura} /></td>
+                      <td className="px-3 py-2"><TemperatureDaySignatureStatus day={dayReview} /></td>
                       <td className="px-3 py-2">
                         <Link prefetch={false} href={buildOpenDayHref(key)} scroll={false} className="btn-action">
                           Abrir
@@ -265,13 +266,11 @@ export default async function ControleTemperaturaHistoricoPage({
           title={`Registros de ${formatAppDate(grupoSelecionado.data)}`}
           cancelHref={returnTo}
           maxWidthClassName="max-w-6xl"
-          description={<p>Esta assinatura valida a revisão de todos os registros deste dia.</p>}
+          description={<p>Confira as assinaturas vigentes e as pendências de cada aferição deste dia.</p>}
         >
           <div className="mb-4">
             <p className="mb-2">{data.detailTotal} aferições. Página {data.detailPage} de {data.detailPages}.</p>
-            <SupervisorSignatureStatus
-              signature={assinaturasPorData.get(formatAppDateInput(grupoSelecionado.data)) ?? null}
-            />
+            <TemperatureDaySignatureStatus day={data.dayReviews.get(formatAppDateInput(grupoSelecionado.data))} />
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-[1080px] divide-y divide-slate-200 text-sm dark:divide-slate-700">

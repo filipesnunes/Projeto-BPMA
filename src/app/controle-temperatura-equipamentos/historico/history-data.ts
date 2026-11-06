@@ -1,9 +1,9 @@
-import { isNonTechnicalRetroactive, technicalReviewPending } from "@/lib/review-presentation";
+import { retroactiveNature, reviewSignatureLabel } from "@/lib/review-presentation";
 import "server-only";
-import { Prisma, type PerfilUsuario, type StatusTemperaturaEquipamento } from "@prisma/client";
+import { Prisma, type StatusTemperaturaEquipamento } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { formatAppDateInput, getAppMonthDateRange, getAppMonthYear, parseAppDateInput } from "@/lib/date-time";
-import { currentRecordSignatures } from "@/lib/operational-workflow/compatible-records";
+import { loadTemperatureDayReviews } from "../day-review";
 
 export const HISTORY_DAY_PAGE_SIZE=15;
 export const HISTORY_DETAIL_PAGE_SIZE=100;
@@ -44,29 +44,6 @@ async function monthlySummary(start:Date,end:Date) {
     GROUP BY GROUPING SETS ((r.data), ())`);
 }
 
-// Same presentation semantics as scopedLegacyDaySignatures, with minimal selects
-// and one SQL group per legacy day instead of one row per measurement.
-async function signatureSummary(dates:Date[]) {
-  const unique=[...new Map(dates.map(date=>[formatAppDateInput(date),date])).values()];
-  const result=new Map<string,{usuarioNomeSnapshot:string;usuarioPerfilSnapshot:PerfilUsuario|null;assinadoEm:Date;observacao?:string|null}>();
-  if(!unique.length)return result;
-  const [daily,units,legacy]=await Promise.all([
-    prisma.assinaturaDiariaModulo.findMany({where:{moduloCodigo:"temperatura",dataReferencia:{in:unique}},select:{dataReferencia:true,usuarioNomeSnapshot:true,usuarioPerfilSnapshot:true,assinadoEm:true,observacao:true}}),
-    prisma.fluxoOperacional.findMany({where:{modulo:"temperatura",excluidoEm:null,dataReferencia:{in:unique}},select:{dataReferencia:true,estado:true,assinaturaVigente:{select:{id:true,usuarioNome:true,usuarioPerfil:true,assinadoEm:true,mecanismo:true}}}}),
-    prisma.controleTemperaturaEquipamento.groupBy({by:["data"],where:{fluxoId:null,data:{in:unique}}})
-  ]);
-  const original=new Map(daily.map(signature=>[formatAppDateInput(signature.dataReferencia),signature]));
-  const legacyDays=new Set(legacy.map(row=>formatAppDateInput(row.data)));
-  for(const date of unique){const day=formatAppDateInput(date),scoped=units.filter(unit=>+unit.dataReferencia===+date),previous=original.get(day);
-    if(!scoped.length){if(previous)result.set(day,previous);continue;}
-    if(scoped.some(unit=>unit.estado!=="FECHADO"||!unit.assinaturaVigente))continue;
-    if(legacyDays.has(day)){if(previous)result.set(day,previous);continue;}
-    const evidence=scoped.map(unit=>unit.assinaturaVigente!).sort((a,b)=>+b.assinadoEm-+a.assinadoEm),names=[...new Set(evidence.map(signature=>signature.usuarioNome))];
-    result.set(day,{usuarioNomeSnapshot:names.join(", "),usuarioPerfilSnapshot:names.length===1?evidence[0].usuarioPerfil as PerfilUsuario:null,assinadoEm:evidence[0].assinadoEm,observacao:evidence.some(signature=>signature.mecanismo.includes("retroativa"))?JSON.stringify({operacao:"REVISAO_RETROATIVA",natureza:[...new Set(evidence.map(signature=>signature.mecanismo))].join(" / "),revisaoTecnicaPendente:evidence.some(signature=>isNonTechnicalRetroactive(signature.mecanismo))}):"Resumo de assinaturas vigentes"});
-  }
-  return result;
-}
-
 const detailSelect={id:true,fluxoId:true,data:true,equipamento:true,turno:true,status:true,statusOperacionalEquipamento:true,temperaturaAferida:true,acaoCorretiva:true,responsavel:true,observacoes:true,observacaoStatusOperacional:true,createdAt:true,horarioAfericao:true,horarioNaoInformado:true,justificativaHorario:true,assinaturaNutricionistaNome:true,assinaturaNutricionistaDataHora:true} satisfies Prisma.ControleTemperaturaEquipamentoSelect;
 export async function loadTemperatureHistory(params:{filters:TemperatureHistoryFilters;today:Date;fullHistory:boolean;page:number;detailPage:number;openDay:string;photoId:number|null}) {
   const scope=temperatureHistoryScope(params.filters,params.today,params.fullHistory),{where,monthly,monthlyEnd}=scope;
@@ -88,12 +65,14 @@ export async function loadTemperatureHistory(params:{filters:TemperatureHistoryF
   const selectedAlerts=openDate&&detailTotal?(groups.find(group=>+group.data===+openDate)?.alertas??await prisma.controleTemperaturaEquipamento.count({where:{AND:[detailWhere],statusOperacionalEquipamento:"EM_OPERACAO",status:{in:["ALERTA","CRITICO"]}}})):0;
   const detailPages=Math.max(1,Math.ceil(detailTotal/HISTORY_DETAIL_PAGE_SIZE)),detailPage=Math.min(params.detailPage,detailPages);
   const details=openDate&&detailTotal?await prisma.controleTemperaturaEquipamento.findMany({where:detailWhere,select:detailSelect,orderBy:[{createdAt:"desc"},{id:"desc"}],skip:(detailPage-1)*HISTORY_DETAIL_PAGE_SIZE,take:HISTORY_DETAIL_PAGE_SIZE}):[];
-  const [records,photoRows,photo]=await Promise.all([
-    currentRecordSignatures(details,"temperatura"),
+  const [photoRows,photo]=await Promise.all([
     details.length?prisma.controleTemperaturaEquipamento.findMany({where:{AND:[detailWhere],id:{in:details.map(row=>row.id)},OR:[{AND:[{fotoUrl:{not:null}},{fotoUrl:{not:""}}]},{AND:[{fotoBase64:{not:null}},{fotoBase64:{not:""}},{fotoMimeType:{not:null}},{fotoMimeType:{not:""}}]}]},select:{id:true}}):Promise.resolve([]),
     params.photoId&&detailTotal?prisma.controleTemperaturaEquipamento.findFirst({where:{AND:[detailWhere,{id:params.photoId}]},select:{id:true,data:true,equipamento:true,fotoBase64:true,fotoMimeType:true,fotoUrl:true}}):Promise.resolve(null)
   ]);
-  const signatures=await signatureSummary([...monthlyDays.map(row=>row.data),...pageDates,...(openDate&&detailTotal?[openDate]:[])]);
-  const signedDays=monthlyDays.filter(row=>signatures.has(formatAppDateInput(row.data))).length;
-  return {...scope,groups,totalDays,totalRecords,page,pages,closure,signatures,photo,photoIds:new Set(photoRows.map(row=>row.id)),selected:openDate&&detailTotal?{data:openDate,registros:records}:null,selectedAlerts,detailTotal,detailPage,detailPages,indicators:{"Mês/Ano":`${String(scope.month).padStart(2,"0")}/${scope.year}`,"Dias monitorados":totals.dias,"Registros":totals.registros,"Equipamentos monitorados":totals.equipamentos,"Alertas":totals.alertas,"Ações corretivas":totals.acoes,"Manutenção/Inativos":totals.inativos,"Dias revisados sem validação técnica":monthlyDays.filter(row=>technicalReviewPending(signatures.get(formatAppDateInput(row.data))?.observacao)).length,"Dias assinados":signedDays,"Dias pendentes de assinatura":Math.max(totals.dias-signedDays,0)}};
+  const dayReviews=await loadTemperatureDayReviews(prisma,[...monthlyDays.map(row=>row.data),...pageDates,...(openDate&&detailTotal?[openDate]:[])]);
+  const signatures=new Map([...dayReviews].flatMap(([date,day])=>day.summary?[[date,day.summary] as const]:[]));
+  const byId=new Map([...dayReviews.values()].flatMap(day=>day.rows.map(row=>[row.id,row] as const)));
+  const records=details.map(record=>{const row=byId.get(record.id),signature=row?.signature;return {...record,assinaturaNutricionistaNome:signature?reviewSignatureLabel({usuarioNome:signature.usuarioNomeSnapshot,mecanismo:retroactiveNature(signature.observacao)??undefined}):null,assinaturaNutricionistaDataHora:signature?.assinadoEm??null};});
+  const signedDays=monthlyDays.filter(row=>{const state=dayReviews.get(formatAppDateInput(row.data));return state&&state.total>0&&!state.pending;}).length;
+  return {...scope,groups,totalDays,totalRecords,page,pages,closure,signatures,dayReviews,photo,photoIds:new Set(photoRows.map(row=>row.id)),selected:openDate&&detailTotal?{data:openDate,registros:records}:null,selectedAlerts,detailTotal,detailPage,detailPages,indicators:{"Mês/Ano":`${String(scope.month).padStart(2,"0")}/${scope.year}`,"Dias monitorados":totals.dias,"Registros":totals.registros,"Equipamentos monitorados":totals.equipamentos,"Alertas":totals.alertas,"Ações corretivas":totals.acoes,"Manutenção/Inativos":totals.inativos,"Dias revisados sem validação técnica":monthlyDays.filter(row=>(dayReviews.get(formatAppDateInput(row.data))?.managerial??0)>0).length,"Dias assinados":signedDays,"Dias parcialmente assinados":monthlyDays.filter(row=>{const day=dayReviews.get(formatAppDateInput(row.data));return day&&day.signed>0&&day.pending>0;}).length,"Dias pendentes de assinatura":Math.max(totals.dias-signedDays,0)}};
 }

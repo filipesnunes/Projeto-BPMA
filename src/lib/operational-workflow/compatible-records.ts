@@ -2,18 +2,20 @@ import { isNonTechnicalRetroactive, reviewSignatureLabel } from "@/lib/review-pr
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { PerfilUsuario } from "@prisma/client";
+import { temperatureSignatureForDisplay, loadTemperatureDayReviews } from "@/app/controle-temperatura-equipamentos/day-review";
 
 // Presentation only. Never persist these aliases or manufacture a signature.
 // Legacy columns are not evidence of a current versioned signature.
 export async function currentRecordSignatures<T extends { fluxoId?: string | null }>(rows: T[], module: "temperatura" | "oleo" | "amostras"): Promise<T[]> {
   const ids = [...new Set(rows.flatMap(row => row.fluxoId ? [row.fluxoId] : []))];
   if (!ids.length) return rows;
-  const units = await prisma.fluxoOperacional.findMany({where:{id:{in:ids},modulo:module,excluidoEm:null},include:{assinaturaVigente:{include:{vinculos:module==="amostras"}}}});
+  const units = await prisma.fluxoOperacional.findMany({where:{id:{in:ids},modulo:module,excluidoEm:null},include:{assinaturaVigente:{include:{vinculos:module==="amostras"||module==="temperatura"}},eventos:module==="temperatura"?{where:{operacao:{in:["REVOGACAO_ASSINATURA","INVALIDACAO_VIGENCIA"]}},select:{operacao:true,assinaturaId:true}}:false}});
   const byId = new Map(units.map(unit => [unit.id, unit]));
   return rows.map(row => {
     if (!row.fluxoId) return row;
     const unit = byId.get(row.fluxoId);
-    const current = unit?.estado === "FECHADO" ? unit.assinaturaVigente : null;
+    const scoped=unit&&module==="temperatura"?temperatureSignatureForDisplay(unit):null;
+    const current = module==="temperatura"?scoped:unit?.estado === "FECHADO" ? unit.assinaturaVigente : null;
     const signature=module==="amostras"&&current&&!current.vinculos?.some(link=>link.fluxoId===unit!.id&&link.versao===unit!.versao)?null:current;
     const fields = module === "oleo" ? { assinaturaSupervisorNome:signature?reviewSignatureLabel(signature):null, assinaturaSupervisorEm:signature?.assinadoEm??null, assinaturaSupervisorPerfil:signature?.usuarioPerfil??null }
       : { assinaturaNutricionistaNome:signature?reviewSignatureLabel(signature):null, assinaturaNutricionistaDataHora:signature?.assinadoEm??null, assinaturaNutricionistaPerfil:signature?.usuarioPerfil??null };
@@ -26,6 +28,7 @@ export async function currentRecordSignatures<T extends { fluxoId?: string | nul
 type DaySignatureView = { dataReferencia: Date; usuarioNomeSnapshot: string; usuarioPerfilSnapshot: PerfilUsuario | null; assinadoEm: Date; observacao?: string | null };
 export async function scopedLegacyDaySignatures(signatures: DaySignatureView[], module: string, dates = signatures.map(signature=>signature.dataReferencia)): Promise<DaySignatureView[]> {
   if (!dates.length) return signatures;
+  if(module==="temperatura")return [...await loadTemperatureDayReviews(prisma,dates)].flatMap(([,day])=>day.summary?[{dataReferencia:new Date(day.date),...day.summary}]:[]);
   const where = {data:{in:dates},fluxoId:null};
   const [units,legacy] = await Promise.all([
     prisma.fluxoOperacional.findMany({where:{modulo:module,excluidoEm:null,dataReferencia:{in:dates}},include:{assinaturaVigente:{include:{vinculos:module==="amostras"}}}}),

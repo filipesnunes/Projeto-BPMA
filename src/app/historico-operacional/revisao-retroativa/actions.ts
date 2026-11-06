@@ -4,6 +4,8 @@ import { getCurrentUserForAction } from "@/lib/auth-session";
 import { parseAppDateInput, formatAppDateTime } from "@/lib/date-time";
 import { getOperationalSignatureModule } from "@/lib/module-signatures";
 import { signRetroactiveReview } from "@/lib/retroactive-review";
+import { loadTemperatureDayReviews, temperatureDayResult } from "@/app/controle-temperatura-equipamentos/day-review";
+import { prisma } from "@/lib/prisma";
 
 export async function signRetroactiveAction(_state: { status: string; message: string }, form: FormData) {
   try {
@@ -21,7 +23,8 @@ export async function signRetroactiveAction(_state: { status: string; message: s
     revalidatePath("/historico-operacional/revisao-retroativa");
     revalidatePath("/relatorios", "layout");
     revalidatePath("/");
-    return { status: "success", message: `Revisão retroativa registrada por ${result.usuarioNome} em ${formatAppDateTime(result.assinadoEm)}.` };
+    const day=config.codigo==="temperatura"?(await loadTemperatureDayReviews(prisma,[date])).values().next().value:undefined;
+    return { status: "success", message: `Revisão retroativa registrada por ${result.usuarioNome} em ${formatAppDateTime(result.assinadoEm)}.${day?` ${temperatureDayResult(day)}`:""}` };
   } catch (error) {
     return { status: "error", message: error instanceof Error && !/prisma|p20\d|transaction|stack|NEXT_REDIRECT/i.test(error.message)
       ? error.message : "Não foi possível registrar a revisão. Confira sua sessão e recarregue os dados." };

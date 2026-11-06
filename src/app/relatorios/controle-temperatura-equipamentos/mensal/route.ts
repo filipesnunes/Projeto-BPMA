@@ -1,3 +1,4 @@
+import { temperatureSignatureForDisplay, temperatureSignatureEvidence } from "@/app/controle-temperatura-equipamentos/day-review";
 import { reportSignatureLabel } from "@/lib/review-presentation";
 import { reopenedMonthlyReportLabel } from "@/lib/monthly-reopening";
 import { NextResponse, type NextRequest } from "next/server";
@@ -191,7 +192,7 @@ async function getMonthlyTemperatureRecords(month: number, year: number) {
       createdAt: true,
       horarioAfericao: true,
       horarioNaoInformado: true,
-      fluxo: { select: { estado: true, assinaturaVigente: { select: { usuarioNome: true, mecanismo:true, assinadoEm:true } } } },
+      fluxo: { select: { id:true,modulo:true,versao:true,assinaturaVigenteId:true,estado:true,...temperatureSignatureEvidence } },
       observacoes: true, observacaoStatusOperacional: true,
       assinaturaNutricionistaNome: true, assinaturaNutricionistaDataHora:true,
       justificativaHorario: true
@@ -275,7 +276,7 @@ function buildEquipmentReports(params: {
                 ? valueOrEmpty(record.acaoCorretiva) || "Equipamento inativo — aferição não aplicável"
                 : "",
           responsible: valueOrEmpty(record.responsavel),
-          supervisor: record.fluxo ? (record.fluxo.estado === "FECHADO" ? reportSignatureLabel(record.fluxo.assinaturaVigente) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : record.assinaturaNutricionistaNome?reportSignatureLabel({usuarioNome:record.assinaturaNutricionistaNome,assinadoEm:record.assinaturaNutricionistaDataHora}):valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
+          supervisor: record.fluxo ? (temperatureSignatureForDisplay(record.fluxo) ? reportSignatureLabel(temperatureSignatureForDisplay(record.fluxo)) : record.fluxo.estado === "REABERTO" ? "Pendente (reaberto)" : "Pendente") : record.assinaturaNutricionistaNome?reportSignatureLabel({usuarioNome:record.assinaturaNutricionistaNome,assinadoEm:record.assinaturaNutricionistaDataHora}):valueOrDash(params.supervisorByDate.get(getRecordDateKey(record)))
         });
       }
     }

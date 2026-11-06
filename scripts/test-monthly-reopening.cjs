@@ -162,6 +162,8 @@ async function main() {
   }
   function seedRecords() {
     for(const model of records) tables[model] = [{id:1,data:date('2026-09-01'),dataExecucao:date('2026-09-01'),status:'ASSINADO',statusNota:'FINALIZADA'}];
+    tables.controleBuffetAmostraServico=[{id:1,nome:'Serviço sintético',tipoServico:'FIXO'}];
+    Object.assign(tables.controleBuffetAmostraRegistro[0],{servicoId:1,fluxoId:null,itemId:1,itemExtra:false,itemNome:'Item sintético',classificacao:'QUENTE',tcEquipamento:65,primeiraTc:65,segundaTc:null,statusTemperatura:'CONFORME',observacao:null,assinaturaNome:null,assinaturaDataHora:null,acaoCorretiva:'Não se aplica',dataHoraRegistro:date('2026-09-01'),assinaturaNutricionistaNome:'Nutricionista sintética',assinaturaNutricionistaPerfil:'NUTRICIONISTA',assinaturaNutricionistaDataHora:date('2026-09-02'),servico:{nome:'Serviço sintético',tipoServico:'FIXO',dataInicio:null,dataFim:null}});
   }
   for (const [code,module,model,tipo] of cases) {
     const reportModule = code === 'limpeza_diaria' ? 'plano-limpeza-diario' : code === 'limpeza_semanal' ? 'plano-limpeza-semanal' : module;

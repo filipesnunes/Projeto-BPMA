@@ -1,3 +1,4 @@
+import { assessBuffetMonth } from "../monthly-eligibility";
 import { technicalReviewPending } from "@/lib/review-presentation";
 import {buffetServiceReview} from "../service-review";
 import {isOperationalMonthClosed} from "@/lib/monthly-reopening";
@@ -263,9 +264,9 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   const expectedItemCountsByServiceId = new Map(
     servicos.map((servico) => [servico.id, servico.itens.length])
   );
-  const gruposHistorico = mergeBuffetWorkflowHistory(registros,historyFlows.filter(matchesFlow),servicos,expectedItemCountsByServiceId);
-  const gruposMensais = mergeBuffetWorkflowHistory(registrosMensais,monthFlows,servicos,expectedItemCountsByServiceId);
-  const diasHistorico = groupServicesByDay(gruposHistorico);
+  let gruposHistorico = mergeBuffetWorkflowHistory(registros,historyFlows.filter(matchesFlow),servicos,expectedItemCountsByServiceId);
+  let gruposMensais = mergeBuffetWorkflowHistory(registrosMensais,monthFlows,servicos,expectedItemCountsByServiceId);
+  let diasHistorico = groupServicesByDay(gruposHistorico);
   const diasMensais = groupServicesByDay(gruposMensais);
 
   const datasHistorico = diasHistorico.map((dia) => parseDateInput(dia.dataInput)).filter((date): date is Date => Boolean(date));
@@ -284,12 +285,13 @@ export default async function ControleBuffetAmostrasHistoricoPage({
   ]);
 
   const assinaturasHistorico = await scopedLegacyDaySignatures(rawAssinaturasHistorico,"amostras",registros.map(row=>row.data));
-  const assinaturasMensais = await scopedLegacyDaySignatures(rawAssinaturasMensais,"amostras",registrosMensais.map(row=>row.data));
+  const monthlyEligibility=assessBuffetMonth(rawRegistrosMensais.filter(row=>!row.fluxoId),monthFlows,rawAssinaturasMensais,servicos);
+  gruposMensais=monthlyEligibility.groups;
+  const eligibilityByKey=new Map(monthlyEligibility.services.map(service=>[service.key,service]));
+  gruposHistorico=gruposHistorico.map(group=>{const service=eligibilityByKey.get(group.key);return service?{...group,status:service.group.status,assinadoNutricionista:service.technical,supervisorSignature:service.group.supervisorSignature}:group;});
+  diasHistorico=groupServicesByDay(gruposHistorico);
   const assinaturasPorData = new Map(
-    assinaturasHistorico.map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
-  );
-  const assinaturasMensaisPorData = new Set(
-    assinaturasMensais.map((assinatura) => formatAppDateInput(assinatura.dataReferencia))
+    assinaturasHistorico.filter(signature=>!monthlyEligibility.services.some(s=>s.date===formatAppDateInput(signature.dataReferencia))||monthlyEligibility.signedDates.includes(formatAppDateInput(signature.dataReferencia))||technicalReviewPending(signature.observacao)).map((assinatura) => [formatAppDateInput(assinatura.dataReferencia), assinatura])
   );
   const registroParaEditar = canEditHistory && editRegistroId
     ? registros.find((registro) => registro.id === editRegistroId) ?? null
@@ -366,7 +368,7 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     : returnTo;
 
   const totaisMensais = buildBuffetServiceHistoryTotals(gruposMensais);
-  const diasComRegistro = new Set(diasMensais.map((dia) => dia.dataInput));
+
   const alertasTemperaturaMensais = gruposMensais.reduce(
     (total, group) => total + group.items.filter((item) => item.statusTemperatura && item.statusTemperatura !== "CONFORME").length,
     0
@@ -379,11 +381,11 @@ export default async function ControleBuffetAmostrasHistoricoPage({
     "Alertas de temperatura": alertasTemperaturaMensais,
     "Não conformidades": alertasTemperaturaMensais,
     "Ações corretivas": totaisMensais.totalAcoesCorretivas,
-    "Dias completos": diasMensais.filter((dia) => dia.services.every((service) => service.status === "CONCLUIDO")).length,
-    "Dias parciais": diasMensais.filter((dia) => dia.services.some((service) => service.status !== "CONCLUIDO")).length,
-    "Dias revisados sem validação técnica": assinaturasMensais.filter(signature=>technicalReviewPending(signature.observacao)).length,
-    "Dias assinados": assinaturasMensaisPorData.size,
-    "Dias pendentes de assinatura": Math.max(diasComRegistro.size - assinaturasMensaisPorData.size, 0)
+    "Dias completos": monthlyEligibility.completeDays,
+    "Dias parciais": monthlyEligibility.partialDays,
+    "Dias revisados sem validação técnica": monthlyEligibility.managerialDays,
+    "Dias assinados": monthlyEligibility.signedDays,
+    "Dias pendentes de assinatura": monthlyEligibility.pendingDays
   };
 
   return (
@@ -550,6 +552,14 @@ export default async function ControleBuffetAmostrasHistoricoPage({
         </div>
       </section>
 
+      {monthlyEligibility.pending>0&&<section className={CARD_CLASS} aria-label="Pendências do fechamento mensal">
+        <h2 className="text-lg font-semibold">Pendências do fechamento mensal</h2>
+        <p>{monthlyEligibility.pending} serviço(s) precisam de conferência antes do fechamento.</p>
+        <ul className="mt-3 space-y-3">{monthlyEligibility.issues.map((issue,index)=><li key={`${issue.date}-${issue.serviceId}-${issue.recordId??index}-${index}`}>
+          <p><strong>{formatAppDate(new Date(issue.date))} — {issue.service}{issue.item?` — ${issue.item}`:""}</strong>: {issue.reason}</p>
+          <p>{issue.action} <Link className="underline" href={issue.href}>Conferir serviço</Link></p>
+        </li>)}</ul>
+      </section>}
       <MonthlyClosureSection
         moduleCode={MODULE_CODE}
         month={selectedMonth}

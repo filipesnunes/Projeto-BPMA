@@ -44,7 +44,6 @@ import {
 import {
   formatDateInput,
   getCurrentSystemDateTime,
-  getMonthDateRange,
   getMonthYear,
   getTodaySystemDate,
   isServicoDisponivelNaData,
@@ -840,35 +839,7 @@ export async function closeMonthAction(formData: FormData) {
       throw new Error(`O mês ${String(mes).padStart(2, "0")}/${ano} já está assinado.`);
     }
 
-    const range = getMonthDateRange(mes, ano);
-    const totalRegistros = await prisma.controleBuffetAmostraRegistro.count({
-      where: { data: { gte: range.start, lte: range.end } }
-    });
-
-    if (totalRegistros === 0) {
-      throw new Error("Não há registros no período selecionado para fechamento.");
-    }
-
-    const registrosNaoAssinados = await prisma.controleBuffetAmostraRegistro.count({
-      where: {
-        data: { gte: range.start, lte: range.end },
-        status: {
-          notIn: [
-            StatusItemBuffetAmostra.ASSINADO,
-            StatusItemBuffetAmostra.NAO_SERVIDO
-          ]
-        }
-      }
-    });
-
-    if (registrosNaoAssinados > 0) {
-      throw new Error(
-        "Existem itens ainda não assinados no período. Conclua as assinaturas antes de fechar o mês."
-      );
-    }
-
-
-    await closeOperationalMonth({ user: actor, moduleCode: "amostras", mes, ano }, "legacy");
+    await closeOperationalMonth({ user: actor, moduleCode: "amostras", mes, ano, password: senhaConfirmacao }, "legacy");
 
     revalidateModulePaths();
     redirectWithFeedback(

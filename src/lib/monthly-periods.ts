@@ -9,6 +9,7 @@ import { canCloseMonthlyPeriod } from "@/lib/monthly-period-permissions";
 import { findLegacyMonthlyClosure, revalidateMonthlyPeriod, validateMonthlyPeriod } from "@/lib/monthly-reopening";
 import { prisma } from "@/lib/prisma";
 import { assertNoReopenedWorkflow } from "@/lib/operational-workflow/service";
+import { buffetMonthlyEligibility, buffetMonthlyBlockingMessage } from "@/app/controle-buffet-amostras/monthly-eligibility";
 
 export async function listLegacyMonthlyClosures(code: OperationalSignatureModuleCode) {
   const where = { status: "ASSINADO" as const };
@@ -53,16 +54,20 @@ export async function monthlyPeriodCounts(code: OperationalSignatureModuleCode, 
       records = await db.rastreabilidadeRecebimentoNota.count({ where: { data } });
       pending = await db.rastreabilidadeRecebimentoNota.count({ where: { data, statusNota: { not: "FINALIZADA" } } }); break;
     case "amostras":
-      records = await db.controleBuffetAmostraRegistro.count({ where: { data } });
-      pending = await db.controleBuffetAmostraRegistro.count({ where: { data, fluxoId:null, status: { notIn: ["ASSINADO", "NAO_SERVIDO"] } } });
-      {const managed=await db.fluxoOperacional.findMany({where:{modulo:"amostras",dataReferencia:data,excluidoEm:null},include:{amostras:{where:{excluidoEm:null}}}});
-      pending+=managed.filter(u=>u.estado!=="FECHADO"&&(u.estado==="PENDENTE"||u.amostras.some(r=>!["ASSINADO","NAO_SERVIDO"].includes(r.status)))).length;} break;
+      {const month=await buffetMonthlyEligibility(db,mes,ano);records=month.records;pending=month.pending;} break;
   }
   return { records, pending };
 }
 
 export async function validateMonthlyClosing(code: OperationalSignatureModuleCode, mes: number, ano: number, db: Prisma.TransactionClient = prisma) {
-  if (["temperatura","oleo","amostras","rastreabilidade"].includes(code)) {
+  if(code==="amostras"){
+    monthlyDateRange(mes,ano);
+    const month=await buffetMonthlyEligibility(db,mes,ano);
+    if(!month.records&&!month.services.length&&!month.pending)throw Error("Não há registros no período selecionado para fechamento.");
+    if(month.pending)throw Error(buffetMonthlyBlockingMessage(month,mes,ano));
+    return {records:month.records,pending:month.pending};
+  }
+  if (["temperatura","oleo","rastreabilidade"].includes(code)) {
     const range = monthlyDateRange(mes, ano);
     await assertNoReopenedWorkflow(db, code, range.gte, range.lt);
   }
@@ -105,6 +110,11 @@ export async function closeOperationalMonth(params: { user: AuthenticatedUser; m
       if (context !== "history" ? !canCloseMonthlyPeriod(user, moduleCode) : !canSignModuleMonthlyClosure(user, moduleCode)) throw new Error("Seu perfil não pode fechar este período.");
     }
     const period = await tx.fechamentoMensalModulo.findUnique({ where: { moduloCodigo_ano_mes: { moduloCodigo: moduleCode, mes, ano } } });
+    if(moduleCode==="amostras"){
+      const {verifyPassword}=await import("./password");
+      const credentials=await tx.usuario.findUniqueOrThrow({where:{id:user.id},select:{senhaHash:true}});
+      if(!params.password?.trim()||!verifyPassword(params.password.trim(),credentials.senhaHash))throw Error("Senha inválida para confirmar a assinatura.");
+    }
     let oilAuthorization;
     if(moduleCode === "oleo") {
       const { canSignOilSupervisor } = await import("./oil-signature-permissions");

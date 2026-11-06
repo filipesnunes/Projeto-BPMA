@@ -149,7 +149,7 @@ export async function MonthlyClosureSection({
           <input type="hidden" name="indicadoresSnapshot" value={JSON.stringify(indicators)} />
           {pendingDailySignatures > 0 ? (
             <p className="text-sm text-amber-700 dark:text-amber-200">
-              Existem {pendingDailySignatures} dia(s) sem assinatura de supervisor neste mês. A assinatura mensal é permitida e preserva essa pendência no resumo.
+              {moduleCode==="amostras"?`Existem ${pendingDailySignatures} dia(s) com pendências de validação técnica. Confira a lista de pendências antes de fechar o mês.`:`Existem ${pendingDailySignatures} dia(s) sem assinatura de supervisor neste mês. A assinatura mensal é permitida e preserva essa pendência no resumo.`}
             </p>
           ) : null}
           <label className="block text-sm text-slate-700 dark:text-slate-200">
